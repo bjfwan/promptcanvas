@@ -1,0 +1,41 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  body {
+    margin: 0;
+    min-width: 320px;
+    min-height: 100vh;
+    background: #f6efe3;
+  }
+
+  button,
+  select,
+  input,
+  textarea {
+    font: inherit;
+  }
+}
+
+@layer components {
+  .field-select {
+    @apply w-full rounded-2xl border border-ink/10 bg-white/60 px-4 py-3 text-sm font-bold text-ink outline-none transition focus:border-clay/60 focus:bg-white;
+  }
+
+  .field-input {
+    @apply w-full rounded-2xl border border-ink/10 bg-white/60 px-4 py-3 text-sm font-bold text-ink outline-none transition placeholder:text-ink/35 focus:border-clay/60 focus:bg-white;
+  }
+
+  .field-textarea {
+    @apply w-full resize-none rounded-2xl border border-ink/10 bg-white/60 px-4 py-3 text-sm leading-6 text-ink outline-none transition placeholder:text-ink/35 focus:border-clay/60 focus:bg-white;
+  }
+
+  .result-button {
+    @apply rounded-full border border-white/10 bg-paper px-4 py-3 text-sm font-bold text-ink transition hover:-translate-y-0.5 hover:bg-brass;
+  }
+}
