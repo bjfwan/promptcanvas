@@ -30,6 +30,16 @@ const healthMessage = ref('正在检查后端连接')
 const healthModel = ref('')
 const healthRequestId = ref('')
 
+type TabValue = 'compose' | 'result' | 'library'
+
+const tabs: Array<{ value: TabValue; label: string }> = [
+  { value: 'compose', label: 'Compose' },
+  { value: 'result', label: 'Canvas' },
+  { value: 'library', label: 'Library' },
+]
+
+const activeTab = ref<TabValue>('compose')
+
 let timerId: number | undefined
 
 const selectedStyle = computed(() => styleOptions.find((item) => item.value === style.value))
@@ -95,6 +105,7 @@ async function handleGenerate() {
 
     images.value = result.images
     lastRequestId.value = result.requestId || ''
+    activeTab.value = 'result'
     history.value = prependHistory({
       ...payload,
       id: createId(),
@@ -155,6 +166,7 @@ function applyTemplate(template: PromptTemplate) {
   style.value = template.style
   size.value = template.size
   errorMessage.value = ''
+  activeTab.value = 'compose'
 }
 
 function restoreHistory(item: GenerationHistoryItem) {
@@ -168,6 +180,7 @@ function restoreHistory(item: GenerationHistoryItem) {
   creativity.value = item.creativity ?? 7
   seed.value = item.seed || ''
   errorMessage.value = ''
+  activeTab.value = 'compose'
 }
 
 function resetDraft() {
@@ -272,321 +285,312 @@ onMounted(() => {
 </script>
 
 <template>
-  <main class="min-h-screen overflow-hidden bg-paper text-ink">
-    <div class="pointer-events-none fixed inset-0 opacity-80">
-      <div class="absolute -left-32 top-16 h-80 w-80 rounded-full bg-clay/25 blur-3xl"></div>
-      <div class="absolute right-0 top-0 h-[30rem] w-[30rem] rounded-full bg-brass/20 blur-3xl"></div>
-      <div class="absolute bottom-0 left-1/3 h-96 w-96 rounded-full bg-moss/15 blur-3xl"></div>
-    </div>
-
-    <section class="relative mx-auto grid min-h-screen w-full max-w-[1500px] gap-6 px-4 py-6 lg:px-6 xl:grid-cols-[420px_minmax(0,1fr)_340px]">
-      <aside class="rounded-[2rem] border border-ink/10 bg-white/50 p-5 shadow-panel backdrop-blur-xl lg:p-6">
-        <div class="mb-7 flex items-start justify-between gap-4">
-          <div>
-            <p class="mb-2 text-xs font-bold uppercase tracking-[0.38em] text-clay">PromptCanvas</p>
-            <h1 class="font-display text-4xl leading-none tracking-tight text-ink md:text-5xl">AI 图片生成工作台</h1>
+  <div class="min-h-screen bg-paper text-ink">
+    <header class="sticky top-0 z-30 border-b border-line/80 bg-paper/85 backdrop-blur">
+      <div class="mx-auto flex w-full max-w-[1440px] items-center justify-between gap-4 px-4 py-3.5 sm:px-6 lg:px-10 lg:py-4">
+        <div class="flex items-center gap-3">
+          <span class="grid h-9 w-9 place-items-center rounded-full border border-ink/25 font-display text-base">P</span>
+          <div class="leading-tight">
+            <p class="font-display text-[17px] tracking-tightish">Prompt<span class="italic text-accent">Canvas</span></p>
+            <p class="mt-0.5 hidden text-[10px] uppercase tracking-[0.24em] text-muted sm:block">image studio · v0.1</p>
           </div>
-          <button type="button" class="rounded-full border border-ink/10 bg-paper/80 px-4 py-2 text-xs font-bold text-ink/60 transition hover:bg-white" @click="resetDraft">
+        </div>
+
+        <div class="flex items-center gap-2">
+          <button
+            type="button"
+            class="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-medium uppercase tracking-[0.16em] transition"
+            :class="{
+              'border-line text-muted': healthStatus === 'checking',
+              'border-line bg-cream text-ink hover:border-ink/40': healthStatus === 'online',
+              'border-accent/40 bg-accent/[0.08] text-accent': healthStatus === 'offline',
+            }"
+            :title="healthMessage"
+            @click="refreshHealth"
+          >
+            <span
+              class="h-1.5 w-1.5 rounded-full"
+              :class="{
+                'animate-pulse bg-muted/60': healthStatus === 'checking',
+                'bg-ink': healthStatus === 'online',
+                'bg-accent': healthStatus === 'offline',
+              }"
+            ></span>
+            <span class="hidden sm:inline">{{ healthStatus === 'checking' ? '检查中' : healthStatus === 'online' ? '在线' : '离线' }}</span>
+          </button>
+          <button type="button" class="rounded-full border border-line bg-cream px-3 py-1.5 text-[11px] font-medium uppercase tracking-[0.16em] text-muted transition hover:border-ink/30 hover:text-ink" @click="resetDraft">
             重置
           </button>
         </div>
+      </div>
 
-        <form class="space-y-5" @submit.prevent="handleGenerate">
-          <div v-if="healthStatus === 'offline'" class="rounded-2xl border border-clay/20 bg-clay/10 p-4 text-sm leading-6 text-ink/65">
-            后端当前不可用。你仍然可以编辑提示词和参数，但生成图片前需要先启动或修复后端服务。
+      <nav class="flex items-stretch border-t border-line/60 lg:hidden">
+        <button
+          v-for="tab in tabs"
+          :key="tab.value"
+          type="button"
+          class="relative flex-1 py-3 text-[11px] font-medium uppercase tracking-[0.22em] transition"
+          :class="activeTab === tab.value ? 'text-ink' : 'text-muted'"
+          @click="activeTab = tab.value"
+        >
+          {{ tab.label }}
+          <span v-if="activeTab === tab.value" class="absolute bottom-0 left-1/2 h-[2px] w-7 -translate-x-1/2 bg-ink"></span>
+        </button>
+      </nav>
+    </header>
+
+    <main class="mx-auto w-full max-w-[1440px] px-4 pb-16 pt-6 sm:px-6 lg:grid lg:grid-cols-[minmax(320px,380px)_minmax(0,1fr)_minmax(280px,320px)] lg:gap-10 lg:px-10 lg:pt-10">
+      <section class="space-y-7" :class="{ 'hidden lg:block': activeTab !== 'compose' }">
+        <header class="space-y-2">
+          <p class="label">01 · Compose</p>
+          <h1 class="font-display text-3xl leading-[1.05] tracking-tightish lg:text-[2.5rem]">写下你想看见的<span class="italic">画面</span></h1>
+        </header>
+
+        <form class="space-y-6" @submit.prevent="handleGenerate">
+          <div v-if="healthStatus === 'offline'" class="rounded-md border border-accent/30 bg-accent/[0.06] px-4 py-3 text-[13px] leading-6 text-accent">
+            后端当前不可用。检查连接后再生成图片。
           </div>
 
-          <label class="block">
-            <div class="mb-3 flex items-center justify-between gap-3">
-              <span class="text-sm font-bold text-ink/80">提示词</span>
-              <button type="button" class="text-xs font-bold text-clay transition hover:text-ink" @click="copyToClipboard(prompt, '提示词已复制')">
-                复制
+          <div>
+            <div class="mb-2 flex items-center justify-between">
+              <label for="prompt" class="label">提示词</label>
+              <button type="button" class="text-[11px] font-medium text-muted transition hover:text-ink" @click="copyToClipboard(prompt, '已复制')">
+                {{ copiedMessage || '复制' }}
               </button>
             </div>
             <textarea
+              id="prompt"
               v-model="prompt"
-              rows="8"
+              rows="6"
               maxlength="1200"
-              class="w-full resize-none rounded-[1.5rem] border border-ink/10 bg-paper/70 p-5 text-base leading-7 outline-none transition focus:border-clay/60 focus:bg-white focus:shadow-glow"
-              placeholder="描述你想生成的画面，例如：一张极简咖啡品牌海报，暖色调，自然光，留白充足"
+              class="field-textarea"
+              placeholder="一张极简咖啡品牌海报，暖色调，自然光，留白充足"
             ></textarea>
-            <div class="mt-2 flex items-center justify-between text-xs text-ink/45">
-              <span>{{ copiedMessage || '支持中文或英文，建议写清主体、环境、光线、构图。' }}</span>
-              <span>{{ prompt.length }}/1200</span>
-            </div>
-          </label>
+            <p class="mt-1.5 text-right font-mono text-[10px] tabular-nums text-muted">{{ prompt.length }} / 1200</p>
+          </div>
 
-          <section>
-            <div class="mb-3 flex items-end justify-between gap-3">
-              <span class="text-sm font-bold text-ink/80">风格预设</span>
-              <span class="text-xs text-ink/50">{{ selectedStyle?.description }}</span>
-            </div>
-            <div class="grid grid-cols-2 gap-3">
+          <div>
+            <p class="label mb-3">风格</p>
+            <div class="grid grid-cols-2 gap-2">
               <button
                 v-for="item in styleOptions"
                 :key="item.value"
                 type="button"
-                class="rounded-2xl border p-3 text-left transition hover:-translate-y-0.5 hover:shadow-panel"
-                :class="style === item.value ? 'border-clay bg-clay text-white' : 'border-ink/10 bg-white/55 text-ink'"
+                class="rounded-md border px-3 py-2.5 text-left transition"
+                :class="style === item.value ? 'border-ink bg-ink text-cream' : 'border-line bg-cream text-ink hover:border-ink/40'"
                 @click="style = item.value"
               >
-                <span class="mb-2 inline-flex rounded-full bg-black/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider">{{ item.accent }}</span>
-                <span class="block text-sm font-bold">{{ item.label }}</span>
-                <span class="mt-1 block text-xs opacity-70">{{ item.description }}</span>
+                <span class="block text-[13px] font-medium">{{ item.label }}</span>
+                <span class="mt-0.5 block text-[11px]" :class="style === item.value ? 'text-cream/65' : 'text-muted'">{{ item.accent }}</span>
               </button>
             </div>
-          </section>
+          </div>
 
-          <section class="rounded-[1.5rem] border border-ink/10 bg-white/45 p-4">
-            <div class="mb-4 flex items-center justify-between gap-4">
-              <div>
-                <p class="text-sm font-bold text-ink/80">基础参数</p>
-                <p class="mt-1 text-xs text-ink/45">{{ selectedSize?.hint }}</p>
-              </div>
-              <span class="rounded-full bg-ink px-3 py-1 text-xs font-bold text-paper">{{ size }}</span>
+          <div class="grid gap-4 sm:grid-cols-3">
+            <div>
+              <label class="label mb-2">尺寸</label>
+              <select v-model="size" class="field-select">
+                <option v-for="item in sizeOptions" :key="item.value" :value="item.value">{{ item.label }}</option>
+              </select>
             </div>
-
-            <div class="grid gap-4 md:grid-cols-2">
-              <label class="block md:col-span-2">
-                <span class="mb-2 block text-xs font-bold text-ink/60">尺寸</span>
-                <select v-model="size" class="field-select">
-                  <option v-for="item in sizeOptions" :key="item.value" :value="item.value">{{ item.label }} · {{ item.hint }}</option>
-                </select>
-              </label>
-
-              <label class="block">
-                <span class="mb-2 block text-xs font-bold text-ink/60">数量</span>
-                <select v-model.number="count" class="field-select">
-                  <option :value="1">1 张</option>
-                  <option :value="2">2 张</option>
-                  <option :value="3">3 张</option>
-                  <option :value="4">4 张</option>
-                </select>
-              </label>
-
-              <label class="block">
-                <span class="mb-2 block text-xs font-bold text-ink/60">格式</span>
-                <select v-model="outputFormat" class="field-select">
-                  <option value="png">PNG</option>
-                  <option value="jpeg">JPEG</option>
-                  <option value="webp">WEBP</option>
-                </select>
-              </label>
+            <div>
+              <label class="label mb-2">数量</label>
+              <select v-model.number="count" class="field-select">
+                <option v-for="n in 4" :key="n" :value="n">{{ n }} 张</option>
+              </select>
             </div>
-          </section>
+            <div>
+              <label class="label mb-2">格式</label>
+              <select v-model="outputFormat" class="field-select">
+                <option value="png">PNG</option>
+                <option value="jpeg">JPEG</option>
+                <option value="webp">WEBP</option>
+              </select>
+            </div>
+          </div>
 
-          <details class="group rounded-[1.5rem] border border-ink/10 bg-white/40 p-4">
-            <summary class="flex cursor-pointer list-none items-center justify-between gap-4 text-sm font-bold text-ink/80">
-              高级参数
-              <span class="rounded-full bg-ink/5 px-3 py-1 text-xs text-ink/50 group-open:bg-clay group-open:text-white">可选</span>
+          <details class="group border-t border-line pt-5">
+            <summary class="flex cursor-pointer list-none items-center justify-between">
+              <span class="label">Advanced · 可选</span>
+              <span class="text-[11px] text-muted transition group-open:rotate-180">▾</span>
             </summary>
-
             <div class="mt-4 space-y-4">
-              <label class="block">
-                <span class="mb-2 block text-xs font-bold text-ink/60">负面提示词</span>
-                <textarea v-model="negativePrompt" rows="3" maxlength="400" class="field-textarea" placeholder="不想要的内容，例如：模糊、水印、错误文字"></textarea>
-              </label>
-
-              <div class="grid gap-4 md:grid-cols-2">
-                <label class="block">
-                  <span class="mb-2 block text-xs font-bold text-ink/60">质量</span>
+              <div>
+                <label class="label mb-2">负面提示词</label>
+                <textarea v-model="negativePrompt" rows="2" maxlength="400" class="field-textarea" placeholder="不想出现的元素，例如：模糊、水印"></textarea>
+              </div>
+              <div class="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label class="label mb-2">质量</label>
                   <select v-model="quality" class="field-select">
                     <option v-for="item in qualityOptions" :key="item.value" :value="item.value">{{ item.label }}</option>
                   </select>
-                </label>
-
-                <label class="block">
-                  <span class="mb-2 block text-xs font-bold text-ink/60">Seed</span>
-                  <input v-model="seed" class="field-input" placeholder="可选，便于复现" />
-                </label>
-              </div>
-
-              <label class="block">
-                <div class="mb-2 flex items-center justify-between">
-                  <span class="text-xs font-bold text-ink/60">创意强度</span>
-                  <span class="text-xs font-bold text-clay">{{ creativity }}/10</span>
                 </div>
-                <input v-model.number="creativity" type="range" min="1" max="10" step="1" class="w-full accent-clay" />
-              </label>
+                <div>
+                  <label class="label mb-2">Seed</label>
+                  <input v-model="seed" class="field-input" placeholder="可选" />
+                </div>
+              </div>
+              <div>
+                <div class="mb-2 flex items-center justify-between">
+                  <span class="label">创意强度</span>
+                  <span class="font-mono text-[11px] tabular-nums text-ink">{{ creativity }} / 10</span>
+                </div>
+                <input v-model.number="creativity" type="range" min="1" max="10" step="1" class="w-full accent-ink" />
+              </div>
             </div>
           </details>
 
           <button
             type="submit"
             :disabled="!canGenerate"
-            class="group relative w-full overflow-hidden rounded-full bg-ink px-6 py-4 text-base font-bold text-paper shadow-panel transition enabled:hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50"
+            class="flex w-full items-center justify-between rounded-md bg-ink px-5 py-4 text-sm font-medium text-cream transition hover:bg-accent disabled:cursor-not-allowed disabled:bg-ink/40"
           >
-            <span class="absolute inset-0 translate-x-[-120%] bg-gradient-to-r from-transparent via-white/20 to-transparent transition duration-700 group-hover:translate-x-[120%]"></span>
-            <span class="relative">{{ isGenerating ? `正在生成 · ${elapsedSeconds}s` : '生成图片' }}</span>
+            <span class="flex items-center gap-3">
+              <span class="font-display text-base italic">{{ isGenerating ? 'Composing' : 'Generate' }}</span>
+              <span v-if="isGenerating" class="font-mono text-[11px] tabular-nums text-cream/70">{{ elapsedSeconds }}s</span>
+            </span>
+            <span class="font-mono text-[10px] uppercase tracking-[0.22em] text-cream/65">↵ enter</span>
           </button>
         </form>
-      </aside>
+      </section>
 
-      <section class="relative flex min-h-[720px] flex-col rounded-[2rem] border border-ink/10 bg-ink p-4 text-paper shadow-panel md:p-6">
-        <div class="mb-5 flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <p class="mb-2 text-xs font-bold uppercase tracking-[0.32em] text-brass">Generation Preview</p>
-            <h2 class="font-display text-4xl leading-none md:text-6xl">生成结果</h2>
+      <section class="mt-10 lg:mt-0" :class="{ 'hidden lg:block': activeTab !== 'result' }">
+        <header class="mb-5 flex items-end justify-between gap-4">
+          <div class="space-y-2">
+            <p class="label">02 · Canvas</p>
+            <h2 class="font-display text-3xl leading-[1.05] tracking-tightish lg:text-[2.5rem]">画布</h2>
           </div>
-          <div class="flex flex-wrap items-center gap-2">
-            <span class="rounded-full border border-white/10 px-3 py-1.5 text-xs text-paper/60">{{ selectedStyle?.label }}</span>
-            <span class="rounded-full border border-white/10 px-3 py-1.5 text-xs text-paper/60">{{ size }}</span>
-            <span v-if="lastRequestId" class="rounded-full border border-white/10 px-3 py-1.5 text-xs text-paper/60">{{ lastRequestId }}</span>
+          <div class="flex flex-wrap items-center justify-end gap-1.5">
+            <span class="chip">{{ selectedStyle?.label }}</span>
+            <span class="chip font-mono">{{ size }}</span>
+            <span v-if="lastRequestId" class="chip font-mono normal-case tracking-normal">{{ lastRequestId.slice(0, 12) }}</span>
           </div>
-        </div>
+        </header>
 
-        <div v-if="errorMessage" class="mb-5 rounded-2xl border border-red-300/30 bg-red-500/15 p-4 text-sm text-red-100">
+        <div v-if="errorMessage" class="mb-5 rounded-md border border-accent/30 bg-accent/[0.06] px-4 py-3 text-[13px] leading-6 text-accent">
           {{ errorMessage }}
         </div>
 
-        <div v-if="isGenerating" class="grid flex-1 place-items-center rounded-[1.5rem] border border-white/10 bg-white/[0.03]">
-          <div class="text-center">
-            <div class="mx-auto mb-5 h-16 w-16 animate-spin rounded-full border-2 border-paper/20 border-t-brass"></div>
-            <p class="font-display text-4xl">正在构图</p>
-            <p class="mx-auto mt-3 max-w-md text-sm leading-6 text-paper/55">后端正在调用 OpenAI。复杂提示词、更多数量或高质量参数可能需要更久。</p>
+        <div v-if="isGenerating" class="grid place-items-center rounded-xl border border-line bg-cream py-24 text-center">
+          <div>
+            <div class="mx-auto mb-6 h-px w-14 animate-pulse bg-ink"></div>
+            <p class="font-display text-2xl italic tracking-tightish">composing</p>
+            <p class="mt-2 font-mono text-[11px] uppercase tracking-[0.2em] text-muted">{{ elapsedSeconds }}s elapsed</p>
           </div>
         </div>
 
-        <div v-else-if="activeImage" class="flex flex-1 flex-col gap-4">
-          <div class="grid flex-1 place-items-center rounded-[1.5rem] border border-white/10 bg-white/[0.03] p-3 md:p-5">
-            <div class="max-h-[62vh] w-full max-w-3xl overflow-hidden rounded-[1.25rem] bg-paper/10" :class="previewFrameClass">
-              <img :src="activeImageSource" alt="生成图片" class="h-full w-full object-contain" />
+        <div v-else-if="activeImage" class="space-y-5">
+          <div class="overflow-hidden rounded-xl border border-line bg-cream">
+            <div class="grid place-items-center bg-paper p-3 sm:p-5" :class="previewFrameClass">
+              <img :src="activeImageSource" alt="生成图片" class="h-full max-h-[70vh] w-full object-contain" />
             </div>
           </div>
 
-          <div class="grid gap-3 lg:grid-cols-[1fr_auto]">
-            <div class="rounded-[1.25rem] border border-white/10 bg-white/[0.04] p-4">
-              <p class="mb-2 text-xs font-bold uppercase tracking-[0.24em] text-brass">Revised Prompt</p>
-              <p class="text-sm leading-6 text-paper/65">{{ activeImage.revisedPrompt || prompt }}</p>
-            </div>
-
-            <div class="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:w-72 lg:grid-cols-2">
-              <button type="button" class="result-button" @click="downloadImage(activeImage, activeImageIndex)">下载</button>
-              <button type="button" class="result-button" @click="openImage(activeImage)">打开</button>
-              <button type="button" class="result-button" @click="copyToClipboard(activeImage.revisedPrompt || prompt, '提示词已复制')">复制</button>
-              <button type="button" class="result-button" @click="exportCurrentConfig">导出</button>
-            </div>
+          <div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <button type="button" class="result-button" @click="downloadImage(activeImage, activeImageIndex)">下载</button>
+            <button type="button" class="result-button" @click="openImage(activeImage)">打开</button>
+            <button type="button" class="result-button" @click="copyToClipboard(activeImage.revisedPrompt || prompt, '已复制')">复制提示词</button>
+            <button type="button" class="result-button" @click="exportCurrentConfig">导出 JSON</button>
           </div>
 
-          <div v-if="images.length > 1" class="grid grid-cols-4 gap-3">
+          <div v-if="images.length > 1" class="-mx-1 flex gap-2 overflow-x-auto px-1 pb-2">
             <button
               v-for="(image, index) in images"
               :key="image.id || index"
               type="button"
-              class="overflow-hidden rounded-2xl border bg-white/[0.04] p-1 transition hover:-translate-y-0.5"
-              :class="activeImageIndex === index ? 'border-brass' : 'border-white/10'"
+              class="shrink-0 overflow-hidden rounded-md border bg-cream p-1 transition"
+              :class="activeImageIndex === index ? 'border-ink' : 'border-line hover:border-ink/40'"
               @click="activeImageIndex = index"
             >
-              <img :src="resolveImageSource(image)" alt="生成图片缩略图" class="aspect-square w-full rounded-xl object-cover" />
+              <img :src="resolveImageSource(image)" alt="" class="aspect-square w-16 rounded-sm object-cover sm:w-20" />
             </button>
+          </div>
+
+          <div v-if="activeImage.revisedPrompt" class="rounded-md border border-line bg-cream/60 p-4">
+            <p class="label mb-2">Revised prompt</p>
+            <p class="text-[13px] leading-6 text-ink/75">{{ activeImage.revisedPrompt }}</p>
           </div>
         </div>
 
-        <div v-else class="grid flex-1 place-items-center rounded-[1.5rem] border border-dashed border-white/15 bg-white/[0.03] p-8 text-center">
-          <div>
-            <div class="mx-auto mb-6 grid h-28 w-28 place-items-center rounded-full border border-white/10 bg-paper/10 text-5xl">✦</div>
-            <p class="font-display text-4xl">等待第一张图</p>
-            <p class="mx-auto mt-4 max-w-md text-sm leading-6 text-paper/55">在左侧输入提示词，或者从右侧模板开始。生成完成后，图片会出现在这里。</p>
+        <div v-else class="grid place-items-center rounded-xl border border-dashed border-line bg-cream/40 py-24 text-center">
+          <div class="max-w-sm px-6">
+            <p class="font-display text-3xl italic tracking-tightish text-muted">an empty canvas</p>
+            <p class="mt-3 text-[13px] leading-6 text-muted">写下提示词，或者从右侧选一个模板，然后点击 Generate。</p>
           </div>
         </div>
       </section>
 
-      <aside class="space-y-6 xl:max-h-[calc(100vh-3rem)] xl:overflow-y-auto xl:pr-1">
-        <section class="rounded-[2rem] border border-ink/10 bg-white/50 p-5 shadow-panel backdrop-blur-xl">
-          <div class="mb-4 flex items-start justify-between gap-4">
-            <div>
-              <p class="text-xs font-bold uppercase tracking-[0.28em] text-clay">Backend status</p>
-              <h3 class="mt-2 font-display text-3xl leading-none">连接状态</h3>
-            </div>
-            <span
-              class="mt-1 rounded-full px-3 py-1 text-xs font-bold"
-              :class="{
-                'bg-brass/20 text-ink': healthStatus === 'checking',
-                'bg-moss text-white': healthStatus === 'online',
-                'bg-clay text-white': healthStatus === 'offline',
-              }"
-            >
-              {{ healthStatus === 'checking' ? '检查中' : healthStatus === 'online' ? '在线' : '离线' }}
-            </span>
-          </div>
-
-          <p class="text-sm leading-6 text-ink/60">{{ healthMessage }}</p>
-          <p v-if="healthRequestId" class="mt-2 text-xs text-ink/40">请求 ID：{{ healthRequestId }}</p>
-
-          <button type="button" class="mt-4 w-full rounded-full border border-ink/10 bg-paper px-4 py-3 text-sm font-bold text-ink transition hover:bg-white" @click="refreshHealth">
-            重新检查
-          </button>
-        </section>
-
-        <section class="rounded-[2rem] border border-ink/10 bg-white/50 p-5 shadow-panel backdrop-blur-xl">
-          <div class="mb-4">
-            <p class="text-xs font-bold uppercase tracking-[0.28em] text-clay">Prompt kits</p>
-            <h3 class="mt-2 font-display text-3xl leading-none">提示词模板</h3>
-          </div>
-
-          <div class="space-y-3">
+      <aside class="mt-10 space-y-8 lg:mt-0" :class="{ 'hidden lg:block': activeTab !== 'library' }">
+        <section>
+          <header class="mb-4 space-y-2">
+            <p class="label">03 · Templates</p>
+            <h3 class="font-display text-2xl tracking-tightish">提示词模板</h3>
+          </header>
+          <div class="space-y-2">
             <button
               v-for="template in promptTemplates"
               :key="template.id"
               type="button"
-              class="w-full rounded-[1.25rem] border border-ink/10 bg-paper/60 p-4 text-left transition hover:-translate-y-0.5 hover:bg-white hover:shadow-panel"
+              class="block w-full rounded-md border border-line bg-cream/60 p-3.5 text-left transition hover:border-ink/40 hover:bg-cream"
               @click="applyTemplate(template)"
             >
-              <div class="mb-2 flex items-center justify-between gap-3">
-                <span class="text-sm font-bold">{{ template.title }}</span>
-                <span class="rounded-full bg-ink px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-paper">{{ template.style }}</span>
+              <div class="flex items-center justify-between gap-3">
+                <span class="text-[13px] font-medium text-ink">{{ template.title }}</span>
+                <span class="font-mono text-[10px] uppercase tracking-wider text-muted">{{ template.style }}</span>
               </div>
-              <p class="mb-2 text-xs font-bold text-clay">{{ template.tone }}</p>
-              <p class="line-clamp-2 text-xs leading-5 text-ink/55">{{ template.prompt }}</p>
+              <p class="mt-1 text-[11px] text-muted">{{ template.tone }}</p>
+              <p class="mt-2 line-clamp-2 text-[12px] leading-5 text-ink/70">{{ template.prompt }}</p>
             </button>
           </div>
         </section>
 
-        <section class="rounded-[2rem] border border-ink/10 bg-ink p-5 text-paper shadow-panel">
-          <div class="mb-4 flex items-center justify-between gap-3">
-            <div>
-              <p class="text-xs font-bold uppercase tracking-[0.28em] text-brass">Local history</p>
-              <h3 class="mt-2 font-display text-3xl leading-none">生成历史</h3>
+        <section>
+          <header class="mb-4 flex items-end justify-between">
+            <div class="space-y-2">
+              <p class="label">04 · History</p>
+              <h3 class="font-display text-2xl tracking-tightish">最近生成</h3>
             </div>
-            <button v-if="history.length" type="button" class="rounded-full border border-white/10 px-3 py-1.5 text-xs font-bold text-paper/60 transition hover:bg-white hover:text-ink" @click="clearLocalHistory">
+            <button v-if="history.length" type="button" class="text-[11px] font-medium text-muted transition hover:text-accent" @click="clearLocalHistory">
               清空
             </button>
-          </div>
+          </header>
 
-          <div v-if="history.length" class="space-y-3">
+          <div v-if="history.length" class="space-y-2">
             <button
               v-for="item in history"
               :key="item.id"
               type="button"
-              class="w-full rounded-[1.25rem] border border-white/10 bg-white/[0.04] p-4 text-left transition hover:-translate-y-0.5 hover:bg-white/[0.08]"
+              class="block w-full rounded-md border border-line bg-cream/60 p-3.5 text-left transition hover:border-ink/40 hover:bg-cream"
               @click="restoreHistory(item)"
             >
-              <div class="mb-2 flex items-center justify-between gap-3">
-                <span class="text-xs font-bold text-brass">{{ formatDate(item.createdAt) }}</span>
-                <span class="text-xs text-paper/45">{{ item.imageCount }} 张</span>
+              <div class="flex items-center justify-between">
+                <span class="font-mono text-[10px] uppercase tracking-wider text-muted">{{ formatDate(item.createdAt) }}</span>
+                <span class="font-mono text-[10px] text-muted">×{{ item.imageCount }}</span>
               </div>
-              <p class="line-clamp-2 text-sm leading-6 text-paper/75">{{ item.prompt }}</p>
-              <div class="mt-3 flex flex-wrap gap-2 text-[10px] font-bold uppercase tracking-wider text-paper/50">
+              <p class="mt-1.5 line-clamp-2 text-[12px] leading-5 text-ink/80">{{ item.prompt }}</p>
+              <div class="mt-2 flex flex-wrap items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted">
                 <span>{{ item.style }}</span>
-                <span>{{ item.size }}</span>
-                <span>{{ item.outputFormat }}</span>
+                <span class="text-line">·</span>
+                <span class="font-mono">{{ item.size }}</span>
               </div>
             </button>
           </div>
-
-          <div v-else class="rounded-[1.25rem] border border-dashed border-white/15 p-5 text-sm leading-6 text-paper/55">
-            生成成功后，前端会在浏览器本地保存最近 8 条参数记录，方便你重新编辑。
-          </div>
+          <p v-else class="rounded-md border border-dashed border-line bg-cream/40 px-4 py-5 text-[12px] leading-5 text-muted">
+            生成成功后，最近 8 条参数会保存在浏览器本地。
+          </p>
         </section>
 
-        <section class="rounded-[2rem] border border-ink/10 bg-white/50 p-5 shadow-panel backdrop-blur-xl">
-          <p class="mb-2 text-sm font-bold text-ink/80">后端对接提醒</p>
-          <p class="text-sm leading-6 text-ink/55">前端请求 <code class="rounded bg-ink/10 px-1.5 py-0.5">POST /api/images/generate</code>。新增的负面提示词、质量、创意强度、Seed 都是可选字段，后端可以先忽略。</p>
-          <button type="button" class="mt-4 w-full rounded-full bg-ink px-4 py-3 text-sm font-bold text-paper transition hover:-translate-y-0.5 hover:bg-clay" @click="exportCurrentConfig">
-            导出当前参数
-          </button>
+        <section class="border-t border-line pt-6 text-[12px] leading-6 text-muted">
+          <p>前端请求 <code class="rounded bg-cream px-1.5 py-0.5 font-mono text-[11px] text-ink">POST /api/images/generate</code>。</p>
+          <p class="mt-2">所有数据保留在你的浏览器和后端之间。</p>
+          <p v-if="healthRequestId" class="mt-3 font-mono text-[10px] tracking-wider">last req · {{ healthRequestId }}</p>
         </section>
       </aside>
-    </section>
-  </main>
+    </main>
+
+    <footer class="border-t border-line/70 py-6 text-center font-mono text-[10px] uppercase tracking-[0.24em] text-muted">
+      crafted local · {{ new Date().getFullYear() }}
+    </footer>
+  </div>
 </template>
