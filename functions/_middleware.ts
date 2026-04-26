@@ -1,7 +1,7 @@
 // 全局中间件：注入 requestId、安全 headers、限制 POST body 大小。
 // 与 Express 后端 server/index.mjs 行为对齐。
 
-import { jsonError } from './_lib'
+import { jsonError } from './_lib.ts'
 
 const MAX_BODY_BYTES = 64 * 1024
 

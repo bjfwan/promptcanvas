@@ -11,7 +11,7 @@ import {
   resolveOpenAIError,
   validatePayload,
 } from '../../../server/lib.mjs'
-import { jsonError } from '../../_lib'
+import { jsonError } from '../../_lib.ts'
 
 interface Env {
   OPENAI_API_KEY: string

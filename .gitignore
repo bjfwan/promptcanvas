@@ -17,6 +17,7 @@ Thumbs.db
 
 # Cloudflare Wrangler
 .wrangler/
+.dev.vars
 
 # Playwright artifacts
 .playwright-mcp/

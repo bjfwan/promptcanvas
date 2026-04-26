@@ -6,12 +6,18 @@
   "scripts": {
     "dev": "vite",
     "dev:backend": "node --watch server/index.mjs",
+    "dev:pages": "wrangler pages dev -- npm run dev",
     "backend": "node server/index.mjs",
     "start": "node server/index.mjs",
     "check:backend": "node --check server/index.mjs && node --test server/*.test.mjs",
     "test:backend": "node --test server/*.test.mjs",
+    "test:functions": "node --test functions/__tests__/*.test.mjs",
+    "test:all": "npm run test:backend && npm run test:functions",
+    "check:functions": "tsc --noEmit -p functions/tsconfig.json",
+    "check:all": "npm run check:backend && npm run check:functions && vue-tsc --noEmit",
     "build": "vue-tsc --noEmit && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "preview:pages": "npm run build && wrangler pages dev dist"
   },
   "dependencies": {
     "@vitejs/plugin-vue": "^5.2.1",
@@ -23,10 +29,12 @@
     "vue": "^3.5.13"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260426.1",
     "autoprefixer": "^10.4.20",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.7.2",
-    "vue-tsc": "^2.2.0"
+    "vue-tsc": "^2.2.0",
+    "wrangler": "^3.90.0"
   }
 }

@@ -34,23 +34,9 @@ npm install
 copy .env.example .env
 ```
 
-如果后端运行在 `http://localhost:8787`，保持：
-
-```env
-VITE_API_BASE_URL=http://localhost:8787
-OPENAI_API_KEY=sk-xxxx
-PORT=8787
-CLIENT_ORIGIN=http://localhost:5173
-OPENAI_IMAGE_MODEL=gpt-image-1
-OPENAI_TIMEOUT_MS=120000
-RATE_LIMIT_WINDOW_MS=600000
-RATE_LIMIT_MAX=20
-ACCESS_LOG=true
-```
+`.env` 服务于本地 Express 后端（`npm run dev:backend`）。前端走 Vite 代理（`vite.config.ts` 已把 `/api` 转发到 `localhost:8787`），所以 `VITE_API_BASE_URL` **保持为空**即可，前端默认请求同源相对路径。仅在前后端部署到不同域名时才设置完整 URL。
 
 `ACCESS_LOG=false` 可关闭访问日志输出。`/api/health` 会返回 `version` 和 `uptimeSeconds`，方便容器/反向代理做健康检查。
-
-如果前后端部署在同一个域名下，可以不设置 `VITE_API_BASE_URL`，前端会请求当前域名下的 `/api/images/generate`。
 
 ## 启动开发环境
 
@@ -141,10 +127,37 @@ GET /api/health
 }
 ```
 
+## Cloudflare Pages 部署
+
+仓库已经把后端切成 Cloudflare Pages Functions（`functions/api/...`），同时保留了本地 Express 体验。
+
+本地预览 Pages Functions（推荐先 `npm install`，确保 `wrangler` 装好）：
+
+```bash
+copy .dev.vars.example .dev.vars   # 填入真实 OPENAI_API_KEY
+npm run dev:pages                  # wrangler 接管 /api/*，转发其他路径给 Vite
+```
+
+构建后用 wrangler 直接服务静态产物：
+
+```bash
+npm run preview:pages              # 等价于 npm run build && wrangler pages dev dist
+```
+
+部署到 Cloudflare Pages 的完整流程（含域名绑定与 WAF 速率限制）见：
+[`docs/DEPLOY_CLOUDFLARE.md`](./docs/DEPLOY_CLOUDFLARE.md)。
+
+部署架构要点：
+
+- 同源部署：前端 `dist/` 与 `functions/api/*` 由 Pages 一起服务，无需 CORS。
+- 密钥仅在 Cloudflare Dashboard 注入，前端任何 `VITE_*` 变量都会被打包公开，**不能**放 `OPENAI_API_KEY`。
+- 速率限制由 Cloudflare WAF 在 Dashboard 配置，函数层不再实现内存版。
+- `.dev.vars` 仅本地 wrangler 使用，已在 `.gitignore`。
+
 ## 注意事项
 
-- OpenAI API Key 只能放在后端，不能放到 Vue 前端。
-- 后端开发环境需要允许 `http://localhost:5173` 跨域访问。
+- OpenAI API Key 只能放在后端 / Cloudflare 环境变量里，不能放到 Vue 前端。
+- 后端开发环境需要允许 `http://localhost:5173` 跨域访问（仅本地 Express 模式）。
 - 前端同时兼容后端返回图片 URL 或 base64 图片。
 - 生成历史只保存在浏览器本地 `localStorage`，不会上传到后端。
 - PowerShell 如果遇到 `npm.ps1` 签名限制，可以改用 `npm.cmd run ...`。

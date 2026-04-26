@@ -1,0 +1,3 @@
+# SPA 兜底：未匹配到的前端路径回退到 index.html。
+# /api/* 由 functions/ 优先处理，不会进入此规则。
+/*    /index.html   200
