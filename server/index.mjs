@@ -26,6 +26,7 @@ const packageVersion = process.env.npm_package_version || '0.0.0'
 const port = Number(process.env.PORT || 8787)
 const model = process.env.OPENAI_IMAGE_MODEL || 'gpt-image-1'
 const openaiTimeoutMs = parsePositiveInteger(process.env.OPENAI_TIMEOUT_MS, 120_000)
+const openaiBaseURL = (process.env.OPENAI_BASE_URL || '').trim()
 const accessLogEnabled = String(process.env.ACCESS_LOG ?? 'true').trim().toLowerCase() !== 'false'
 const rateLimitWindowMs = Number(process.env.RATE_LIMIT_WINDOW_MS || 10 * 60 * 1000)
 const rateLimitMax = Number(process.env.RATE_LIMIT_MAX || 20)
@@ -179,6 +180,7 @@ export function createApp(options = {}) {
   const config = {
     apiKey: options.apiKey ?? process.env.OPENAI_API_KEY,
     accessLog: options.accessLog ?? accessLogEnabled,
+    baseURL: options.baseURL ?? openaiBaseURL,
     clientOrigins: options.clientOrigins ?? clientOrigins,
     logger: options.logger ?? console,
     model: options.model ?? model,
@@ -191,10 +193,16 @@ export function createApp(options = {}) {
 
   function getOpenAIClient() {
     if (!cachedOpenAIClient) {
-      cachedOpenAIClient = new OpenAI({
+      const clientOptions = {
         apiKey: config.apiKey,
         timeout: config.openaiTimeoutMs,
-      })
+      }
+
+      if (config.baseURL) {
+        clientOptions.baseURL = config.baseURL
+      }
+
+      cachedOpenAIClient = new OpenAI(clientOptions)
     }
 
     return cachedOpenAIClient

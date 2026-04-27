@@ -192,6 +192,41 @@ test('returns 504 when upstream fetch aborts (timeout)', async () => {
   assert.equal(data.error.message, 'OpenAI 响应超时，请稍后再试')
 })
 
+test('respects OPENAI_BASE_URL for OpenAI-compatible proxies', async () => {
+  const captured = []
+
+  mockFetch(async (url, init) => {
+    captured.push({ url, init })
+    return new Response(JSON.stringify({
+      data: [{ b64_json: 'AAAA' }],
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  })
+
+  const response = await onRequestPost(createContext({
+    body: validBody(),
+    env: { OPENAI_BASE_URL: 'https://api.chshapi.cn/v1/' },
+  }))
+
+  assert.equal(response.status, 200)
+  assert.equal(captured[0].url, 'https://api.chshapi.cn/v1/images/generations')
+})
+
+test('falls back to default OpenAI base url when OPENAI_BASE_URL is blank', async () => {
+  const captured = []
+
+  mockFetch(async (url) => {
+    captured.push(url)
+    return new Response(JSON.stringify({ data: [{ b64_json: 'AAAA' }] }), { status: 200 })
+  })
+
+  await onRequestPost(createContext({
+    body: validBody(),
+    env: { OPENAI_API_KEY: 'sk-test', OPENAI_BASE_URL: '   ' },
+  }))
+
+  assert.equal(captured[0], 'https://api.openai.com/v1/images/generations')
+})
+
 test('preserves requestId from context.data on success', async () => {
   mockFetch(async () => new Response(JSON.stringify({
     data: [{ url: 'https://example.com/x.png' }],
