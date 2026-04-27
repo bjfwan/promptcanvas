@@ -8,19 +8,27 @@
   }
 
   html {
+    height: 100%;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
   }
 
   body {
     margin: 0;
     min-width: 320px;
-    min-height: 100vh;
+    min-height: 100dvh;
     background: #f1e9dc;
     color: #1a1612;
     font-family: 'Inter Tight', system-ui, -apple-system, 'Segoe UI', sans-serif;
     font-feature-settings: 'ss01', 'cv11';
+    overflow-x: hidden;
+  }
+
+  #app {
+    min-height: 100dvh;
   }
 
   button,
@@ -29,6 +37,11 @@
   textarea {
     font: inherit;
     color: inherit;
+  }
+
+  button,
+  a {
+    -webkit-tap-highlight-color: transparent;
   }
 
   ::selection {
@@ -185,6 +198,11 @@
 
   .animate-progress-sweep {
     animation: progress-sweep 1.6s linear infinite;
+  }
+
+  .touch-scroll-y {
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
   }
 
   .canvas-frame {

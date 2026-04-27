@@ -325,6 +325,7 @@ defineExpose({ focusInput })
   letter-spacing: 0.005em;
   /* 超出上限时允许在 textarea 内部滚动（触屏可拖动） */
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   scrollbar-width: thin;
   scrollbar-color: rgba(26, 22, 18, 0.18) transparent;
   overscroll-behavior: contain;

@@ -102,7 +102,7 @@ onBeforeUnmount(() => {
           </button>
         </header>
 
-        <div class="flex-1 overflow-y-auto px-5 pb-[max(env(safe-area-inset-bottom,0px),1.25rem)] pt-4">
+        <div class="touch-scroll-y flex-1 overflow-y-auto px-5 pb-[max(env(safe-area-inset-bottom,0px),1.25rem)] pt-4">
           <ul class="grid grid-cols-2 gap-2.5">
             <li v-for="item in styleOptions" :key="item.value">
               <button

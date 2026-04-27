@@ -110,7 +110,7 @@ onBeforeUnmount(() => {
         </header>
 
         <div
-          class="flex-1 overflow-y-auto px-5 pb-[max(env(safe-area-inset-bottom,0px),1.25rem)] pt-4"
+          class="touch-scroll-y flex-1 overflow-y-auto px-5 pb-[max(env(safe-area-inset-bottom,0px),1.25rem)] pt-4"
         >
           <slot />
         </div>

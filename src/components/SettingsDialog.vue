@@ -218,7 +218,7 @@ onBeforeUnmount(() => {
               </button>
             </header>
 
-            <div class="max-h-[70dvh] space-y-5 overflow-y-auto px-6 py-5">
+            <div class="touch-scroll-y max-h-[70dvh] space-y-5 overflow-y-auto px-6 py-5">
               <section
                 class="rounded-2xl border border-line bg-paper-soft/60 p-4"
                 :class="!provider.isConfigured.value && 'ring-1 ring-amber-400/40'"

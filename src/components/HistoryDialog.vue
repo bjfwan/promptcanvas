@@ -101,7 +101,7 @@ onBeforeUnmount(() => {
               </div>
             </header>
 
-            <div class="max-h-[70dvh] overflow-y-auto px-6 py-5">
+            <div class="touch-scroll-y max-h-[70dvh] overflow-y-auto px-6 py-5">
               <ul v-if="history.length" class="space-y-2">
                 <li
                   v-for="item in history"

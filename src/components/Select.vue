@@ -478,12 +478,14 @@ onBeforeUnmount(() => {
 .select-list {
   max-height: inherit;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   padding: 0.375rem;
   margin: 0;
   list-style: none;
   outline: none;
   scrollbar-width: thin;
   scrollbar-color: rgba(26, 22, 18, 0.22) transparent;
+  touch-action: pan-y;
 }
 
 .select-list::-webkit-scrollbar {

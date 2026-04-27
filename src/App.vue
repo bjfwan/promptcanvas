@@ -812,7 +812,7 @@ onUnmounted(() => {
     </footer>
 
     <!-- 移动端：ChatGPT 式聊天画布（< lg） -->
-    <div class="flex min-h-0 flex-1 flex-col lg:hidden">
+    <div class="flex min-h-0 flex-1 flex-col overflow-hidden lg:hidden">
       <ChatStream
         :messages="messages"
         :bottom-padding="180"
