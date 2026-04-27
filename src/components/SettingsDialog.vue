@@ -4,6 +4,7 @@ import Icon from './Icon.vue'
 import Select, { type SelectOption } from './Select.vue'
 import { customModelSentinel, modelOptions, qualityOptions } from '../presets'
 import { useProviderConfig } from '../composables/useProviderConfig'
+import { ApiRequestError, testProvider } from '../api'
 import type { GenerateImageRequest, ImageQuality } from '../types'
 
 type OutputFormat = NonNullable<GenerateImageRequest['outputFormat']>
@@ -19,6 +20,7 @@ const emit = defineEmits<{
   (e: 'export'): void
   (e: 'reset'): void
   (e: 'reset-provider'): void
+  (e: 'test-result', payload: { ok: boolean; message: string; code?: string }): void
 }>()
 
 const negativePrompt = defineModel<string>('negativePrompt', { required: true })
@@ -32,11 +34,88 @@ const customModel = defineModel<string>('customModel', { required: true })
 const provider = useProviderConfig()
 const showApiKey = ref(false)
 
+type TestStatus = 'idle' | 'testing' | 'success' | 'error'
+const testStatus = ref<TestStatus>('idle')
+const testMessage = ref('')
+const testHint = ref('')
+
 function handleResetProvider() {
   provider.reset()
   showApiKey.value = false
+  testStatus.value = 'idle'
+  testMessage.value = ''
+  testHint.value = ''
   emit('reset-provider')
 }
+
+async function handleTestProvider() {
+  if (testStatus.value === 'testing') return
+
+  const baseUrl = (provider.state.baseUrl ?? '').trim()
+  const apiKey = (provider.state.apiKey ?? '').trim()
+
+  if (!baseUrl || !apiKey) {
+    testStatus.value = 'error'
+    testMessage.value = '请先填写 API 端点和 API Key'
+    testHint.value = ''
+    emit('test-result', { ok: false, message: testMessage.value })
+    return
+  }
+
+  testStatus.value = 'testing'
+  testMessage.value = `正在请求 ${baseUrl.replace(/\/+$/, '')}/models ...`
+  testHint.value = ''
+
+  try {
+    const result = await testProvider({ baseUrl, apiKey })
+    testStatus.value = 'success'
+    testMessage.value = result.message
+    testHint.value = '可以开始生成图片了'
+    emit('test-result', { ok: true, message: result.message })
+  } catch (error) {
+    testStatus.value = 'error'
+    if (error instanceof ApiRequestError) {
+      testMessage.value = error.message
+      testHint.value = inferErrorHint(error)
+      emit('test-result', { ok: false, message: error.message, code: error.code })
+    } else if (error instanceof Error) {
+      testMessage.value = error.message
+      testHint.value = ''
+      emit('test-result', { ok: false, message: error.message })
+    } else {
+      testMessage.value = '测试失败'
+      testHint.value = ''
+      emit('test-result', { ok: false, message: '测试失败' })
+    }
+  }
+}
+
+function inferErrorHint(error: ApiRequestError): string {
+  if (error.code === 'NETWORK_ERROR') {
+    return '中转站可能不允许浏览器跨域调用（缺少 CORS 头），建议换一个支持浏览器直连的服务商'
+  }
+  if (error.code === 'PROVIDER_NOT_CONFIGURED') {
+    return ''
+  }
+  if (error.code === 'OPENAI_REQUEST_FAILED' && /API Key/.test(error.message)) {
+    return '请检查 API Key 是否复制完整，以及它对应的 baseUrl 是否一致'
+  }
+  if (error.code === 'RATE_LIMITED') {
+    return '稍等几秒再点一次'
+  }
+  return ''
+}
+
+watch(
+  () => `${provider.state.baseUrl}::${provider.state.apiKey}`,
+  () => {
+    if (testStatus.value === 'success' || testStatus.value === 'error') {
+      testStatus.value = 'idle'
+      testMessage.value = ''
+      testHint.value = ''
+    }
+  },
+)
 
 const formatOptions: SelectOption<OutputFormat>[] = [
   { value: 'png', label: 'PNG', hint: '无损 · 支持透明' },
@@ -190,7 +269,20 @@ onBeforeUnmount(() => {
                   </div>
                 </div>
 
-                <div class="mt-3 flex items-center justify-end">
+                <div class="mt-3 flex flex-wrap items-center justify-between gap-2">
+                  <button
+                    type="button"
+                    class="btn-quiet text-[11px]"
+                    :disabled="!provider.state.baseUrl || !provider.state.apiKey || testStatus === 'testing'"
+                    @click="handleTestProvider"
+                  >
+                    <Icon
+                      :name="testStatus === 'testing' ? 'refresh' : 'pulse'"
+                      :size="12"
+                      :class="testStatus === 'testing' ? 'animate-spin' : ''"
+                    />
+                    {{ testStatus === 'testing' ? '测试中…' : '测试连接' }}
+                  </button>
                   <button
                     type="button"
                     class="btn-quiet text-[11px]"
@@ -200,6 +292,30 @@ onBeforeUnmount(() => {
                     <Icon name="trash" :size="12" />
                     清除凭据
                   </button>
+                </div>
+
+                <div
+                  v-if="testMessage"
+                  class="mt-3 rounded-xl border px-3 py-2 text-[11px] leading-[1.6]"
+                  :class="{
+                    'border-line bg-paper-soft/60 text-muted': testStatus === 'testing',
+                    'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300': testStatus === 'success',
+                    'border-accent/40 bg-accent/[0.08] text-accent': testStatus === 'error',
+                  }"
+                  role="status"
+                  aria-live="polite"
+                >
+                  <p class="flex items-center gap-1.5 font-medium">
+                    <Icon
+                      :name="testStatus === 'success' ? 'check' : testStatus === 'error' ? 'warning' : 'refresh'"
+                      :size="12"
+                      :class="testStatus === 'testing' ? 'animate-spin' : ''"
+                    />
+                    <span>{{ testMessage }}</span>
+                  </p>
+                  <p v-if="testHint" class="mt-1 text-[10px] leading-[1.5] opacity-80">
+                    {{ testHint }}
+                  </p>
                 </div>
               </section>
 

@@ -163,6 +163,96 @@ export async function checkHealth(): Promise<HealthResponse> {
   }
 }
 
+export interface TestProviderResult {
+  ok: true
+  durationMs: number
+  modelCount?: number
+  message: string
+}
+
+export async function testProvider(override?: {
+  baseUrl?: string
+  apiKey?: string
+}): Promise<TestProviderResult> {
+  const provider = snapshotProviderConfig()
+  const apiKey = (override?.apiKey ?? provider.apiKey ?? '').trim()
+  const baseUrl = (override?.baseUrl ?? provider.baseUrl ?? '').trim().replace(/\/+$/, '')
+  const requestId = generateRequestId()
+
+  if (!apiKey || !baseUrl) {
+    throw new ApiRequestError(
+      '请先填写 API 端点和 API Key',
+      PROVIDER_NOT_CONFIGURED,
+      requestId,
+    )
+  }
+
+  if (apiKey === 'sk-xxxx') {
+    throw new ApiRequestError(
+      'apiKey 不能是占位值 sk-xxxx',
+      'INVALID_REQUEST',
+      requestId,
+    )
+  }
+
+  let parsedBaseUrl: URL
+  try {
+    parsedBaseUrl = new URL(baseUrl)
+  } catch {
+    throw new ApiRequestError('baseUrl 不是合法 URL', 'INVALID_REQUEST', requestId)
+  }
+  if (parsedBaseUrl.protocol !== 'https:' && parsedBaseUrl.protocol !== 'http:') {
+    throw new ApiRequestError('baseUrl 必须是 http(s) 协议', 'INVALID_REQUEST', requestId)
+  }
+
+  const start = typeof performance !== 'undefined' ? performance.now() : Date.now()
+  let response: Response
+  try {
+    response = await fetch(`${baseUrl}/models`, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+      },
+    })
+  } catch (error) {
+    const err = error as Error
+    const mapped = resolveOpenAIError({
+      name: err?.name,
+      message: err?.message,
+    })
+    throw new ApiRequestError(mapped.message, mapped.code, requestId)
+  }
+
+  const now = typeof performance !== 'undefined' ? performance.now() : Date.now()
+  const durationMs = Math.round(now - start)
+
+  if (!response.ok) {
+    const errorBody = await readJson<UpstreamErrorBody>(response)
+    const mapped = resolveOpenAIError({
+      status: response.status,
+      code: errorBody?.error?.code,
+      message: errorBody?.error?.message,
+    })
+    throw new ApiRequestError(
+      `${mapped.message}（HTTP ${response.status}）`,
+      mapped.code,
+      requestId,
+    )
+  }
+
+  const data = await readJson<{ data?: unknown[] }>(response)
+  const modelCount = Array.isArray(data?.data) ? data.data.length : undefined
+
+  return {
+    ok: true,
+    durationMs,
+    modelCount,
+    message: modelCount !== undefined
+      ? `连接成功 · ${modelCount} 个模型 · ${durationMs}ms`
+      : `连接成功 · ${durationMs}ms`,
+  }
+}
+
 export function resolveImageSource(image: {
   url?: string | null
   b64Json?: string | null

@@ -505,7 +505,7 @@ async function refreshHealth() {
 
     healthStatus.value = 'online'
     healthRequestId.value = health.requestId || ''
-    healthMessage.value = health.model ? `已连接 · ${health.model}` : '已连接服务商'
+    healthMessage.value = health.model ? `已连接 · ${health.model}` : '已配置 · 点击「设置」中的「测试连接」验证'
   } catch (error) {
     healthStatus.value = 'offline'
 
@@ -517,6 +517,20 @@ async function refreshHealth() {
 
     healthRequestId.value = ''
     healthMessage.value = '未配置 API 服务商，请打开「设置」填写 baseUrl 与 Key'
+  }
+}
+
+function handleProviderTestResult(payload: { ok: boolean; message: string; code?: string }) {
+  if (payload.ok) {
+    healthStatus.value = 'online'
+    healthMessage.value = payload.message
+    healthRequestId.value = ''
+    toast.success('API 连接正常', payload.message)
+  } else {
+    healthStatus.value = 'offline'
+    healthMessage.value = payload.message
+    healthRequestId.value = ''
+    toast.error('API 连接失败', payload.message)
   }
 }
 
@@ -699,6 +713,7 @@ onUnmounted(() => {
       @export="exportCurrentConfig"
       @reset="resetDraft"
       @reset-provider="toast.info('已清除 API 凭据', '请重新填写以继续生成')"
+      @test-result="handleProviderTestResult"
     />
 
     <HistoryDialog
