@@ -219,24 +219,34 @@ function isImageReady(image: GeneratedImage, index: number) {
             :aria-label="`查看第 ${index + 1} 张图片`"
             @click="openImage(index)"
           >
-            <div class="grid place-items-center" :class="previewFrameClass">
-              <img
-                v-if="isImageReady(image, index)"
-                :src="imageSource(image)"
-                :alt="`生成图片 ${index + 1}`"
-                loading="eager"
-                decoding="async"
-                class="h-full w-full object-contain"
-                @load="markImageReady(image, index)"
-              />
-              <div v-else class="chat-image-placeholder" :class="previewFrameClass">
+            <div class="relative grid place-items-center bg-paper/45" :class="previewFrameClass">
+              <div
+                v-if="!isImageReady(image, index)"
+                class="chat-image-placeholder absolute inset-0"
+                aria-hidden="true"
+              >
                 <div class="chat-image-placeholder__glow"></div>
                 <div class="chat-image-placeholder__loader">
                   <span></span>
                   <span></span>
                   <span></span>
                 </div>
+                <div class="chat-image-placeholder__caption">
+                  <span class="skeleton block h-3 w-[45%] rounded-full"></span>
+                  <span class="skeleton block h-3 w-full rounded-full"></span>
+                </div>
               </div>
+              <img
+                :src="imageSource(image)"
+                :alt="`生成图片 ${index + 1}`"
+                :loading="index < 2 ? 'eager' : 'lazy'"
+                :fetchpriority="index === 0 ? 'high' : 'auto'"
+                decoding="async"
+                class="h-full w-full object-contain transition duration-500 will-change-transform"
+                :class="isImageReady(image, index) ? 'opacity-100 scale-100' : 'opacity-0 scale-[1.015]'"
+                @load="markImageReady(image, index)"
+                @error="markImageReady(image, index)"
+              />
             </div>
             <span
               class="pointer-events-none absolute inset-x-2 bottom-2 flex items-center justify-between rounded-xl bg-ink/60 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.18em] text-paper opacity-0 backdrop-blur transition group-hover:opacity-100"
@@ -362,6 +372,11 @@ function isImageReady(image: GeneratedImage, index: number) {
 }
 
 .chat-image-placeholder {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 0.75rem;
+  pointer-events: none;
   background: linear-gradient(180deg, rgba(253, 248, 237, 0.9), rgba(241, 233, 220, 0.58));
 }
 
@@ -377,6 +392,7 @@ function isImageReady(image: GeneratedImage, index: number) {
 .chat-image-placeholder__loader {
   display: inline-flex;
   align-items: center;
+  align-self: center;
   gap: 6px;
   padding: 0.55rem 0.8rem;
   border-radius: 999px;
@@ -398,6 +414,12 @@ function isImageReady(image: GeneratedImage, index: number) {
 
 .chat-image-placeholder__loader span:nth-child(3) {
   animation-delay: 0.28s;
+}
+
+.chat-image-placeholder__caption {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
 }
 
 .chat-action-chip {
@@ -455,10 +477,78 @@ function isImageReady(image: GeneratedImage, index: number) {
   font-weight: 500;
 }
 
+@keyframes chat-pending-scan {
+  0% {
+    transform: translateY(-36%) scale(0.94);
+    opacity: 0;
+  }
+
+  18% {
+    opacity: 1;
+  }
+
+  72% {
+    opacity: 0.8;
+  }
+
+  100% {
+    transform: translateY(170%) scale(1.08);
+    opacity: 0;
+  }
+}
+
+@keyframes chat-pending-bars {
+  0%,
+  100% {
+    transform: scaleY(0.42);
+    opacity: 0.5;
+  }
+
+  50% {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+}
+
+@keyframes chat-pending-ring {
+  0% {
+    transform: scale(0.62);
+    opacity: 0;
+  }
+
+  18% {
+    opacity: 0.85;
+  }
+
+  100% {
+    transform: scale(1.26);
+    opacity: 0;
+  }
+}
+
+@keyframes chat-image-loader {
+  0%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.35;
+  }
+
+  50% {
+    transform: translateY(-3px);
+    opacity: 1;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .chat-action-chip,
-  .chat-retry-chip {
+  .chat-retry-chip,
+  .chat-pending-frame__scan::before,
+  .chat-pending-bars span,
+  .chat-pending-orb__ring,
+  .chat-image-placeholder__loader span,
+  .chat-bubble-assistant img {
     transition: none;
+    animation: none;
   }
 }
 </style>

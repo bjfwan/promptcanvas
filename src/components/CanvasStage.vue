@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import Icon from './Icon.vue'
 import { resolveImageSource } from '../api'
 import type { GeneratedImage, ImageSize } from '../types'
@@ -33,6 +33,7 @@ const emit = defineEmits<{
 
 const activeImage = computed(() => props.images[props.activeImageIndex])
 const activeSrc = computed(() => (activeImage.value ? resolveImageSource(activeImage.value) : ''))
+const revealedImageKeys = ref<Record<string, boolean>>({})
 
 const orient = computed<'portrait' | 'landscape' | 'square'>(() => {
   if (props.size === '1024x1536') return 'portrait'
@@ -41,6 +42,22 @@ const orient = computed<'portrait' | 'landscape' | 'square'>(() => {
 })
 
 const elapsedLabel = computed(() => `${props.elapsedSeconds.toString().padStart(2, '0')}s`)
+
+function imageSource(image: GeneratedImage) {
+  return resolveImageSource(image)
+}
+
+function imageStateKey(image: GeneratedImage, index: number) {
+  return `${image.id || index}:${imageSource(image)}`
+}
+
+function markImageReady(image: GeneratedImage, index: number) {
+  revealedImageKeys.value[imageStateKey(image, index)] = true
+}
+
+function isImageReady(image: GeneratedImage, index: number) {
+  return !!revealedImageKeys.value[imageStateKey(image, index)]
+}
 </script>
 
 <template>
@@ -136,12 +153,28 @@ const elapsedLabel = computed(() => `${props.elapsedSeconds.toString().padStart(
           aria-label="放大查看图片"
           @click="emit('open-lightbox', activeImageIndex)"
         >
+          <div
+            v-if="!isImageReady(activeImage, activeImageIndex)"
+            class="canvas-image-placeholder absolute inset-0"
+            aria-hidden="true"
+          >
+            <div class="canvas-image-placeholder__glow"></div>
+            <div class="canvas-image-placeholder__loader">
+              <span></span>
+              <span></span>
+              <span></span>
+            </div>
+          </div>
           <img
             :src="activeSrc"
             alt="生成图片"
-            loading="lazy"
+            loading="eager"
+            fetchpriority="high"
             decoding="async"
-            class="max-h-full max-w-full rounded-xl object-contain shadow-paper-1 transition duration-500 group-hover:scale-[1.01]"
+            class="max-h-full max-w-full rounded-xl object-contain shadow-paper-1 transition duration-500 will-change-transform group-hover:scale-[1.01]"
+            :class="isImageReady(activeImage, activeImageIndex) ? 'opacity-100 scale-100' : 'opacity-0 scale-[1.01]'"
+            @load="markImageReady(activeImage, activeImageIndex)"
+            @error="markImageReady(activeImage, activeImageIndex)"
           />
         </button>
 
@@ -219,11 +252,14 @@ const elapsedLabel = computed(() => `${props.elapsedSeconds.toString().padStart(
           @click="emit('select', index)"
         >
           <img
-            :src="resolveImageSource(image)"
+            :src="imageSource(image)"
             alt=""
-            loading="lazy"
+            :loading="Math.abs(activeImageIndex - index) <= 1 ? 'eager' : 'lazy'"
+            :fetchpriority="activeImageIndex === index ? 'high' : 'auto'"
             decoding="async"
             class="aspect-square w-16 rounded-md object-cover sm:w-20"
+            @load="markImageReady(image, index)"
+            @error="markImageReady(image, index)"
           />
         </button>
       </div>
@@ -290,3 +326,69 @@ const elapsedLabel = computed(() => `${props.elapsedSeconds.toString().padStart(
     </div>
   </section>
 </template>
+
+<style scoped>
+.canvas-image-placeholder {
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(253, 248, 237, 0.94), rgba(241, 233, 220, 0.62));
+}
+
+.canvas-image-placeholder__glow {
+  position: absolute;
+  width: min(44%, 220px);
+  height: min(44%, 220px);
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(253, 248, 237, 0.96), rgba(253, 248, 237, 0) 70%);
+  filter: blur(8px);
+}
+
+.canvas-image-placeholder__loader {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0.7rem 0.95rem;
+  border-radius: 999px;
+  background: rgba(253, 248, 237, 0.88);
+  box-shadow: 0 24px 40px -30px rgba(26, 22, 18, 0.5);
+}
+
+.canvas-image-placeholder__loader span {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(26, 22, 18, 0.58);
+  animation: canvas-image-loader 1.15s ease-in-out infinite;
+}
+
+.canvas-image-placeholder__loader span:nth-child(2) {
+  animation-delay: 0.14s;
+}
+
+.canvas-image-placeholder__loader span:nth-child(3) {
+  animation-delay: 0.28s;
+}
+
+@keyframes canvas-image-loader {
+  0%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.35;
+  }
+
+  50% {
+    transform: translateY(-3px);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .canvas-image-placeholder__loader span,
+  .canvas-frame img {
+    animation: none;
+    transition: none;
+  }
+}
+</style>
