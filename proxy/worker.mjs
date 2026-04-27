@@ -95,12 +95,20 @@ export default {
       }
     }
 
+    let upstreamBody = undefined
+    if (request.method !== 'GET' && request.method !== 'HEAD') {
+      // Read body as ArrayBuffer to preserve multipart/form-data boundary intact.
+      // Passing request.body (ReadableStream) directly can corrupt the boundary
+      // in Cloudflare Workers, causing upstream to fail with 500 on /images/edits.
+      upstreamBody = await request.arrayBuffer()
+    }
+
     let upstreamResp
     try {
       upstreamResp = await fetch(upstreamUrl.toString(), {
         method: request.method,
         headers: forwardHeaders,
-        body: request.method === 'GET' || request.method === 'HEAD' ? undefined : request.body,
+        body: upstreamBody,
       })
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
