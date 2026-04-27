@@ -38,6 +38,8 @@ copy .env.example .env
 
 `ACCESS_LOG=false` 可关闭访问日志输出。`/api/health` 会返回 `version` 和 `uptimeSeconds`，方便容器/反向代理做健康检查。
 
+使用 OpenAI 中转站时，把 `OPENAI_BASE_URL` 设成中转站的完整 base URL（必须带 `/v1`，例如 `https://api.chshapi.cn/v1`）。本地 Express 走 OpenAI Node SDK 的 `baseURL` 选项，Cloudflare Pages Functions 直接用这个地址拼接 `/images/generations`。Cloudflare 部署时把变量写到 Pages → Settings → Environment variables。
+
 ## 启动开发环境
 
 启动后端：

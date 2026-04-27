@@ -15,8 +15,16 @@ import { jsonError } from '../../_lib.ts'
 
 interface Env {
   OPENAI_API_KEY: string
+  OPENAI_BASE_URL?: string
   OPENAI_IMAGE_MODEL?: string
   OPENAI_TIMEOUT_MS?: string
+}
+
+const DEFAULT_OPENAI_BASE_URL = 'https://api.openai.com/v1'
+
+function resolveBaseUrl(envBaseUrl: string | undefined): string {
+  const trimmed = (envBaseUrl ?? '').trim().replace(/\/+$/, '')
+  return trimmed || DEFAULT_OPENAI_BASE_URL
 }
 
 interface ValidatedPayload {
@@ -55,11 +63,12 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   const payload = validation.value
   const model = context.env.OPENAI_IMAGE_MODEL || 'gpt-image-1'
   const timeoutMs = parsePositiveInteger(context.env.OPENAI_TIMEOUT_MS, 120_000)
+  const baseUrl = resolveBaseUrl(context.env.OPENAI_BASE_URL)
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
 
   try {
-    const upstream = await fetch('https://api.openai.com/v1/images/generations', {
+    const upstream = await fetch(`${baseUrl}/images/generations`, {
       method: 'POST',
       signal: controller.signal,
       headers: {

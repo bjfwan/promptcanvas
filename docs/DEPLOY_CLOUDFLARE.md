@@ -33,10 +33,11 @@
    - `OPENAI_API_KEY` = `sk-...`（点 **Encrypt** 加密）
    - `OPENAI_IMAGE_MODEL` = `gpt-image-1`（明文）
    - `OPENAI_TIMEOUT_MS` = `120000`（明文）
+   - `OPENAI_BASE_URL`（可选明文）= 中转站完整 base URL（必须带 `/v1`，如 `https://api.chshapi.cn/v1`）；走官方 OpenAI 留空即可
 6. **Save and Deploy**。第一次会跑 1-2 分钟。
 7. 部署完成后会得到一个 `xxx.pages.dev` 临时域名，先打开这个域名验证：
    - 页面能加载
-   - 右上角显示"后端在线"
+   - 右上角显示“后端在线”
    - 控制台 Network 看到 `GET /api/health` → 200
 
 ## 4. 绑定自定义域名
