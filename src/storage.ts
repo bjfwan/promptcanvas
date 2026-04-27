@@ -1,7 +1,56 @@
 import type { GenerationHistoryItem } from './types'
 
 const historyKey = 'promptcanvas:generation-history'
+const draftKey = 'promptcanvas:draft-v1'
 const maxHistoryItems = 8
+
+export interface DraftPayload {
+  prompt?: string
+  negativePrompt?: string
+  style?: string
+  size?: string
+  count?: number
+  outputFormat?: string
+  quality?: string
+  creativity?: number
+  seed?: string
+}
+
+export function loadDraft(): DraftPayload | null {
+  try {
+    const raw = localStorage.getItem(draftKey)
+
+    if (!raw) {
+      return null
+    }
+
+    const parsed = JSON.parse(raw)
+
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed as DraftPayload
+    }
+
+    return null
+  } catch {
+    return null
+  }
+}
+
+export function saveDraft(draft: DraftPayload) {
+  try {
+    localStorage.setItem(draftKey, JSON.stringify(draft))
+  } catch {
+    // 存储不可用（隐私模式 / 容量超限）时静默忽略
+  }
+}
+
+export function clearDraft() {
+  try {
+    localStorage.removeItem(draftKey)
+  } catch {
+    // 同上
+  }
+}
 
 export function loadHistory(): GenerationHistoryItem[] {
   try {

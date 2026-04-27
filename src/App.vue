@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { ApiRequestError, checkHealth, generateImage, resolveImageSource } from './api'
 import { promptTemplates, qualityOptions, sizeOptions, styleOptions } from './presets'
-import { clearHistory, loadHistory, prependHistory } from './storage'
+import { clearDraft, clearHistory, loadDraft, loadHistory, prependHistory, saveDraft } from './storage'
 import type { GeneratedImage, GenerateImageRequest, GenerationHistoryItem, ImageQuality, ImageSize, ImageStyle, PromptTemplate } from './types'
 
 const defaultPrompt = '一只穿着复古宇航服的橘猫，站在月球摄影棚里，像 1970 年代科幻电影海报'
@@ -40,7 +40,51 @@ const tabs: Array<{ value: TabValue; label: string }> = [
 
 const activeTab = ref<TabValue>('compose')
 
+const restoredDraft = loadDraft()
+
+if (restoredDraft) {
+  if (typeof restoredDraft.prompt === 'string') prompt.value = restoredDraft.prompt
+  if (typeof restoredDraft.negativePrompt === 'string') negativePrompt.value = restoredDraft.negativePrompt
+  if (styleOptions.some((option) => option.value === restoredDraft.style)) style.value = restoredDraft.style as ImageStyle
+  if (sizeOptions.some((option) => option.value === restoredDraft.size)) size.value = restoredDraft.size as ImageSize
+  if (typeof restoredDraft.count === 'number' && Number.isInteger(restoredDraft.count) && restoredDraft.count >= 1 && restoredDraft.count <= 4) count.value = restoredDraft.count
+  if (restoredDraft.outputFormat === 'png' || restoredDraft.outputFormat === 'jpeg' || restoredDraft.outputFormat === 'webp') outputFormat.value = restoredDraft.outputFormat
+  if (qualityOptions.some((option) => option.value === restoredDraft.quality)) quality.value = restoredDraft.quality as ImageQuality
+  if (typeof restoredDraft.creativity === 'number' && restoredDraft.creativity >= 1 && restoredDraft.creativity <= 10) creativity.value = restoredDraft.creativity
+  if (typeof restoredDraft.seed === 'string') seed.value = restoredDraft.seed
+}
+
 let timerId: number | undefined
+let draftSaveTimer: number | undefined
+
+watch(
+  [prompt, negativePrompt, style, size, count, outputFormat, quality, creativity, seed],
+  () => {
+    if (draftSaveTimer) {
+      window.clearTimeout(draftSaveTimer)
+    }
+
+    draftSaveTimer = window.setTimeout(() => {
+      saveDraft({
+        prompt: prompt.value,
+        negativePrompt: negativePrompt.value,
+        style: style.value,
+        size: size.value,
+        count: count.value,
+        outputFormat: outputFormat.value,
+        quality: quality.value,
+        creativity: creativity.value,
+        seed: seed.value,
+      })
+    }, 400)
+  },
+)
+
+watch(activeTab, () => {
+  if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+})
 
 const selectedStyle = computed(() => styleOptions.find((item) => item.value === style.value))
 const selectedSize = computed(() => sizeOptions.find((item) => item.value === size.value))
@@ -184,6 +228,7 @@ function restoreHistory(item: GenerationHistoryItem) {
 }
 
 function resetDraft() {
+  clearDraft()
   prompt.value = defaultPrompt
   negativePrompt.value = defaultNegativePrompt
   style.value = 'poster'
@@ -279,14 +324,36 @@ async function refreshHealth() {
   }
 }
 
+function handleKeydown(event: KeyboardEvent) {
+  if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+    event.preventDefault()
+    void handleGenerate()
+  }
+}
+
 onMounted(() => {
   refreshHealth()
+  window.addEventListener('keydown', handleKeydown)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', handleKeydown)
+
+  if (timerId) {
+    window.clearInterval(timerId)
+    timerId = undefined
+  }
+
+  if (draftSaveTimer) {
+    window.clearTimeout(draftSaveTimer)
+    draftSaveTimer = undefined
+  }
 })
 </script>
 
 <template>
-  <div class="min-h-screen bg-paper text-ink">
-    <header class="sticky top-0 z-30 border-b border-line/80 bg-paper/85 backdrop-blur">
+  <div class="min-h-dvh bg-paper text-ink">
+    <header class="sticky top-0 z-30 border-b border-line/80 bg-paper/85 pt-[env(safe-area-inset-top)] backdrop-blur">
       <div class="mx-auto flex w-full max-w-[1440px] items-center justify-between gap-4 px-4 py-3.5 sm:px-6 lg:px-10 lg:py-4">
         <div class="flex items-center gap-3">
           <span class="grid h-9 w-9 place-items-center rounded-full border border-ink/25 font-display text-base">P</span>
@@ -299,26 +366,28 @@ onMounted(() => {
         <div class="flex items-center gap-2">
           <button
             type="button"
-            class="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-medium uppercase tracking-[0.16em] transition"
+            class="inline-flex items-center gap-2 rounded-full border px-3 py-2 text-[11px] font-medium uppercase tracking-[0.16em] transition sm:py-1.5"
             :class="{
               'border-line text-muted': healthStatus === 'checking',
               'border-line bg-cream text-ink hover:border-ink/40': healthStatus === 'online',
               'border-accent/40 bg-accent/[0.08] text-accent': healthStatus === 'offline',
             }"
             :title="healthMessage"
+            :aria-label="`后端状态：${healthStatus === 'checking' ? '检查中' : healthStatus === 'online' ? '在线' : '离线'}。点击重新检查。`"
             @click="refreshHealth"
           >
             <span
               class="h-1.5 w-1.5 rounded-full"
               :class="{
-                'animate-pulse bg-muted/60': healthStatus === 'checking',
+                'motion-safe:animate-pulse bg-muted/60': healthStatus === 'checking',
                 'bg-ink': healthStatus === 'online',
                 'bg-accent': healthStatus === 'offline',
               }"
+              aria-hidden="true"
             ></span>
             <span class="hidden sm:inline">{{ healthStatus === 'checking' ? '检查中' : healthStatus === 'online' ? '在线' : '离线' }}</span>
           </button>
-          <button type="button" class="rounded-full border border-line bg-cream px-3 py-1.5 text-[11px] font-medium uppercase tracking-[0.16em] text-muted transition hover:border-ink/30 hover:text-ink" @click="resetDraft">
+          <button type="button" class="rounded-full border border-line bg-cream px-3 py-2 text-[11px] font-medium uppercase tracking-[0.16em] text-muted transition hover:border-ink/30 hover:text-ink sm:py-1.5" aria-label="重置表单为默认值" @click="resetDraft">
             重置
           </button>
         </div>
@@ -428,7 +497,7 @@ onMounted(() => {
                 </div>
                 <div>
                   <label class="label mb-2">Seed</label>
-                  <input v-model="seed" class="field-input" placeholder="可选" />
+                  <input v-model="seed" class="field-input" placeholder="可选" autocomplete="off" spellcheck="false" />
                 </div>
               </div>
               <div>
@@ -441,17 +510,20 @@ onMounted(() => {
             </div>
           </details>
 
-          <button
-            type="submit"
-            :disabled="!canGenerate"
-            class="flex w-full items-center justify-between rounded-md bg-ink px-5 py-4 text-sm font-medium text-cream transition hover:bg-accent disabled:cursor-not-allowed disabled:bg-ink/40"
-          >
-            <span class="flex items-center gap-3">
-              <span class="font-display text-base italic">{{ isGenerating ? 'Composing' : 'Generate' }}</span>
-              <span v-if="isGenerating" class="font-mono text-[11px] tabular-nums text-cream/70">{{ elapsedSeconds }}s</span>
-            </span>
-            <span class="font-mono text-[10px] uppercase tracking-[0.22em] text-cream/65">↵ enter</span>
-          </button>
+          <div class="sticky bottom-0 -mx-4 border-t border-line/80 bg-paper/95 px-4 pb-[max(env(safe-area-inset-bottom),0.75rem)] pt-3 backdrop-blur sm:-mx-6 sm:px-6 lg:static lg:mx-0 lg:border-0 lg:bg-transparent lg:px-0 lg:pb-0 lg:pt-0 lg:backdrop-blur-none">
+            <button
+              type="submit"
+              :disabled="!canGenerate"
+              class="flex w-full items-center justify-between rounded-md bg-ink px-5 py-4 text-sm font-medium text-cream transition hover:bg-accent disabled:cursor-not-allowed disabled:bg-ink/40"
+              aria-keyshortcuts="Meta+Enter Control+Enter"
+            >
+              <span class="flex items-center gap-3">
+                <span class="font-display text-base italic">{{ isGenerating ? 'Composing' : 'Generate' }}</span>
+                <span v-if="isGenerating" class="font-mono text-[11px] tabular-nums text-cream/70">{{ elapsedSeconds }}s</span>
+              </span>
+              <span class="hidden font-mono text-[10px] uppercase tracking-[0.22em] text-cream/65 sm:inline" aria-hidden="true">⌘ ↵</span>
+            </button>
+          </div>
         </form>
       </section>
 
@@ -472,9 +544,9 @@ onMounted(() => {
           {{ errorMessage }}
         </div>
 
-        <div v-if="isGenerating" class="grid place-items-center rounded-xl border border-line bg-cream py-24 text-center">
+        <div v-if="isGenerating" class="grid place-items-center rounded-xl border border-line bg-cream py-24 text-center" role="status" aria-live="polite">
           <div>
-            <div class="mx-auto mb-6 h-px w-14 animate-pulse bg-ink"></div>
+            <div class="mx-auto mb-6 h-px w-14 motion-safe:animate-pulse bg-ink" aria-hidden="true"></div>
             <p class="font-display text-2xl italic tracking-tightish">composing</p>
             <p class="mt-2 font-mono text-[11px] uppercase tracking-[0.2em] text-muted">{{ elapsedSeconds }}s elapsed</p>
           </div>
@@ -483,7 +555,7 @@ onMounted(() => {
         <div v-else-if="activeImage" class="space-y-5">
           <div class="overflow-hidden rounded-xl border border-line bg-cream">
             <div class="grid place-items-center bg-paper p-3 sm:p-5" :class="previewFrameClass">
-              <img :src="activeImageSource" alt="生成图片" class="h-full max-h-[70vh] w-full object-contain" />
+              <img :src="activeImageSource" alt="生成图片" loading="lazy" decoding="async" class="h-full max-h-[70vh] w-full object-contain" />
             </div>
           </div>
 
@@ -503,7 +575,7 @@ onMounted(() => {
               :class="activeImageIndex === index ? 'border-ink' : 'border-line hover:border-ink/40'"
               @click="activeImageIndex = index"
             >
-              <img :src="resolveImageSource(image)" alt="" class="aspect-square w-16 rounded-sm object-cover sm:w-20" />
+              <img :src="resolveImageSource(image)" alt="" loading="lazy" decoding="async" class="aspect-square w-16 rounded-sm object-cover sm:w-20" />
             </button>
           </div>
 
@@ -513,10 +585,13 @@ onMounted(() => {
           </div>
         </div>
 
-        <div v-else class="grid place-items-center rounded-xl border border-dashed border-line bg-cream/40 py-24 text-center">
+        <div v-else class="grid place-items-center rounded-xl border border-dashed border-line bg-cream/40 py-20 text-center sm:py-24">
           <div class="max-w-sm px-6">
             <p class="font-display text-3xl italic tracking-tightish text-muted">an empty canvas</p>
-            <p class="mt-3 text-[13px] leading-6 text-muted">写下提示词，或者从右侧选一个模板，然后点击 Generate。</p>
+            <p class="mt-3 text-[13px] leading-6 text-muted">写下提示词，或者从库里选一个模板，然后点击 Generate。</p>
+            <button type="button" class="mt-6 inline-flex items-center gap-2 rounded-md border border-line bg-cream px-4 py-2.5 text-[13px] font-medium text-ink transition hover:border-ink/40 lg:hidden" @click="activeTab = 'compose'">
+              去写提示词 <span aria-hidden="true">→</span>
+            </button>
           </div>
         </div>
       </section>
@@ -589,7 +664,7 @@ onMounted(() => {
       </aside>
     </main>
 
-    <footer class="border-t border-line/70 py-6 text-center font-mono text-[10px] uppercase tracking-[0.24em] text-muted">
+    <footer class="border-t border-line/70 py-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] text-center font-mono text-[10px] uppercase tracking-[0.24em] text-muted">
       crafted local · {{ new Date().getFullYear() }}
     </footer>
   </div>
