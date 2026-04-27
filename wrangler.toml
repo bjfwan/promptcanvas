@@ -2,20 +2,7 @@ name = "promptcanvas"
 compatibility_date = "2024-12-01"
 pages_build_output_dir = "dist"
 
-# 本地预览：
-#   npm run dev:pages       — wrangler 接管 /api/*，其余转发给 Vite dev
-#   npm run preview:pages   — 构建后用 wrangler 直接服务 dist/
-#
-# 仓库存在 wrangler.toml 时，Cloudflare Pages 会以本文件为准管理变量，
-# Dashboard 控制面板只能新增 Secret（加密变量）。
-# 因此：
-#   - 明文变量（base url / model / timeout）写在下面的 [vars] 段
-#   - OPENAI_API_KEY 仍然只在 Cloudflare Dashboard 以 Secret 类型添加，
-#     绝不要提交到此文件
-
 [vars]
-# 中转站完整 base URL（必须带 /v1）；走官方 OpenAI 时改为 https://api.openai.com/v1
 OPENAI_BASE_URL = "https://api.chshapi.cn/v1"
 OPENAI_IMAGE_MODEL = "gpt-image-2"
-# Cloudflare Pages Functions 免费档单次执行 30s 上限，留 5s 余量
 OPENAI_TIMEOUT_MS = "25000"
