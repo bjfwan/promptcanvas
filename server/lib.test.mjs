@@ -56,11 +56,37 @@ test('validatePayload enforces field-level rules', () => {
     [validBody({ creativity: 11 }), 'creativity 必须是 1 到 10 的数字'],
     [validBody({ creativity: 'high' }), 'creativity 必须是 1 到 10 的数字'],
     [validBody({ seed: 'a'.repeat(121) }), 'seed 不能超过 120 个字符'],
+    [validBody({ apiKey: 123 }), 'apiKey 必须是字符串'],
+    [validBody({ apiKey: 'a'.repeat(201) }), 'apiKey 不能超过 200 个字符'],
+    [validBody({ apiKey: 'sk-xxxx' }), 'apiKey 不能是占位值 sk-xxxx'],
+    [validBody({ baseUrl: 123 }), 'baseUrl 必须是字符串'],
+    [validBody({ baseUrl: 'https://' + 'a'.repeat(195) }), 'baseUrl 不能超过 200 个字符'],
+    [validBody({ baseUrl: 'not-a-url' }), 'baseUrl 不是合法 URL'],
+    [validBody({ baseUrl: 'ftp://example.com/v1' }), 'baseUrl 必须是 http(s) 协议'],
   ]
 
   for (const [body, message] of cases) {
     assert.equal(validatePayload(body).error, message, `expected error for ${JSON.stringify(body)}`)
   }
+})
+
+test('validatePayload returns apiKey/baseUrl in value (trimmed and slash-stripped)', () => {
+  const result = validatePayload(validBody({
+    apiKey: '  sk-real  ',
+    baseUrl: '  https://api.openai.com/v1///  ',
+  }))
+
+  assert.equal(result.error, undefined)
+  assert.equal(result.value.apiKey, 'sk-real')
+  assert.equal(result.value.baseUrl, 'https://api.openai.com/v1')
+})
+
+test('validatePayload returns empty apiKey/baseUrl when not provided (legacy bodies)', () => {
+  const result = validatePayload(validBody())
+
+  assert.equal(result.error, undefined)
+  assert.equal(result.value.apiKey, '')
+  assert.equal(result.value.baseUrl, '')
 })
 
 test('buildPrompt composes prompt with all advanced fields', () => {

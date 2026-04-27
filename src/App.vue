@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { ApiRequestError, checkHealth, generateImage, resolveImageSource } from './api'
+import { ApiRequestError, PROVIDER_NOT_CONFIGURED, checkHealth, generateImage, resolveImageSource } from './api'
 import { customModelSentinel, modelOptions, qualityOptions, sizeOptions, styleOptions, stylePresetById } from './presets'
 import { clearDraft, clearHistory, loadDraft, loadHistory, prependHistory, saveDraft } from './storage'
 import type {
@@ -28,6 +28,7 @@ import HistoryDialog from './components/HistoryDialog.vue'
 import { useToast } from './composables/useToast'
 import { useTheme } from './composables/useTheme'
 import { useLightbox } from './composables/useLightbox'
+import { useProviderConfig } from './composables/useProviderConfig'
 
 const defaultPrompt = '一只穿着复古宇航服的橘猫，站在月球摄影棚里，像 1970 年代科幻电影海报'
 const defaultNegativePrompt = '低清晰度、模糊、水印、错误文字、畸形手指、画面杂乱'
@@ -57,6 +58,7 @@ const healthRequestId = ref('')
 const toast = useToast()
 const { theme, toggle: toggleTheme } = useTheme()
 const lightbox = useLightbox()
+const provider = useProviderConfig()
 const composerOpen = ref(false)
 const settingsOpen = ref(false)
 const historyOpen = ref(false)
@@ -119,7 +121,13 @@ watch(
 const selectedStyle = computed(() => styleOptions.find((item) => item.value === style.value))
 const selectedStyleLabel = computed(() => selectedStyle.value?.label ?? style.value)
 const trimmedPrompt = computed(() => prompt.value.trim())
-const canGenerate = computed(() => trimmedPrompt.value.length >= 4 && !isGenerating.value && healthStatus.value !== 'offline')
+const canGenerate = computed(
+  () =>
+    trimmedPrompt.value.length >= 4
+    && !isGenerating.value
+    && healthStatus.value !== 'offline'
+    && provider.isConfigured.value,
+)
 const promptPreview = computed(() => trimmedPrompt.value.split('\n')[0]?.slice(0, 64) ?? '')
 
 function createId() {
@@ -266,6 +274,11 @@ async function runGeneration(args: {
     }))
 
     toast.error(message, requestId ? `req ${requestId.slice(0, 8)}` : undefined)
+
+    // 凭据未配置：自动打开 Settings，让用户立即修复
+    if (code === PROVIDER_NOT_CONFIGURED) {
+      settingsOpen.value = true
+    }
   } finally {
     isGenerating.value = false
 
@@ -278,6 +291,11 @@ async function runGeneration(args: {
 
 async function handleGenerate(options?: { clearAfter?: boolean }) {
   if (!canGenerate.value) {
+    if (!provider.isConfigured.value) {
+      toast.error('请先配置 API 服务', '右上角「设置」→ 服务商')
+      settingsOpen.value = true
+      return
+    }
     if (!trimmedPrompt.value) toast.error('请先写下提示词', '至少 4 个字')
     else if (healthStatus.value === 'offline') toast.error('后端离线', '检查连接后再试')
     return
@@ -677,6 +695,7 @@ onUnmounted(() => {
       v-model:customModel="customModel"
       @export="exportCurrentConfig"
       @reset="resetDraft"
+      @reset-provider="toast.info('已清除 API 凭据', '请重新填写以继续生成')"
     />
 
     <HistoryDialog

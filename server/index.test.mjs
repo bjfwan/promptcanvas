@@ -12,7 +12,6 @@ const silentLogger = {
 function createTestApp(options = {}) {
   return createApp({
     accessLog: false,
-    apiKey: 'sk-test',
     logger: silentLogger,
     ...options,
   })
@@ -63,17 +62,19 @@ function validPayload(overrides = {}) {
     size: '1024x1024',
     count: 1,
     outputFormat: 'png',
+    apiKey: 'sk-test',
+    baseUrl: 'https://api.openai.com/v1',
     ...overrides,
   }
 }
 
-test('GET /api/health returns model, version and request id', async () => {
+test('GET /api/health returns null model (后端不再持有凭据), version and request id', async () => {
   const app = createTestApp()
   const response = await request(app, { path: '/api/health' })
 
   assert.equal(response.status, 200)
   assert.equal(response.data.ok, true)
-  assert.equal(response.data.model, 'gpt-image-1')
+  assert.equal(response.data.model, null)
   assert.equal(typeof response.data.version, 'string')
   assert.ok(typeof response.data.uptimeSeconds === 'number' && response.data.uptimeSeconds >= 0)
   assert.match(response.headers.get('x-content-type-options'), /nosniff/)
@@ -108,7 +109,6 @@ test('access log middleware records finished requests', async () => {
   }
   const app = createApp({
     accessLog: true,
-    apiKey: 'sk-test',
     logger: recordingLogger,
   })
 
@@ -150,25 +150,22 @@ test('POST /api/images/generate validates invalid payload', async () => {
   })
 })
 
-test('POST /api/images/generate returns MISSING_API_KEY for empty or placeholder key', async () => {
-  const app = createTestApp({ apiKey: 'sk-xxxx' })
+test('POST /api/images/generate returns PROVIDER_NOT_CONFIGURED when body lacks credentials', async () => {
+  const app = createTestApp()
   const response = await request(app, {
     method: 'POST',
     path: '/api/images/generate',
-    body: validPayload(),
+    body: validPayload({ apiKey: '', baseUrl: '' }),
   })
 
-  assert.equal(response.status, 500)
-  assert.deepEqual(response.data.error, {
-    code: 'MISSING_API_KEY',
-    message: '后端没有配置 OPENAI_API_KEY',
-  })
+  assert.equal(response.status, 400)
+  assert.equal(response.data.error.code, 'PROVIDER_NOT_CONFIGURED')
+  assert.match(response.data.error.message, /API 凭据/)
 })
 
-test('POST /api/images/generate maps OpenAI response to frontend contract', async () => {
+test('POST /api/images/generate maps upstream response to frontend contract', async () => {
   const calls = []
   const app = createTestApp({
-    apiKey: '',
     openaiClient: {
       images: {
         async generate(payload) {
@@ -195,6 +192,7 @@ test('POST /api/images/generate maps OpenAI response to frontend contract', asyn
       quality: 'high',
       creativity: 8,
       seed: 'cat-poster-v1',
+      model: 'dall-e-3',
     }),
   })
 
@@ -209,16 +207,41 @@ test('POST /api/images/generate maps OpenAI response to frontend contract', asyn
       revisedPrompt: 'A poster of an orange cat astronaut',
     },
   ])
-  assert.deepEqual(response.data.usage, { model: 'gpt-image-1' })
+  assert.deepEqual(response.data.usage, { model: 'dall-e-3' })
   assert.equal(calls.length, 1)
   assert.equal(calls[0].size, '1024x1024')
   assert.equal(calls[0].n, 1)
   assert.equal(calls[0].output_format, 'webp')
   assert.equal(calls[0].quality, 'high')
+  assert.equal(calls[0].model, 'dall-e-3')
   assert.match(calls[0].prompt, /风格要求：电影海报风格/)
   assert.match(calls[0].prompt, /避免内容：低清晰度、模糊、水印/)
   assert.match(calls[0].prompt, /创意强度：8\/10/)
   assert.match(calls[0].prompt, /一致性标记：cat-poster-v1/)
+})
+
+test('POST /api/images/generate omits model field upstream when not specified', async () => {
+  const calls = []
+  const app = createTestApp({
+    openaiClient: {
+      images: {
+        async generate(payload) {
+          calls.push(payload)
+          return { data: [{ b64_json: 'abc123' }] }
+        },
+      },
+    },
+  })
+
+  const response = await request(app, {
+    method: 'POST',
+    path: '/api/images/generate',
+    body: validPayload(),
+  })
+
+  assert.equal(response.status, 200)
+  assert.equal('model' in calls[0], false)
+  assert.equal(response.data.usage.model, null)
 })
 
 test('POST /api/images/generate validates advanced fields', async () => {
@@ -240,6 +263,14 @@ test('POST /api/images/generate validates advanced fields', async () => {
       body: validPayload({ seed: 123 }),
       message: 'seed 必须是字符串',
     },
+    {
+      body: validPayload({ baseUrl: 'not-a-url' }),
+      message: 'baseUrl 不是合法 URL',
+    },
+    {
+      body: validPayload({ apiKey: 'sk-xxxx' }),
+      message: 'apiKey 不能是占位值 sk-xxxx',
+    },
   ]
 
   for (const invalidRequest of invalidRequests) {
@@ -259,7 +290,6 @@ test('POST /api/images/generate validates advanced fields', async () => {
 
 test('POST /api/images/generate applies rate limit', async () => {
   const app = createTestApp({
-    apiKey: '',
     openaiClient: {
       images: {
         async generate() {
@@ -290,9 +320,8 @@ test('POST /api/images/generate applies rate limit', async () => {
   })
 })
 
-test('POST /api/images/generate maps OpenAI errors', async () => {
+test('POST /api/images/generate maps upstream errors', async () => {
   const app = createTestApp({
-    apiKey: '',
     openaiClient: {
       images: {
         async generate() {
@@ -318,7 +347,6 @@ test('POST /api/images/generate maps OpenAI errors', async () => {
 
 test('POST /api/images/generate maps content policy violations', async () => {
   const app = createTestApp({
-    apiKey: '',
     openaiClient: {
       images: {
         async generate() {
@@ -343,9 +371,8 @@ test('POST /api/images/generate maps content policy violations', async () => {
   })
 })
 
-test('POST /api/images/generate maps OpenAI timeout errors', async () => {
+test('POST /api/images/generate maps upstream timeout errors', async () => {
   const app = createTestApp({
-    apiKey: '',
     openaiClient: {
       images: {
         async generate() {
@@ -369,9 +396,35 @@ test('POST /api/images/generate maps OpenAI timeout errors', async () => {
   })
 })
 
+test('POST /api/images/generate maps upstream 401 invalid_api_key', async () => {
+  const app = createTestApp({
+    openaiClient: {
+      images: {
+        async generate() {
+          const error = new Error('Invalid API key')
+          error.code = 'invalid_api_key'
+          error.status = 401
+          throw error
+        },
+      },
+    },
+  })
+  const response = await request(app, {
+    method: 'POST',
+    path: '/api/images/generate',
+    body: validPayload(),
+  })
+
+  assert.equal(response.status, 500)
+  assert.equal(response.data.error.code, 'OPENAI_REQUEST_FAILED')
+  assert.match(response.data.error.message, /API Key/)
+})
+
 test('helper functions validate and normalize data', () => {
   assert.equal(validatePayload(validPayload()).value.count, 1)
   assert.equal(validatePayload(validPayload()).value.quality, 'auto')
+  assert.equal(validatePayload(validPayload()).value.apiKey, 'sk-test')
+  assert.equal(validatePayload(validPayload()).value.baseUrl, 'https://api.openai.com/v1')
   assert.equal(validatePayload(validPayload({ count: '1' })).error, 'count 必须是 1 到 4 的整数')
   assert.match(buildPrompt(validPayload({
     negativePrompt: '水印',

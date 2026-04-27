@@ -24,9 +24,7 @@ const currentFilePath = fileURLToPath(import.meta.url)
 const startedAt = new Date()
 const packageVersion = process.env.npm_package_version || '0.0.0'
 const port = Number(process.env.PORT || 8787)
-const model = process.env.OPENAI_IMAGE_MODEL || 'gpt-image-1'
-const openaiTimeoutMs = parsePositiveInteger(process.env.OPENAI_TIMEOUT_MS, 120_000)
-const openaiBaseURL = (process.env.OPENAI_BASE_URL || '').trim()
+const UPSTREAM_TIMEOUT_MS = 120_000
 const accessLogEnabled = String(process.env.ACCESS_LOG ?? 'true').trim().toLowerCase() !== 'false'
 const rateLimitWindowMs = Number(process.env.RATE_LIMIT_WINDOW_MS || 10 * 60 * 1000)
 const rateLimitMax = Number(process.env.RATE_LIMIT_MAX || 20)
@@ -178,34 +176,27 @@ function createCorsOptions(origins) {
 export function createApp(options = {}) {
   const app = express()
   const config = {
-    apiKey: options.apiKey ?? process.env.OPENAI_API_KEY,
     accessLog: options.accessLog ?? accessLogEnabled,
-    baseURL: options.baseURL ?? openaiBaseURL,
     clientOrigins: options.clientOrigins ?? clientOrigins,
     logger: options.logger ?? console,
-    model: options.model ?? model,
+    // 测试可注入一个共享 mock client，绕过真实凭据。
+    // 生产环境此项为 null，每个请求按 body 里的 apiKey/baseUrl 临时建一个客户端。
     openaiClient: options.openaiClient ?? null,
-    openaiTimeoutMs: options.openaiTimeoutMs ?? openaiTimeoutMs,
+    openaiTimeoutMs: options.openaiTimeoutMs ?? UPSTREAM_TIMEOUT_MS,
     rateLimitMax: options.rateLimitMax ?? parsePositiveInteger(rateLimitMax, 20),
     rateLimitWindowMs: options.rateLimitWindowMs ?? parsePositiveInteger(rateLimitWindowMs, 10 * 60 * 1000),
   }
-  let cachedOpenAIClient = config.openaiClient
 
-  function getOpenAIClient() {
-    if (!cachedOpenAIClient) {
-      const clientOptions = {
-        apiKey: config.apiKey,
-        timeout: config.openaiTimeoutMs,
-      }
-
-      if (config.baseURL) {
-        clientOptions.baseURL = config.baseURL
-      }
-
-      cachedOpenAIClient = new OpenAI(clientOptions)
+  function getOpenAIClient(payload) {
+    if (config.openaiClient) {
+      return config.openaiClient
     }
 
-    return cachedOpenAIClient
+    return new OpenAI({
+      apiKey: payload.apiKey,
+      baseURL: payload.baseUrl || undefined,
+      timeout: config.openaiTimeoutMs,
+    })
   }
 
   app.disable('x-powered-by')
@@ -232,7 +223,9 @@ export function createApp(options = {}) {
   app.get('/api/health', (req, res) => {
     res.json({
       ok: true,
-      model: config.model,
+      // 后端不再持有任何模型/凭据信息，model 字段保留位置但置空，
+      // 实际模型由前端 Settings 决定
+      model: null,
       version: packageVersion,
       uptimeSeconds: Math.round((Date.now() - startedAt.getTime()) / 1000),
       startedAt: startedAt.toISOString(),
@@ -251,28 +244,41 @@ export function createApp(options = {}) {
       return
     }
 
-    if (!config.openaiClient && isMissingApiKey(config.apiKey)) {
-      sendError(res, 500, 'MISSING_API_KEY', '后端没有配置 OPENAI_API_KEY', req.requestId)
+    const payload = validation.value
+
+    // 凭据由前端 Settings 通过 body 注入；测试用例可注入 openaiClient mock 绕过
+    if (!config.openaiClient && (!payload.apiKey || !payload.baseUrl)) {
+      sendError(
+        res,
+        400,
+        'PROVIDER_NOT_CONFIGURED',
+        '请求未携带 API 凭据，请在前端「设置」中填写 API 端点和 Key',
+        req.requestId,
+      )
       return
     }
 
-    const payload = validation.value
-    const openai = getOpenAIClient()
-    const effectiveModel = payload.model || config.model
+    const openai = getOpenAIClient(payload)
+    const effectiveModel = payload.model || ''
 
     try {
-      const response = await openai.images.generate({
-        model: effectiveModel,
+      const upstreamArgs = {
         prompt: buildPrompt(payload),
         size: payload.size,
         n: payload.count,
         output_format: payload.outputFormat,
         quality: payload.quality,
-      })
+      }
+      // 没填 model 时，让上游按自己的默认值走，不强行注入字段
+      if (effectiveModel) {
+        upstreamArgs.model = effectiveModel
+      }
+
+      const response = await openai.images.generate(upstreamArgs)
       const images = normalizeImages(response, payload.outputFormat)
 
       if (!images.length) {
-        sendError(res, 502, 'OPENAI_REQUEST_FAILED', 'OpenAI 没有返回图片，请稍后再试', req.requestId)
+        sendError(res, 502, 'OPENAI_REQUEST_FAILED', '上游没有返回图片，请稍后再试', req.requestId)
         return
       }
 
@@ -280,7 +286,7 @@ export function createApp(options = {}) {
         requestId: req.requestId,
         images,
         usage: {
-          model: effectiveModel,
+          model: effectiveModel || null,
         },
       })
     } catch (error) {
@@ -331,10 +337,8 @@ export function createApp(options = {}) {
 export const app = createApp()
 
 function warnOnSuspiciousConfig(logger = console) {
-  if (isMissingApiKey(process.env.OPENAI_API_KEY)) {
-    logger.warn('[backend] OPENAI_API_KEY 未配置或仍为占位值，POST /api/images/generate 将返回 MISSING_API_KEY')
-  }
-
+  // OpenAI 凭据已迁移至前端 Settings，由访客在 localStorage 自行配置；
+  // 此处只剩对开发用 CORS 的提醒。
   if (clientOrigins.includes('*')) {
     logger.warn('[backend] CLIENT_ORIGIN 包含 "*"，已允许所有来源访问，仅建议本地开发使用')
   }
@@ -345,7 +349,7 @@ export function startServer(appToStart = app, listenPort = port, options = {}) {
   const handleSignals = options.handleSignals ?? true
   const server = http.createServer(appToStart)
 
-  server.requestTimeout = openaiTimeoutMs + 30_000
+  server.requestTimeout = UPSTREAM_TIMEOUT_MS + 30_000
   server.headersTimeout = 65_000
   server.keepAliveTimeout = 5_000
 

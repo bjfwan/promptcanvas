@@ -1,6 +1,8 @@
 # PromptCanvas
 
-PromptCanvas 是一个本地优先的 AI 图片生成应用。前端使用 Vue 3 + Vite + TypeScript + Tailwind CSS，后端使用 Node.js + Express 调用 OpenAI Images API。
+PromptCanvas 是一个本地优先的 AI 图片生成应用。前端使用 Vue 3 + Vite + TypeScript + Tailwind CSS；后端是 Cloudflare Pages Functions / Express 的透明代理，负责转发到任意 OpenAI 兼容服务。
+
+**凭据主模型**：每个访客在页面的「设置」中填入自己的 API 端点和 API Key，凭据仅存于该访客的浏览器 localStorage，不在后端进行任何持久化。项目本身不提供也不需要 OpenAI Key。
 
 ## 技术栈
 
@@ -14,9 +16,9 @@ PromptCanvas 是一个本地优先的 AI 图片生成应用。前端使用 Vue 3
 
 ## 前后端分工
 
-- **前端**：输入提示词、选择风格/尺寸/数量/格式、请求后端、展示图片、下载图片。
-- **前端增强能力**：提示词模板、高级参数、本地历史、复制提示词、打开原图、重新生成。
-- **后端**：保护 OpenAI API Key，调用 OpenAI 图片生成接口，按约定格式返回结果。
+- **前端**：输入提示词、选择风格/尺寸/数量/格式、展示图片、下载图片。在「设置」中配置 API 端点 + Key + 模型，凭据仅存 localStorage。
+- **前端增强能力**：提示词模板、高级参数、本地历史（不包含凭据）、复制提示词、打开原图、重新生成。
+- **后端（透明代理）**：接收请求 → 校验负载 → 带上访客提供的 baseUrl + apiKey 调上游 → 返回。后端不持有任何凭据、不记录 apiKey。
 
 后端详细接口见：[`BACKEND_CONTRACT.md`](./BACKEND_CONTRACT.md)。
 
@@ -28,17 +30,30 @@ npm install
 
 ## 配置
 
+### 访客侧（面向用户）
+
+打开右上角「设置」→ 「Provider·服务商」区块，填写：
+
+- **API 端点**：完整 base URL（必须带 `/v1`）。例：`https://api.openai.com/v1` 或任何中转站的 base URL。
+- **API Key**：对应服务商发给你的密钥。
+- **模型**（可在「生成参数」区选）：`gpt-image-1` / `dall-e-3` 或自定义。
+
+凭据仅写入访客自己浏览器的 localStorage（`promptcanvas:provider-v1`），项目后端不会持久化任何凭据。
+
+### 部署侧（面向运维）
+
 复制环境变量示例：
 
 ```bash
 copy .env.example .env
 ```
 
-`.env` 服务于本地 Express 后端（`npm run dev:backend`）。前端走 Vite 代理（`vite.config.ts` 已把 `/api` 转发到 `localhost:8787`），所以 `VITE_API_BASE_URL` **保持为空**即可，前端默认请求同源相对路径。仅在前后端部署到不同域名时才设置完整 URL。
+里面只剩运营性配置（端口 / CORS / 速率限制 / 访问日志）。**不需要设置任何 `OPENAI_*` 变量。**
+Cloudflare Pages 部署时，`wrangler.toml` 已不含业务变量，Dashboard 上也不需要配置任何 OpenAI 凭据。
 
-`ACCESS_LOG=false` 可关闭访问日志输出。`/api/health` 会返回 `version` 和 `uptimeSeconds`，方便容器/反向代理做健康检查。
+`VITE_API_BASE_URL` 仅在前后端跨域部署时使用，同源部署（Pages / Vite proxy）保持空即可。
 
-使用 OpenAI 中转站时，把 `OPENAI_BASE_URL` 设成中转站的完整 base URL（必须带 `/v1`，例如 `https://api.chshapi.cn/v1`）。本地 Express 走 OpenAI Node SDK 的 `baseURL` 选项，Cloudflare Pages Functions 直接用这个地址拼接 `/images/generations`。Cloudflare 部署时把变量写到 Pages → Settings → Environment variables。
+`ACCESS_LOG=false` 可关闭访问日志输出。`/api/health` 返回 `version` 和 `uptimeSeconds`，方便容器/反向代理做健康检查。
 
 ## 启动开发环境
 
@@ -78,7 +93,7 @@ npm run test:backend
 npm run check:backend
 ```
 
-测试会使用 mock OpenAI Client，不会请求真实 OpenAI API，也不需要真实 `OPENAI_API_KEY`。
+测试会使用 mock OpenAI Client / mock fetch，不会请求真实上游，也不需要真实凭据。
 
 ## 后端接口
 
@@ -94,7 +109,7 @@ POST /api/images/generate
 GET /api/health
 ```
 
-请求体示例：
+请求体示例（v2 新增 `apiKey` 与 `baseUrl` 字段，由前端从 localStorage 读入）：
 
 ```json
 {
@@ -106,11 +121,14 @@ GET /api/health
   "negativePrompt": "低清晰度、模糊、水印、错误文字",
   "quality": "auto",
   "creativity": 7,
-  "seed": "optional-seed"
+  "seed": "optional-seed",
+  "model": "gpt-image-1",
+  "apiKey": "sk-...",
+  "baseUrl": "https://api.openai.com/v1"
 }
 ```
 
-其中 `negativePrompt`、`quality`、`creativity`、`seed` 是前端新增的可选字段。后端可以先忽略，也可以拼接进最终 OpenAI prompt。
+详细接口合约见 [`BACKEND_CONTRACT.md`](./BACKEND_CONTRACT.md)。
 
 成功返回示例：
 
@@ -136,9 +154,10 @@ GET /api/health
 本地预览 Pages Functions（推荐先 `npm install`，确保 `wrangler` 装好）：
 
 ```bash
-copy .dev.vars.example .dev.vars   # 填入真实 OPENAI_API_KEY
 npm run dev:pages                  # wrangler 接管 /api/*，转发其他路径给 Vite
 ```
+
+不需要创建 `.dev.vars`。Pages Function 本身不读任何 OpenAI 环境变量；凭据都走带在请求体里。
 
 构建后用 wrangler 直接服务静态产物：
 
@@ -152,14 +171,15 @@ npm run preview:pages              # 等价于 npm run build && wrangler pages d
 部署架构要点：
 
 - 同源部署：前端 `dist/` 与 `functions/api/*` 由 Pages 一起服务，无需 CORS。
-- 密钥仅在 Cloudflare Dashboard 注入，前端任何 `VITE_*` 变量都会被打包公开，**不能**放 `OPENAI_API_KEY`。
+- **后端零凭据**：`wrangler.toml` 不含 `[vars]`，Cloudflare Dashboard 也不需要配置任何 OpenAI 变量；API Key 只存于访客浏览器。
+- 前端任何 `VITE_*` 变量都会被打包公开，里面也不要放任何 key。
 - 速率限制由 Cloudflare WAF 在 Dashboard 配置，函数层不再实现内存版。
-- `.dev.vars` 仅本地 wrangler 使用，已在 `.gitignore`。
 
 ## 注意事项
 
-- OpenAI API Key 只能放在后端 / Cloudflare 环境变量里，不能放到 Vue 前端。
-- 后端开发环境需要允许 `http://localhost:5173` 跨域访问（仅本地 Express 模式）。
+- **凭据在访客浏览器里**：apiKey 仅存 `localStorage`，不上传到后端数据库；但 Network 面板仍可见，被 XSS 也会被读取。不要在可能被别人打开的公共机器上使用。
+- **任何访客都能用你部署的 backend 做转发**（带他们自己的 key），这是设计使然；backend 应只转发不记录。
 - 前端同时兼容后端返回图片 URL 或 base64 图片。
-- 生成历史只保存在浏览器本地 `localStorage`，不会上传到后端。
+- 生成历史只保存在浏览器本地 `localStorage`，**不包含 apiKey/baseUrl**（类型系统以 `Omit<>` 硬性隔离）。
+- 后端开发环境需要允许 `http://localhost:5173` 跨域访问（仅本地 Express 模式）。
 - PowerShell 如果遇到 `npm.ps1` 签名限制，可以改用 `npm.cmd run ...`。

@@ -1,7 +1,9 @@
-import type { GenerationHistoryItem } from './types'
+import { decryptString, encryptString, isEncrypted } from './lib/crypto'
+import type { GenerationHistoryItem, ProviderConfig } from './types'
 
 const historyKey = 'promptcanvas:generation-history'
 const draftKey = 'promptcanvas:draft-v1'
+const providerKey = 'promptcanvas:provider-v1'
 const maxHistoryItems = 8
 
 export interface DraftPayload {
@@ -41,17 +43,13 @@ export function loadDraft(): DraftPayload | null {
 export function saveDraft(draft: DraftPayload) {
   try {
     localStorage.setItem(draftKey, JSON.stringify(draft))
-  } catch {
-    // 存储不可用（隐私模式 / 容量超限）时静默忽略
-  }
+  } catch {}
 }
 
 export function clearDraft() {
   try {
     localStorage.removeItem(draftKey)
-  } catch {
-    // 同上
-  }
+  } catch {}
 }
 
 export function loadHistory(): GenerationHistoryItem[] {
@@ -86,4 +84,69 @@ export function prependHistory(item: GenerationHistoryItem) {
 
 export function clearHistory() {
   localStorage.removeItem(historyKey)
+}
+
+const emptyProvider: ProviderConfig = { baseUrl: '', apiKey: '' }
+
+interface StoredProviderEntry {
+  baseUrl?: unknown
+  apiKey?: unknown
+}
+
+function readRawEntry(): StoredProviderEntry | null {
+  try {
+    const raw = localStorage.getItem(providerKey)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
+    return parsed as StoredProviderEntry
+  } catch {
+    return null
+  }
+}
+
+export async function loadProviderConfig(): Promise<ProviderConfig> {
+  const entry = readRawEntry()
+  if (!entry) return { ...emptyProvider }
+
+  const baseUrl = typeof entry.baseUrl === 'string' ? entry.baseUrl : ''
+  const apiKeyField = typeof entry.apiKey === 'string' ? entry.apiKey : ''
+
+  if (!apiKeyField) {
+    return { baseUrl, apiKey: '' }
+  }
+
+  try {
+    const apiKey = await decryptString(apiKeyField)
+    return { baseUrl, apiKey }
+  } catch {
+    return { baseUrl, apiKey: '' }
+  }
+}
+
+export async function saveProviderConfig(config: ProviderConfig) {
+  try {
+    const baseUrl = config.baseUrl ?? ''
+    const plaintextKey = (config.apiKey ?? '').trim()
+    const apiKey = plaintextKey ? await encryptString(plaintextKey) : ''
+    localStorage.setItem(providerKey, JSON.stringify({ baseUrl, apiKey }))
+  } catch {}
+}
+
+export function clearProviderConfig() {
+  try {
+    localStorage.removeItem(providerKey)
+  } catch {}
+}
+
+export function isProviderConfigured(config: ProviderConfig): boolean {
+  return Boolean(config.baseUrl?.trim()) && Boolean(config.apiKey?.trim())
+}
+
+export function rawApiKeyIsEncrypted(): boolean {
+  const entry = readRawEntry()
+  if (!entry) return true
+  const apiKeyField = typeof entry.apiKey === 'string' ? entry.apiKey : ''
+  if (!apiKeyField) return true
+  return isEncrypted(apiKeyField)
 }

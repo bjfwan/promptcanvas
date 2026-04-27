@@ -23,6 +23,13 @@ export interface GenerateImageRequest {
   creativity?: number
   seed?: string
   model?: string
+  baseUrl?: string
+  apiKey?: string
+}
+
+export interface ProviderConfig {
+  baseUrl: string
+  apiKey: string
 }
 
 export interface GeneratedImage {
@@ -55,7 +62,7 @@ export interface ApiErrorResponse {
   requestId?: string
 }
 
-export interface GenerationHistoryItem extends GenerateImageRequest {
+export interface GenerationHistoryItem extends Omit<GenerateImageRequest, 'apiKey' | 'baseUrl'> {
   id: string
   createdAt: string
   requestId?: string

@@ -1,31 +1,12 @@
-// POST /api/images/generate：
-// - 校验请求体（与 Express 同源，复用 server/lib.mjs）
-// - 直接 fetch OpenAI REST，避免引入 Node SDK 强依赖
-// - 错误码与 Express 完全对齐
-// - 速率限制由 Cloudflare WAF 在 Dashboard 配置，函数层不再实现内存版
-
 import {
   buildPrompt,
-  isMissingApiKey,
   normalizeImages,
   resolveOpenAIError,
   validatePayload,
 } from '../../../server/lib.mjs'
 import { jsonError } from '../../_lib.ts'
 
-interface Env {
-  OPENAI_API_KEY: string
-  OPENAI_BASE_URL?: string
-  OPENAI_IMAGE_MODEL?: string
-  OPENAI_TIMEOUT_MS?: string
-}
-
-const DEFAULT_OPENAI_BASE_URL = 'https://api.openai.com/v1'
-
-function resolveBaseUrl(envBaseUrl: string | undefined): string {
-  const trimmed = (envBaseUrl ?? '').trim().replace(/\/+$/, '')
-  return trimmed || DEFAULT_OPENAI_BASE_URL
-}
+const UPSTREAM_TIMEOUT_MS = 120_000
 
 interface ValidatedPayload {
   prompt: string
@@ -38,9 +19,11 @@ interface ValidatedPayload {
   creativity: number | null
   seed: string
   model: string
+  apiKey: string
+  baseUrl: string
 }
 
-export const onRequestPost: PagesFunction<Env> = async (context) => {
+export const onRequestPost: PagesFunction = async (context) => {
   const requestId = (context.data.requestId as string | undefined) ?? ''
 
   let body: unknown
@@ -57,38 +40,52 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     return jsonError(400, 'INVALID_REQUEST', validation.error ?? '请求体校验失败', requestId)
   }
 
-  if (isMissingApiKey(context.env.OPENAI_API_KEY)) {
-    return jsonError(500, 'MISSING_API_KEY', '后端没有配置 OPENAI_API_KEY', requestId)
+  const payload = validation.value
+
+  if (!payload.apiKey || !payload.baseUrl) {
+    return jsonError(
+      400,
+      'PROVIDER_NOT_CONFIGURED',
+      '请求未携带 API 凭据，请在前端「设置」中填写 API 端点和 Key',
+      requestId,
+    )
   }
 
-  const payload = validation.value
-  const model = payload.model || context.env.OPENAI_IMAGE_MODEL || 'gpt-image-1'
-  const timeoutMs = parsePositiveInteger(context.env.OPENAI_TIMEOUT_MS, 120_000)
-  const baseUrl = resolveBaseUrl(context.env.OPENAI_BASE_URL)
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  const timer = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS)
 
   try {
-    const upstream = await fetch(`${baseUrl}/images/generations`, {
+    const upstreamRequest: Record<string, unknown> = {
+      prompt: buildPrompt(payload),
+      size: payload.size,
+      n: payload.count,
+      output_format: payload.outputFormat,
+      quality: payload.quality,
+      user: requestId || undefined,
+    }
+    if (payload.model) {
+      upstreamRequest.model = payload.model
+    }
+
+    const upstream = await fetch(`${payload.baseUrl}/images/generations`, {
       method: 'POST',
       signal: controller.signal,
       headers: {
-        Authorization: `Bearer ${context.env.OPENAI_API_KEY}`,
+        Authorization: `Bearer ${payload.apiKey}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        model,
-        prompt: buildPrompt(payload),
-        size: payload.size,
-        n: payload.count,
-        output_format: payload.outputFormat,
-        quality: payload.quality,
-        user: requestId || undefined,
-      }),
+      body: JSON.stringify(upstreamRequest),
     })
 
     if (!upstream.ok) {
       const errorBody = await safeJson(upstream)
+      console.error('[generate] upstream error', {
+        requestId,
+        host: hostFromBaseUrl(payload.baseUrl),
+        status: upstream.status,
+        upstreamCode: errorBody?.error?.code,
+        upstreamMessage: errorBody?.error?.message,
+      })
       const mapped = resolveOpenAIError({
         status: upstream.status,
         code: errorBody?.error?.code,
@@ -101,19 +98,25 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     const images = normalizeImages(data, payload.outputFormat)
 
     if (!images.length) {
-      return jsonError(502, 'OPENAI_REQUEST_FAILED', 'OpenAI 没有返回图片，请稍后再试', requestId)
+      return jsonError(502, 'OPENAI_REQUEST_FAILED', '上游没有返回图片，请稍后再试', requestId)
     }
 
     return Response.json({
       requestId,
       images,
-      usage: { model },
+      usage: { model: payload.model || null },
     })
   } catch (error) {
     if ((error as Error)?.name === 'AbortError') {
-      return jsonError(504, 'OPENAI_REQUEST_FAILED', 'OpenAI 响应超时，请稍后再试', requestId)
+      return jsonError(504, 'OPENAI_REQUEST_FAILED', '上游响应超时，请稍后再试', requestId)
     }
 
+    console.error('[generate] unexpected error', {
+      requestId,
+      host: hostFromBaseUrl(payload.baseUrl),
+      message: (error as Error)?.message,
+      name: (error as Error)?.name,
+    })
     const mapped = resolveOpenAIError(error)
     return jsonError(mapped.status, mapped.code, mapped.message, requestId)
   } finally {
@@ -129,12 +132,11 @@ async function safeJson(response: Response): Promise<{ error?: { code?: string; 
   }
 }
 
-function parsePositiveInteger(value: string | undefined, fallback: number): number {
-  const parsed = Number(value)
-
-  if (Number.isInteger(parsed) && parsed > 0) {
-    return parsed
+function hostFromBaseUrl(baseUrl: string): string {
+  try {
+    const url = new URL(baseUrl)
+    return `${url.protocol}//${url.host}`
+  } catch {
+    return 'invalid-url'
   }
-
-  return fallback
 }

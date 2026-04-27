@@ -1,6 +1,9 @@
+import { snapshotProviderConfig } from './composables/useProviderConfig'
 import type { ApiErrorResponse, GenerateImageRequest, GenerateImageResponse, HealthResponse } from './types'
 
 const baseUrl = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') ?? ''
+
+export const PROVIDER_NOT_CONFIGURED = 'PROVIDER_NOT_CONFIGURED'
 
 export class ApiRequestError extends Error {
   code?: string
@@ -23,12 +26,29 @@ function resolveErrorMessage(data: ApiErrorResponse | null, fallback: string) {
 }
 
 export async function generateImage(payload: GenerateImageRequest): Promise<GenerateImageResponse> {
+  const provider = snapshotProviderConfig()
+  const apiKey = (payload.apiKey ?? provider.apiKey ?? '').trim()
+  const providerBaseUrl = (payload.baseUrl ?? provider.baseUrl ?? '').trim().replace(/\/+$/, '')
+
+  if (!apiKey || !providerBaseUrl) {
+    throw new ApiRequestError(
+      '尚未配置 API 服务商，请打开右上角「设置」填入 API 端点和 API Key。',
+      PROVIDER_NOT_CONFIGURED,
+    )
+  }
+
+  const body = {
+    ...payload,
+    apiKey,
+    baseUrl: providerBaseUrl,
+  }
+
   const response = await fetch(`${baseUrl}/api/images/generate`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify(payload),
+    body: JSON.stringify(body),
   })
 
   const data = await readJson<GenerateImageResponse & ApiErrorResponse>(response)

@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import Icon from './Icon.vue'
 import Select, { type SelectOption } from './Select.vue'
 import { customModelSentinel, modelOptions, qualityOptions } from '../presets'
+import { useProviderConfig } from '../composables/useProviderConfig'
 import type { GenerateImageRequest, ImageQuality } from '../types'
 
 type OutputFormat = NonNullable<GenerateImageRequest['outputFormat']>
@@ -17,6 +18,7 @@ const emit = defineEmits<{
   (e: 'update:open', value: boolean): void
   (e: 'export'): void
   (e: 'reset'): void
+  (e: 'reset-provider'): void
 }>()
 
 const negativePrompt = defineModel<string>('negativePrompt', { required: true })
@@ -26,6 +28,15 @@ const creativity = defineModel<number>('creativity', { required: true })
 const seed = defineModel<string>('seed', { required: true })
 const modelChoice = defineModel<string>('modelChoice', { required: true })
 const customModel = defineModel<string>('customModel', { required: true })
+
+const provider = useProviderConfig()
+const showApiKey = ref(false)
+
+function handleResetProvider() {
+  provider.reset()
+  showApiKey.value = false
+  emit('reset-provider')
+}
 
 const formatOptions: SelectOption<OutputFormat>[] = [
   { value: 'png', label: 'PNG', hint: '无损 · 支持透明' },
@@ -105,6 +116,93 @@ onBeforeUnmount(() => {
             </header>
 
             <div class="max-h-[70dvh] space-y-5 overflow-y-auto px-6 py-5">
+              <section
+                class="rounded-2xl border border-line bg-paper-soft/60 p-4"
+                :class="!provider.isConfigured.value && 'ring-1 ring-amber-400/40'"
+              >
+                <div class="mb-3 flex items-center justify-between gap-2">
+                  <div class="flex flex-col">
+                    <span class="display-eyebrow text-[10px]">Provider · 服务商</span>
+                    <span class="mt-1 text-[13px] font-medium text-ink">API 端点 与 凭据</span>
+                  </div>
+                  <span
+                    class="inline-flex items-center gap-1 rounded-full px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em]"
+                    :class="provider.isConfigured.value
+                      ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                      : 'bg-amber-500/10 text-amber-700 dark:text-amber-300'"
+                  >
+                    <Icon :name="provider.isConfigured.value ? 'check' : 'warning'" :size="11" />
+                    <span>{{ provider.isConfigured.value ? '已配置' : '未配置' }}</span>
+                  </span>
+                </div>
+
+                <p class="mb-3 text-[11px] leading-[1.6] text-muted">
+                  凭据只保存在你浏览器的 localStorage，刷新后仍在；不会写入任何服务端数据库。Network 面板里仍可见，截图分享请遮蔽。
+                </p>
+
+                <div class="space-y-3">
+                  <div>
+                    <label class="label mb-1.5 inline-flex items-center gap-1.5" for="set-base-url">
+                      <Icon name="link" :size="12" />
+                      <span>API 端点</span>
+                    </label>
+                    <input
+                      id="set-base-url"
+                      v-model="provider.state.baseUrl"
+                      type="url"
+                      class="field-input font-mono text-[12px]"
+                      placeholder="https://api.openai.com/v1"
+                      autocomplete="off"
+                      spellcheck="false"
+                      maxlength="200"
+                    />
+                    <p class="mt-1 text-[10px] leading-[1.5] text-muted">
+                      OpenAI 官方 <code class="font-mono">https://api.openai.com/v1</code>，第三方网关填它给的 base URL（含 <code class="font-mono">/v1</code>）。
+                    </p>
+                  </div>
+
+                  <div>
+                    <label class="label mb-1.5 inline-flex items-center gap-1.5" for="set-api-key">
+                      <Icon name="lightning" :size="12" />
+                      <span>API Key</span>
+                    </label>
+                    <div class="relative flex items-center gap-2">
+                      <input
+                        id="set-api-key"
+                        v-model="provider.state.apiKey"
+                        :type="showApiKey ? 'text' : 'password'"
+                        class="field-input pr-10 font-mono text-[12px]"
+                        placeholder="sk-..."
+                        autocomplete="off"
+                        spellcheck="false"
+                        maxlength="200"
+                      />
+                      <button
+                        type="button"
+                        class="absolute right-1.5 top-1/2 inline-grid h-8 w-8 -translate-y-1/2 place-items-center rounded-lg text-muted transition hover:bg-paper-soft hover:text-ink"
+                        :aria-label="showApiKey ? '隐藏 API Key' : '显示 API Key'"
+                        :aria-pressed="showApiKey"
+                        @click="showApiKey = !showApiKey"
+                      >
+                        <Icon :name="showApiKey ? 'eyeOff' : 'eye'" :size="14" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="mt-3 flex items-center justify-end">
+                  <button
+                    type="button"
+                    class="btn-quiet text-[11px]"
+                    :disabled="!provider.state.apiKey && !provider.state.baseUrl"
+                    @click="handleResetProvider"
+                  >
+                    <Icon name="trash" :size="12" />
+                    清除凭据
+                  </button>
+                </div>
+              </section>
+
               <section>
                 <label class="label mb-2 inline-flex items-center gap-1.5" for="set-neg">
                   <Icon name="eyeOff" :size="12" />

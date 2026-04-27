@@ -45,6 +45,10 @@ export function validatePayload(body) {
   const creativity = body.creativity === undefined ? null : body.creativity
   const seed = typeof body.seed === 'string' ? body.seed.trim() : ''
   const model = typeof body.model === 'string' ? body.model.trim() : ''
+  const apiKey = typeof body.apiKey === 'string' ? body.apiKey.trim() : ''
+  const baseUrl = typeof body.baseUrl === 'string'
+    ? body.baseUrl.trim().replace(/\/+$/, '')
+    : ''
 
   if (!prompt) {
     return { error: 'prompt 不能为空' }
@@ -98,6 +102,38 @@ export function validatePayload(body) {
     return { error: 'model 只允许字母、数字、点、下划线、横线、斜杠' }
   }
 
+  if (body.apiKey !== undefined && typeof body.apiKey !== 'string') {
+    return { error: 'apiKey 必须是字符串' }
+  }
+
+  if (apiKey.length > 200) {
+    return { error: 'apiKey 不能超过 200 个字符' }
+  }
+
+  if (apiKey === 'sk-xxxx') {
+    return { error: 'apiKey 不能是占位值 sk-xxxx' }
+  }
+
+  if (body.baseUrl !== undefined && typeof body.baseUrl !== 'string') {
+    return { error: 'baseUrl 必须是字符串' }
+  }
+
+  if (baseUrl.length > 200) {
+    return { error: 'baseUrl 不能超过 200 个字符' }
+  }
+
+  if (baseUrl) {
+    let parsed
+    try {
+      parsed = new URL(baseUrl)
+    } catch {
+      return { error: 'baseUrl 不是合法 URL' }
+    }
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+      return { error: 'baseUrl 必须是 http(s) 协议' }
+    }
+  }
+
   if (!allowedSizes.has(size)) {
     return { error: 'size 只支持 1024x1024、1024x1536、1536x1024' }
   }
@@ -122,6 +158,8 @@ export function validatePayload(body) {
       creativity,
       seed,
       model,
+      apiKey,
+      baseUrl,
     },
   }
 }

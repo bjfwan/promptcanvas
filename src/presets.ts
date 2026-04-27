@@ -101,11 +101,11 @@ export const qualityOptions: Array<{ value: ImageQuality; label: string }> = [
 export const customModelSentinel = '__custom__'
 
 export const modelOptions: Array<{ value: string; label: string; hint: string }> = [
-  { value: '', label: '默认（跟随后端）', hint: '使用 Cloudflare 上配置的 OPENAI_IMAGE_MODEL' },
-  { value: 'gpt-image-2', label: 'gpt-image-2', hint: '通用 · 自适应尺寸' },
+  { value: '', label: '不指定', hint: '由 API 服务商自行决定模型' },
   { value: 'gpt-image-1024x1024', label: 'gpt-image-1024x1024', hint: '方图专用' },
-  { value: 'gpt-image-1024x1536', label: 'gpt-image-1024x1536', hint: '竖图专用' },
+  { value: 'gpt-image-2', label: 'gpt-image-2', hint: '通用 · 自适应尺寸' },
   { value: 'gpt-image-1536x1024', label: 'gpt-image-1536x1024', hint: '横图专用' },
+  { value: 'gpt-image-1024x1536', label: 'gpt-image-1024x1536', hint: '竖图专用' },
   { value: customModelSentinel, label: '自定义…', hint: '手动填写中转站支持的模型名' },
 ]
 
