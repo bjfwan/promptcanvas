@@ -33,13 +33,6 @@ export interface ProviderConfig {
   proxyUrl?: string
 }
 
-export interface EnhanceConfig {
-  enabled: boolean
-  baseUrl: string
-  apiKey: string
-  model: string
-}
-
 export interface GeneratedImage {
   id?: string
   url?: string | null
@@ -105,8 +98,6 @@ export interface ChatUserMessage {
   content: string
   createdAt: string
   meta: ChatMessageMeta
-  rewrittenPrompt?: string
-  rewriteModel?: string
 }
 
 export interface ChatAssistantMessage {

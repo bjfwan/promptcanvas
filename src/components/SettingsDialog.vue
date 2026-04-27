@@ -4,7 +4,6 @@ import Icon from './Icon.vue'
 import Select, { type SelectOption } from './Select.vue'
 import { customModelSentinel, qualityOptions } from '../presets'
 import { useProviderConfig } from '../composables/useProviderConfig'
-import { useEnhanceConfig } from '../composables/useEnhanceConfig'
 import { useDiscoveredModels } from '../composables/useDiscoveredModels'
 import { ApiRequestError, testProvider } from '../api'
 import type { GenerateImageRequest, ImageQuality } from '../types'
@@ -34,19 +33,8 @@ const modelChoice = defineModel<string>('modelChoice', { required: true })
 const customModel = defineModel<string>('customModel', { required: true })
 
 const provider = useProviderConfig()
-const enhance = useEnhanceConfig()
 const discoveredModels = useDiscoveredModels()
 const showApiKey = ref(false)
-const showEnhanceKey = ref(false)
-
-function applyChatanywherePreset() {
-  enhance.applyChatanywherePreset()
-}
-
-function handleResetEnhance() {
-  enhance.reset()
-  showEnhanceKey.value = false
-}
 
 type TestStatus = 'idle' | 'testing' | 'success' | 'partial' | 'error'
 const testStatus = ref<TestStatus>('idle')
@@ -380,146 +368,6 @@ onBeforeUnmount(() => {
                   <p v-if="testHint" class="mt-1 text-[10px] leading-[1.5] opacity-80">
                     {{ testHint }}
                   </p>
-                </div>
-              </section>
-
-              <section
-                class="rounded-2xl border border-line bg-paper-soft/40 p-4"
-              >
-                <div class="mb-3 flex items-start justify-between gap-3">
-                  <div class="flex flex-col">
-                    <span class="display-eyebrow text-[10px]">Enhance · 智能改写</span>
-                    <span class="mt-1 text-[13px] font-medium text-ink">把任意输入重写成专业提示词</span>
-                    <span class="mt-1 text-[10px] leading-[1.5] text-muted">
-                      生成前先用文本模型按 Scene/Subject/Details/Use case/Constraints 五段结构改写一轮，再交给图像模型。
-                    </span>
-                  </div>
-                  <label class="relative inline-flex shrink-0 cursor-pointer items-center">
-                    <input
-                      type="checkbox"
-                      class="peer sr-only"
-                      :checked="enhance.state.enabled"
-                      @change="enhance.update({ enabled: ($event.target as HTMLInputElement).checked })"
-                      aria-label="启用智能改写"
-                    />
-                    <span
-                      class="h-6 w-11 rounded-full border border-line-strong bg-paper-soft transition peer-checked:border-ink peer-checked:bg-ink"
-                    ></span>
-                    <span
-                      class="absolute left-0.5 inline-grid h-5 w-5 place-items-center rounded-full bg-vellum shadow transition peer-checked:translate-x-5"
-                    >
-                      <Icon
-                        :name="enhance.state.enabled ? 'sparkle' : 'close'"
-                        :size="10"
-                        :class="enhance.state.enabled ? 'text-ink' : 'text-muted'"
-                      />
-                    </span>
-                  </label>
-                </div>
-
-                <div
-                  v-if="enhance.state.enabled"
-                  class="space-y-3"
-                >
-                  <div class="flex flex-wrap items-center gap-2">
-                    <button
-                      type="button"
-                      class="btn-quiet text-[11px]"
-                      @click="applyChatanywherePreset"
-                    >
-                      <Icon name="lightning" :size="12" />
-                      使用 Chatanywhere 免费端点
-                    </button>
-                    <span
-                      v-if="enhance.isUsingFallback.value"
-                      class="inline-flex items-center gap-1 rounded-full bg-paper-soft px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em] text-muted"
-                    >
-                      <Icon name="share" :size="10" />
-                      未填则复用图像服务商
-                    </span>
-                  </div>
-
-                  <div>
-                    <label class="label mb-1.5 inline-flex items-center gap-1.5" for="set-enhance-base">
-                      <Icon name="link" :size="12" />
-                      <span>改写端点</span>
-                      <span class="font-mono text-[9px] uppercase tracking-[0.16em] text-muted">可选</span>
-                    </label>
-                    <input
-                      id="set-enhance-base"
-                      v-model="enhance.state.baseUrl"
-                      type="url"
-                      class="field-input font-mono text-[12px]"
-                      placeholder="https://api.chatanywhere.tech/v1"
-                      autocomplete="off"
-                      spellcheck="false"
-                      maxlength="200"
-                    />
-                    <p class="mt-1 text-[10px] leading-[1.5] text-muted">
-                      留空则复用上方「API 端点」与「API Key」。建议填 chatanywhere（免费 200 次/天）或其他便宜的文本网关。
-                    </p>
-                  </div>
-
-                  <div>
-                    <label class="label mb-1.5 inline-flex items-center gap-1.5" for="set-enhance-key">
-                      <Icon name="lightning" :size="12" />
-                      <span>改写 API Key</span>
-                      <span class="font-mono text-[9px] uppercase tracking-[0.16em] text-muted">可选</span>
-                    </label>
-                    <div class="relative flex items-center gap-2">
-                      <input
-                        id="set-enhance-key"
-                        v-model="enhance.state.apiKey"
-                        :type="showEnhanceKey ? 'text' : 'password'"
-                        class="field-input pr-10 font-mono text-[12px]"
-                        placeholder="sk-...（独立 Key，否则用上方主 Key）"
-                        autocomplete="off"
-                        spellcheck="false"
-                        maxlength="200"
-                      />
-                      <button
-                        type="button"
-                        class="absolute right-1.5 top-1/2 inline-grid h-8 w-8 -translate-y-1/2 place-items-center rounded-lg text-muted transition hover:bg-paper-soft hover:text-ink"
-                        :aria-label="showEnhanceKey ? '隐藏改写 Key' : '显示改写 Key'"
-                        :aria-pressed="showEnhanceKey"
-                        @click="showEnhanceKey = !showEnhanceKey"
-                      >
-                        <Icon :name="showEnhanceKey ? 'eyeOff' : 'eye'" :size="14" />
-                      </button>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label class="label mb-1.5 inline-flex items-center gap-1.5" for="set-enhance-model">
-                      <Icon name="settings" :size="12" />
-                      <span>改写模型</span>
-                    </label>
-                    <input
-                      id="set-enhance-model"
-                      v-model="enhance.state.model"
-                      type="text"
-                      class="field-input font-mono text-[12px]"
-                      placeholder="gpt-4o-mini"
-                      autocomplete="off"
-                      spellcheck="false"
-                      maxlength="64"
-                    />
-                    <p class="mt-1 text-[10px] leading-[1.5] text-muted">
-                      默认 <code class="font-mono">gpt-4o-mini</code>。也可换成 <code class="font-mono">deepseek-v3</code>、<code class="font-mono">gpt-4.1-mini</code>、<code class="font-mono">gpt-5-nano</code> 等便宜模型。
-                    </p>
-                  </div>
-
-                  <div class="flex flex-wrap items-center justify-end gap-2">
-                    <button
-                      type="button"
-                      class="btn-quiet text-[11px]"
-                      :disabled="!enhance.state.baseUrl && !enhance.state.apiKey"
-                      @click="handleResetEnhance"
-                    >
-                      <Icon name="trash" :size="12" />
-                      清除改写凭据
-                    </button>
-                  </div>
                 </div>
               </section>
 
