@@ -4,6 +4,7 @@ import Icon from './Icon.vue'
 import StyleSwatch from './StyleSwatch.vue'
 import Select, { type SelectOption } from './Select.vue'
 import { customModelSentinel, sizeOptions, styleOptions } from '../presets'
+import { stylePrompts } from '../lib/imagesApi'
 import { useDiscoveredModels } from '../composables/useDiscoveredModels'
 import type { ImageSize, ImageStyle } from '../types'
 
@@ -55,6 +56,10 @@ const emit = defineEmits<{
 }>()
 
 const promptRef = ref<HTMLTextAreaElement | null>(null)
+const previewOpen = ref(false)
+
+const activeStylePrompt = computed(() => stylePrompts[stl.value] ?? '')
+const isRawStyle = computed(() => stl.value === 'raw')
 
 const promptCount = computed(() => prompt.value.length)
 const promptTokens = computed(() => Math.max(1, Math.round(prompt.value.length / 4)))
@@ -246,6 +251,49 @@ watch(
           </span>
         </button>
       </div>
+
+      <!-- 模板预览手风琴：点展开可看到生图时会拼接的「风格指引」原文 -->
+      <button
+        type="button"
+        class="flex w-full items-center justify-between rounded-2xl border border-line bg-cream/50 px-3 py-2.5 text-left text-[12px] transition hover:border-line-strong hover:bg-paper-soft"
+        :aria-expanded="previewOpen"
+        @click="previewOpen = !previewOpen"
+      >
+        <span class="flex items-center gap-2">
+          <Icon name="info" :size="12" class="text-muted" />
+          <span class="text-ink">
+            <span v-if="isRawStyle">已选 「不套模板」：原样发送</span>
+            <span v-else>生图时会拼接的「风格指引」</span>
+          </span>
+        </span>
+        <Icon
+          name="chevronDown"
+          :size="12"
+          class="text-muted transition"
+          :class="previewOpen ? 'rotate-180' : ''"
+        />
+      </button>
+      <Transition name="acc">
+        <div
+          v-if="previewOpen"
+          class="rounded-2xl border border-line bg-vellum/70 p-3 text-[12px] leading-[1.7]"
+        >
+          <p v-if="isRawStyle" class="flex items-center gap-2 text-forest">
+            <Icon name="check" :size="12" />
+            <span>不附加任何风格指引。你输入什么就发什么。</span>
+          </p>
+          <template v-else>
+            <p class="mb-2 inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.18em] text-muted">
+              <Icon name="sparkle" :size="10" />
+              <span>被并到提示词后的原文</span>
+            </p>
+            <p class="whitespace-pre-wrap break-words text-ink/85">{{ activeStylePrompt }}</p>
+            <p class="mt-2 text-[10px] leading-snug text-muted">
+              不满意？选「不套模板」跳过这一段，或直接在上方提示词里写你自己的镜头/光位/材质。
+            </p>
+          </template>
+        </div>
+      </Transition>
     </section>
 
     <!-- Size / Count -->

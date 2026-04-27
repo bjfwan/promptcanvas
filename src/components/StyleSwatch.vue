@@ -23,6 +23,7 @@ const palettes: Record<ImageStyle, { fill: string; stroke: string; mark: string 
   cinematic: { fill: '#1a1612', stroke: '#f1e9dc', mark: 'M4 6h16v12H4z M8 6v12 M16 6v12' },
   logo: { fill: '#faf3e6', stroke: '#1a1612', mark: 'M5 12h14 M12 5v14 M7 7l10 10 M17 7L7 17' },
   interior: { fill: '#e8d8c0', stroke: '#2f4a2f', mark: 'M4 20h16 M6 20V8l6-4 6 4v12 M10 20v-7h4v7' },
+  raw: { fill: '#f1e9dc', stroke: '#6c6357', mark: 'M5 8h14 M5 12h10 M5 16h7' },
 }
 
 const palette = computed(() => palettes[props.variant])

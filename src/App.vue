@@ -663,11 +663,16 @@ watch(style, (newValue, oldValue) => {
   const trimmed = prompt.value.trim()
   const replaceable =
     trimmed === defaultPrompt.trim() || presetExamplePrompts.has(trimmed) || trimmed.length === 0
-  if (replaceable) {
+  // 仅当目标模板有 examplePrompt 时才覆盖（raw 风格 examplePrompt 为空，不应擦掉用户已写内容）
+  if (replaceable && preset.examplePrompt) {
     prompt.value = preset.examplePrompt
     if (preset.defaultSize) size.value = preset.defaultSize
   }
-  toast.info('已切换提示词模板', `${preset.label} · ${preset.accent}`)
+  if (newValue === 'raw') {
+    toast.info('已切换为「不套模板」', '直接发送你的原始提示词，不附加风格指引')
+  } else {
+    toast.info('已切换提示词模板', `${preset.label} · ${preset.accent}`)
+  }
 })
 
 onMounted(() => {

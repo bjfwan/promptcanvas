@@ -82,6 +82,14 @@ export const styleOptions: StylePreset[] = [
       '一间日式中古风客厅的建筑摄影，低矮胡桃木茶几与亚麻原色三人沙发，墙边一只米白纸灯笼立地灯，木地板上铺着粗织毛毯；午后斜阳从右侧落地窗洒入，窗外竹影在墙上投下柔动的剪影，空气中可见一丝光尘；24mm 广角不畸变，机位水平略低于茶几高度，画面有一本翻开的书与一杯茶这样的居住痕迹，氛围安静、温暖、克制',
     defaultSize: '1536x1024',
   },
+  {
+    value: 'raw',
+    label: '不套模板',
+    description: '不附加任何风格指引，原样发送',
+    accent: '原样',
+    examplePrompt: '',
+    defaultSize: '1024x1024',
+  },
 ]
 
 export const sizeOptions: Array<{ value: ImageSize; label: string; hint: string }> = [

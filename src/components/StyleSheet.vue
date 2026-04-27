@@ -3,7 +3,12 @@ import { onBeforeUnmount, watch } from 'vue'
 import Icon from './Icon.vue'
 import StyleSwatch from './StyleSwatch.vue'
 import { styleOptions } from '../presets'
+import { stylePrompts } from '../lib/imagesApi'
 import type { ImageStyle } from '../types'
+
+function styleHint(value: ImageStyle): string {
+  return stylePrompts[value] ?? ''
+}
 
 interface Props {
   open: boolean
@@ -113,20 +118,36 @@ onBeforeUnmount(() => {
               >
                 <StyleSwatch :variant="item.value" :active="current === item.value" :size="40" />
                 <span class="min-w-0 flex-1">
-                  <span class="block text-[13px] font-medium leading-tight">{{ item.label }}</span>
+                  <span class="flex items-center gap-1">
+                    <span class="block text-[13px] font-medium leading-tight">{{ item.label }}</span>
+                    <Icon
+                      v-if="current === item.value"
+                      name="check"
+                      :size="12"
+                      class="text-paper/90"
+                    />
+                  </span>
                   <span
-                    class="mt-0.5 block text-[11px] leading-snug"
-                    :class="current === item.value ? 'text-paper/70' : 'text-muted'"
+                    class="mt-0.5 block text-[10px] uppercase tracking-[0.16em]"
+                    :class="current === item.value ? 'text-paper/55' : 'text-muted/85'"
                   >
                     {{ item.accent }}
                   </span>
+                  <span
+                    v-if="item.value === 'raw'"
+                    class="sheet-style-preview mt-1.5 text-[11px] leading-[1.4]"
+                    :class="current === item.value ? 'text-paper/75' : 'text-forest'"
+                  >
+                    ✓ 不附加任何风格指引，原样发送
+                  </span>
+                  <span
+                    v-else
+                    class="sheet-style-preview mt-1.5 block text-[11px] leading-[1.4]"
+                    :class="current === item.value ? 'text-paper/65' : 'text-muted/85'"
+                  >
+                    {{ styleHint(item.value) }}
+                  </span>
                 </span>
-                <Icon
-                  v-if="current === item.value"
-                  name="check"
-                  :size="14"
-                  class="text-paper/90"
-                />
               </button>
             </li>
           </ul>
@@ -142,7 +163,16 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .style-sheet {
-  max-height: 70dvh;
+  max-height: 80dvh;
+}
+
+.sheet-style-preview {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-break: break-word;
 }
 
 .style-scrim-enter-from,

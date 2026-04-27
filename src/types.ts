@@ -9,6 +9,7 @@ export type ImageStyle =
   | 'cinematic'
   | 'logo'
   | 'interior'
+  | 'raw'
 
 export type ImageQuality = 'auto' | 'low' | 'medium' | 'high'
 

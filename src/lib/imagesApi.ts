@@ -21,23 +21,27 @@ export const mimeTypes: Record<string, string> = {
   webp: 'image/webp',
 }
 
+// 每条会在生图时作为「风格指引」并到用户提示词后面。
+// 设计原则：具体镜头/光位/材质 + 明确 avoid 清单 + 适度中英混用以提高可识别性。
+// raw = 空字符串：不拼接任何风格指引，原样发送用户提示词。
 export const stylePrompts: Record<string, string> = {
   natural:
-    '自然写实摄影：真实自然光与可信色彩，35mm 视角与浅景深突出主体，质感细腻，避免塑料感与过度后期',
+    '自然写实摄影 · 35mm f/2 真实日光，侧逆主光带方向性阴影，色彩真实但层次细腻；纪实候机式构图，主体浅景深锐利，背景自然虚化。Avoid: plastic skin, HDR look, over-saturation, posterized colors',
   poster:
-    '电影 / 品牌海报排版：主视觉居中聚焦，强构图与负空间留白，配色克制有层次，整体具备印刷级视觉冲击力',
+    '编辑级海报排版 · 主视觉聚焦 + 30–40% 负空间留给标题区，受控2–3 色配色（其中一色作 accent），非对称平衡构图与明确视觉层次，印刷级对比度与色调深度。Avoid: cluttered layout, decorative noise, weak focal hierarchy',
   product:
-    '高端商业产品摄影：无缝纸背景，柔光箱主光配蜂窝反射补光，材质反光与细节锐利干净，构图简洁突出产品本身',
+    '高端商业产品摄影 · 100mm macro f/8，大柔光箱主光 + 反光板补光 + 轻微 rim light，无缝纸或亚克力台面，材质保留真实反光与高光细节；紧凑裁切产品占主体，下方柔和椭圆阴影。Avoid: rainbow reflections, plastic glare, busy background',
   portrait:
-    '杂志级人物肖像：85mm 中焦镜头质感，柔和方向性主光，皮肤真实保留毛孔与微表情，焦点锐利落在眼睛',
+    '杂志级人物肖像 · 85mm f/1.8 头肩构图，窗光 30–45° 主光 + 柔和反光板补光，焦点锐利落在近端眼睛；皮肤保留毛孔、雀斑、微表情，克制调色，姿态从容。Avoid: airbrushed plastic skin, over-smoothing, doll-like eyes',
   anime:
-    '高品质日系动画插画：干净赛璐璐线稿，鲜明但协调的色块，光影分明层次清晰，避免线稿杂乱与脏色',
+    '现代日系赛璐璐动画插画 · 干净一致的线稿粗细，每个色域 3–4 块平涂色，明确的光影分离与克制的高光点缀，角色表情生动但结构准确。Avoid: muddy colors, messy linework, photoreal blending, derivative anime tropes',
   cinematic:
-    '电影截图质感：2.39:1 宽银幕构图，戏剧性方向光与冷暖对比，胶片颗粒与色彩分级，氛围感优先于细节堆叠',
+    '2.39:1 宽银幕电影截图 · 40mm 变形镜头质感与水平镜头眩光 + 椭圆 bokeh，方向性主光与深阴影，根据情绪选 teal-and-amber 或 muted pastel 调色，35mm 胶片颗粒与空气透视；A24 式构图，留白克制。Avoid: flat lighting, forced symmetry, over-detailed clutter',
   logo:
-    '极简品牌标志设计：纯色背景上的几何抽象符号，单色或最多双色，无渐变无阴影，线条粗细一致，缩到 32px 仍可辨识',
+    '极简品牌标志 · 纯色背景 + 单一前景色（或克制的双色配对），纯平面向量美学，无渐变、无阴影、无发光；线条粗细一致，缩到 16×16 像素仍可辨识；本图不渲染任何文字或字母。Avoid: gradients, drop shadow, glow, photoreal texture',
   interior:
-    '建筑 / 空间摄影：广角但不畸变，自然光为主光源，材质与软装真实可信，画面有空间纵深与生活气息，避免 CG 塑料感',
+    '建筑内部摄影 · 24mm 广角直线镜头校正垂直线，主光为窗光自然采光 + 柔和环境补光，材质真实（实木纹理、织物经纬、哑光石材），机位胯高营造人本视角，画面有刻意负空间与生活痕迹（叠好的毯子、半读的书）。Avoid: CG plastic surfaces, impossible perspective, fish-eye distortion',
+  raw: '',
 }
 
 export interface ValidatedPayload {
@@ -184,7 +188,8 @@ export function buildPrompt(payload: {
   creativity: number | null
   seed: string
 }): string {
-  const styleInstruction = stylePrompts[payload.style] || payload.style
+  // 用 ?? 而非 ||：raw 风格明确设为空字符串 → 不附加风格指引；仅在未定义时才 fallback 到 style 字面量
+  const styleInstruction = stylePrompts[payload.style] ?? payload.style
 
   return [
     `画面内容：${payload.prompt}`,
