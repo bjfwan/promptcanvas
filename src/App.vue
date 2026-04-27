@@ -512,12 +512,22 @@ async function refreshHealth(options?: { silent?: boolean }) {
 
   try {
     const result = await testProvider()
-    healthStatus.value = 'online'
-    healthMessage.value = result.message
 
     if (result.models?.length) {
       discoveredModels.setModels(result.models)
     }
+
+    if (!result.generationsCorsOk) {
+      healthStatus.value = 'offline'
+      healthMessage.value = result.message
+      if (!options?.silent) {
+        toast.error('生成路径 CORS 缺失', '生成会被浏览器拦截，但上游仍会扣费。详见「设置」中的测试面板')
+      }
+      return
+    }
+
+    healthStatus.value = 'online'
+    healthMessage.value = result.message
 
     if (!options?.silent) {
       toast.success('API 连接正常', result.message)

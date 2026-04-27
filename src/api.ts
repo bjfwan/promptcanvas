@@ -169,6 +169,33 @@ export interface TestProviderResult {
   modelCount?: number
   models: string[]
   message: string
+  modelsOk: boolean
+  generationsCorsOk: boolean
+  generationsProbeStatus?: number
+  warnings: string[]
+}
+
+async function probeGenerationsCors(baseUrl: string): Promise<{
+  ok: boolean
+  status?: number
+  message?: string
+}> {
+  try {
+    const response = await fetch(`${baseUrl}/images/generations`, {
+      method: 'POST',
+      mode: 'cors',
+      credentials: 'omit',
+      cache: 'no-store',
+      headers: {
+        'Content-Type': 'text/plain',
+      },
+      body: 'cors-probe',
+    })
+    return { ok: true, status: response.status }
+  } catch (error) {
+    const err = error as Error
+    return { ok: false, message: err?.message || 'CORS probe failed' }
+  }
 }
 
 export async function testProvider(override?: {
@@ -252,14 +279,35 @@ export async function testProvider(override?: {
     .filter((id) => id.length > 0)
   const modelCount = models.length || (Array.isArray(data?.data) ? data.data.length : undefined)
 
+  const probe = await probeGenerationsCors(baseUrl)
+  const probeNow = typeof performance !== 'undefined' ? performance.now() : Date.now()
+  const totalMs = Math.round(probeNow - start)
+  const warnings: string[] = []
+
+  if (!probe.ok) {
+    warnings.push(
+      '/images/generations 路径缺少 CORS 头：浏览器可以发起预检与请求，但读不到响应正文。这意味着上游会照常计费但前端拿不到图。请联系中转站运维补 Access-Control-Allow-Origin（或换一个 CORS 完整的服务商）。',
+    )
+  }
+
+  const baseMessage = modelCount !== undefined
+    ? `已读取 ${modelCount} 个模型 · ${totalMs}ms`
+    : `连接成功 · ${totalMs}ms`
+
+  const message = probe.ok
+    ? `连接成功 · ${baseMessage}`
+    : `部分通过 · ${baseMessage}（生成路径 CORS 缺失，会失败）`
+
   return {
     ok: true,
-    durationMs,
+    durationMs: totalMs,
     modelCount,
     models,
-    message: modelCount !== undefined
-      ? `连接成功 · ${modelCount} 个模型 · ${durationMs}ms`
-      : `连接成功 · ${durationMs}ms`,
+    message,
+    modelsOk: true,
+    generationsCorsOk: probe.ok,
+    generationsProbeStatus: probe.status,
+    warnings,
   }
 }
 

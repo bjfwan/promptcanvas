@@ -64,8 +64,15 @@ function autosize() {
   const el = textareaRef.value
   if (!el) return
   el.style.height = 'auto'
-  const max = focused.value ? 200 : 96
-  el.style.height = `${Math.min(el.scrollHeight, max)}px`
+  const computed = window.getComputedStyle(el)
+  const lineHeight = parseFloat(computed.lineHeight) || 24
+  const padY =
+    (parseFloat(computed.paddingTop) || 0) + (parseFloat(computed.paddingBottom) || 0)
+  const cap = focused.value ? 200 : 96
+  // 把上限对齐到整行倍数，避免出现“半行被裁切”的视觉残影
+  const lines = Math.max(1, Math.floor(Math.max(lineHeight, cap - padY) / lineHeight))
+  const snapped = lines * lineHeight + padY
+  el.style.height = `${Math.min(el.scrollHeight, snapped)}px`
 }
 
 function focusInput() {
@@ -174,7 +181,7 @@ defineExpose({ focusInput })
       <!-- 工具行：模型 chip / 风格 chip / 发送按钮 -->
       <div class="flex items-center gap-1.5 px-2.5 pb-2 pt-1">
         <!-- 模型 chip：用 Select 接管下拉，外观改为药丸 -->
-        <div class="model-chip-wrap relative">
+        <div class="model-chip-wrap relative min-w-0">
           <Select
             v-model="modelChoice"
             :options="modelSelectOptions"
@@ -197,47 +204,52 @@ defineExpose({ focusInput })
           <Icon name="chevronDown" :size="11" class="text-muted" />
         </button>
 
-        <!-- 字符计数 / 进行中状态 -->
-        <span
-          v-if="isGenerating"
-          class="ml-auto inline-flex items-center gap-1 px-1 font-mono text-[10px] uppercase tracking-[0.2em] text-muted"
-        >
-          <Icon name="sparkle" :size="11" class="animate-breathe" />
-          composing · {{ elapsedSeconds }}s
-        </span>
-        <span
-          v-else-if="promptCount > 0"
-          class="ml-auto px-1 font-mono text-[10px] tabular-nums text-muted"
-        >
-          {{ promptCount }} / 1200
-        </span>
-        <span v-else class="ml-auto px-1 font-mono text-[10px] uppercase tracking-[0.2em] text-muted/70">
-          ⌘ ↵ 发送
-        </span>
-
-        <!-- 发送按钮 -->
-        <button
-          type="button"
-          class="chat-dock__send"
-          :class="{
-            'chat-dock__send--ready': promptHasContent && !sendDisabled,
-            'chat-dock__send--busy': isGenerating,
-          }"
-          :disabled="sendDisabled"
-          aria-label="发送提示词生成图片"
-          @click="send"
-        >
-          <Icon
-            :name="isGenerating ? 'sparkle' : 'send'"
-            :size="16"
-            :class="isGenerating ? 'animate-breathe' : ''"
-          />
+        <!-- 右侧：字符计数 / 进行中状态 + 发送按钮（在一个 flex 容器中以保证 ml-auto 始终生效） -->
+        <div class="chat-dock__tail ml-auto flex items-center gap-1.5">
           <span
             v-if="isGenerating"
-            class="pointer-events-none absolute inset-y-0 -inset-x-1/2 bg-gradient-to-r from-transparent via-paper/15 to-transparent animate-progress-sweep"
-            aria-hidden="true"
-          ></span>
-        </button>
+            class="inline-flex items-center gap-1 whitespace-nowrap px-1 font-mono text-[10px] uppercase tracking-[0.2em] text-muted"
+          >
+            <Icon name="sparkle" :size="11" class="animate-breathe" />
+            <span>{{ elapsedSeconds }}s</span>
+          </span>
+          <span
+            v-else-if="promptCount > 0"
+            class="whitespace-nowrap px-1 font-mono text-[10px] tabular-nums text-muted"
+          >
+            {{ promptCount }}/1200
+          </span>
+          <span
+            v-else
+            class="hidden whitespace-nowrap px-1 font-mono text-[10px] uppercase tracking-[0.2em] text-muted/70 sm:inline"
+          >
+            ⌘ ↵ 发送
+          </span>
+
+          <!-- 发送按钮 -->
+          <button
+            type="button"
+            class="chat-dock__send"
+            :class="{
+              'chat-dock__send--ready': promptHasContent && !sendDisabled,
+              'chat-dock__send--busy': isGenerating,
+            }"
+            :disabled="sendDisabled"
+            aria-label="发送提示词生成图片"
+            @click="send"
+          >
+            <Icon
+              :name="isGenerating ? 'sparkle' : 'send'"
+              :size="16"
+              :class="isGenerating ? 'animate-breathe' : ''"
+            />
+            <span
+              v-if="isGenerating"
+              class="pointer-events-none absolute inset-y-0 -inset-x-1/2 bg-gradient-to-r from-transparent via-paper/15 to-transparent animate-progress-sweep"
+              aria-hidden="true"
+            ></span>
+          </button>
+        </div>
       </div>
     </div>
   </div>
@@ -269,6 +281,20 @@ defineExpose({ focusInput })
   font-size: 15px;
   line-height: 1.55;
   letter-spacing: 0.005em;
+  /* 超出上限时允许在 textarea 内部滚动（触屏可拖动） */
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(26, 22, 18, 0.18) transparent;
+  overscroll-behavior: contain;
+}
+
+.chat-dock__textarea::-webkit-scrollbar {
+  width: 4px;
+}
+
+.chat-dock__textarea::-webkit-scrollbar-thumb {
+  background: rgba(26, 22, 18, 0.18);
+  border-radius: 999px;
 }
 
 .chat-dock__textarea::placeholder {
@@ -282,6 +308,9 @@ defineExpose({ focusInput })
 /* 把 Select 的方形 trigger 改造成药丸形 chip */
 .model-chip-wrap :deep(.select-trigger) {
   height: 32px;
+  /* 在窄屏上使用动态上限，防止较长的模型名把字符计数或发送键挤出行
+     内部的 .select-trigger__label 已启用 ellipsis，超出后会以“…”截断 */
+  max-width: clamp(7.25rem, 32vw, 11rem);
   border-radius: 999px;
   padding: 0 1.7rem 0 0.7rem;
   background: #faf3e6;

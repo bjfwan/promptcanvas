@@ -36,7 +36,7 @@ const provider = useProviderConfig()
 const discoveredModels = useDiscoveredModels()
 const showApiKey = ref(false)
 
-type TestStatus = 'idle' | 'testing' | 'success' | 'error'
+type TestStatus = 'idle' | 'testing' | 'success' | 'partial' | 'error'
 const testStatus = ref<TestStatus>('idle')
 const testMessage = ref('')
 const testHint = ref('')
@@ -73,13 +73,23 @@ async function handleTestProvider() {
     if (result.models?.length) {
       discoveredModels.setModels(result.models)
     }
-    testStatus.value = 'success'
     testMessage.value = result.message
     const imageCount = discoveredModels.imageOnly.value.length
-    testHint.value = imageCount > 0
-      ? `已从中转站拉取 ${imageCount} 个可能可用的图片模型，已加入下方模型下拉`
-      : '连接成功，但未识别到明显的图片模型名，可选「自定义…」手动填写'
-    emit('test-result', { ok: true, message: result.message })
+    if (!result.generationsCorsOk) {
+      testStatus.value = 'partial'
+      testHint.value = result.warnings[0] || '/images/generations 路径的 CORS 不完整，生成会被浏览器拦截但上游仍会扣费。'
+      emit('test-result', {
+        ok: false,
+        message: result.message,
+        code: 'PARTIAL_CORS',
+      })
+    } else {
+      testStatus.value = 'success'
+      testHint.value = imageCount > 0
+        ? `已从中转站拉取 ${imageCount} 个可能可用的图片模型，已加入下方模型下拉。生成路径 CORS 也检测正常。`
+        : '连接成功，但未识别到明显的图片模型名，可选「自定义…」手动填写。生成路径 CORS 检测正常。'
+      emit('test-result', { ok: true, message: result.message })
+    }
   } catch (error) {
     testStatus.value = 'error'
     if (error instanceof ApiRequestError) {
@@ -312,6 +322,7 @@ onBeforeUnmount(() => {
                   :class="{
                     'border-line bg-paper-soft/60 text-muted': testStatus === 'testing',
                     'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300': testStatus === 'success',
+                    'border-amber-500/40 bg-amber-500/[0.08] text-amber-700 dark:text-amber-300': testStatus === 'partial',
                     'border-accent/40 bg-accent/[0.08] text-accent': testStatus === 'error',
                   }"
                   role="status"
@@ -319,7 +330,13 @@ onBeforeUnmount(() => {
                 >
                   <p class="flex items-center gap-1.5 font-medium">
                     <Icon
-                      :name="testStatus === 'success' ? 'check' : testStatus === 'error' ? 'warning' : 'refresh'"
+                      :name="testStatus === 'success'
+                        ? 'check'
+                        : testStatus === 'partial'
+                          ? 'warning'
+                          : testStatus === 'error'
+                            ? 'warning'
+                            : 'refresh'"
                       :size="12"
                       :class="testStatus === 'testing' ? 'animate-spin' : ''"
                     />
