@@ -1,6 +1,11 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { ApiRequestError, PROVIDER_NOT_CONFIGURED, generateImage, resolveImageSource, testProvider } from './api'
+import {
+  allowedReferenceImageMimeTypes,
+  maxReferenceImageSizeBytes,
+  maxReferenceImages,
+} from './lib/imagesApi'
 import { customModelSentinel, qualityOptions, sizeOptions, styleOptions, stylePresetById } from './presets'
 import { clearDraft, clearHistory, loadDraft, loadHistory, prependHistory, saveDraft } from './storage'
 import type {
@@ -14,6 +19,7 @@ import type {
   ImageQuality,
   ImageSize,
   ImageStyle,
+  ReferenceImageAttachment,
 } from './types'
 import AppHeader from './components/AppHeader.vue'
 import PromptComposer from './components/PromptComposer.vue'
@@ -45,6 +51,7 @@ const creativity = ref(7)
 const seed = ref('')
 const modelChoice = ref<string>('')
 const customModel = ref<string>('')
+const referenceImages = ref<ReferenceImageAttachment[]>([])
 const images = ref<GeneratedImage[]>([])
 const activeImageIndex = ref(0)
 const isGenerating = ref(false)
@@ -120,6 +127,7 @@ if (restoredDraft) {
 let timerId: number | undefined
 let draftSaveTimer: number | undefined
 const primedImageOrigins = new Set<string>()
+const ownedReferencePreviewUrls = new Set<string>()
 
 watch(
   [prompt, negativePrompt, style, size, count, outputFormat, quality, creativity, seed, modelChoice, customModel],
@@ -174,6 +182,125 @@ function createId() {
   }
 
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`
+}
+
+function resolveReferenceMimeType(file: File) {
+  const explicit = (file.type || '').trim().toLowerCase()
+  if (explicit) return explicit
+
+  const lowerName = file.name.toLowerCase()
+  if (lowerName.endsWith('.png')) return 'image/png'
+  if (lowerName.endsWith('.jpg') || lowerName.endsWith('.jpeg')) return 'image/jpeg'
+  if (lowerName.endsWith('.webp')) return 'image/webp'
+  if (lowerName.endsWith('.gif')) return 'image/gif'
+  return ''
+}
+
+function createReferenceImageAttachment(file: File): ReferenceImageAttachment {
+  const previewUrl = URL.createObjectURL(file)
+  ownedReferencePreviewUrls.add(previewUrl)
+
+  return {
+    id: createId(),
+    name: file.name,
+    mimeType: resolveReferenceMimeType(file),
+    sizeBytes: file.size,
+    previewUrl,
+    file,
+  }
+}
+
+function cloneReferenceImageAttachment(image: ReferenceImageAttachment): ReferenceImageAttachment {
+  if (!image.file) {
+    return {
+      ...image,
+      id: createId(),
+    }
+  }
+
+  const previewUrl = URL.createObjectURL(image.file)
+  ownedReferencePreviewUrls.add(previewUrl)
+
+  return {
+    ...image,
+    id: createId(),
+    previewUrl,
+    file: image.file,
+  }
+}
+
+function releaseOwnedReferencePreviewUrls(list: ReferenceImageAttachment[]) {
+  list.forEach((image) => {
+    if (!ownedReferencePreviewUrls.has(image.previewUrl)) return
+    URL.revokeObjectURL(image.previewUrl)
+    ownedReferencePreviewUrls.delete(image.previewUrl)
+  })
+}
+
+function clearComposerReferenceImages() {
+  releaseOwnedReferencePreviewUrls(referenceImages.value)
+  referenceImages.value = []
+}
+
+function addReferenceImages(files: File[]) {
+  if (!files.length) return
+
+  if (referenceImages.value.length >= maxReferenceImages) {
+    toast.info(`最多添加 ${maxReferenceImages} 张参考图`)
+    return
+  }
+
+  const remaining = Math.max(0, maxReferenceImages - referenceImages.value.length)
+  const candidates = files.slice(0, remaining)
+  const existingKeys = new Set(
+    referenceImages.value.map((image) => `${image.name}:${image.sizeBytes}:${image.mimeType}`),
+  )
+  const accepted: ReferenceImageAttachment[] = []
+  const rejected: string[] = []
+
+  for (const file of candidates) {
+    const mimeType = resolveReferenceMimeType(file)
+    const identity = `${file.name}:${file.size}:${mimeType}`
+
+    if (!allowedReferenceImageMimeTypes.has(mimeType)) {
+      rejected.push(`${file.name} 格式不支持`)
+      continue
+    }
+
+    if (file.size > maxReferenceImageSizeBytes) {
+      rejected.push(`${file.name} 超过 ${Math.round(maxReferenceImageSizeBytes / 1024 / 1024)}MB`)
+      continue
+    }
+
+    if (existingKeys.has(identity)) {
+      rejected.push(`${file.name} 已添加过`)
+      continue
+    }
+
+    existingKeys.add(identity)
+    accepted.push(createReferenceImageAttachment(file))
+  }
+
+  if (accepted.length) {
+    referenceImages.value = [...referenceImages.value, ...accepted]
+    toast.success(`已添加 ${accepted.length} 张参考图`)
+  }
+
+  if (files.length > candidates.length) {
+    rejected.push(`最多添加 ${maxReferenceImages} 张参考图`)
+  }
+
+  if (rejected.length) {
+    toast.info(rejected[0], rejected.length > 1 ? `另有 ${rejected.length - 1} 项未加入` : undefined)
+  }
+}
+
+function removeReferenceImage(id: string) {
+  const removed = referenceImages.value.find((image) => image.id === id)
+  if (removed) {
+    releaseOwnedReferencePreviewUrls([removed])
+  }
+  referenceImages.value = referenceImages.value.filter((image) => image.id !== id)
 }
 
 function primeImageOrigin(src: string) {
@@ -245,6 +372,7 @@ function buildPayload(): GenerateImageRequest {
     creativity: creativity.value,
     seed: seed.value.trim() || undefined,
     model: resolvedModel || undefined,
+    referenceImages: referenceImages.value.length ? referenceImages.value.slice() : undefined,
   }
 }
 
@@ -254,11 +382,13 @@ function payloadToMeta(payload: GenerateImageRequest): ChatMessageMeta {
     size: payload.size,
     count: payload.count,
     outputFormat: payload.outputFormat,
+    generationMode: payload.referenceImages?.length ? 'reference' : 'text',
     model: payload.model,
     quality: payload.quality,
     creativity: payload.creativity,
     seed: payload.seed,
     negativePrompt: payload.negativePrompt,
+    referenceImageCount: payload.referenceImages?.length || undefined,
   }
 }
 
@@ -328,11 +458,21 @@ async function runGeneration(args: {
         revisedPrompt: image.revisedPrompt,
       }))
     history.value = prependHistory({
-      ...args.payload,
+      prompt: args.payload.prompt,
+      style: args.payload.style,
+      size: args.payload.size,
+      count: args.payload.count,
+      outputFormat: args.payload.outputFormat,
+      negativePrompt: args.payload.negativePrompt,
+      quality: args.payload.quality,
+      creativity: args.payload.creativity,
+      seed: args.payload.seed,
+      model: args.payload.model,
       id: createId(),
       createdAt: new Date().toISOString(),
       requestId: result.requestId,
       imageCount: result.images.length,
+      referenceImageCount: args.payload.referenceImages?.length || undefined,
       images: persistableImages.length ? persistableImages : undefined,
     })
 
@@ -403,6 +543,9 @@ async function handleGenerate(options?: { clearAfter?: boolean }) {
 
   const payload = buildPayload()
   const userId = createId()
+  const messageReferenceImages = payload.referenceImages?.length
+    ? payload.referenceImages.map(cloneReferenceImageAttachment)
+    : undefined
 
   // 写入用户消息（chat 视图立刻看到）
   messages.value = [
@@ -413,11 +556,13 @@ async function handleGenerate(options?: { clearAfter?: boolean }) {
       content: payload.prompt,
       createdAt: new Date().toISOString(),
       meta: payloadToMeta(payload),
+      referenceImages: messageReferenceImages,
     },
   ]
 
   if (options?.clearAfter) {
     prompt.value = ''
+    clearComposerReferenceImages()
   }
 
   await runGeneration({ payload, userMessageId: userId })
@@ -456,6 +601,7 @@ async function regenerateFromMessage(userMessageId: string) {
     creativity: target.meta.creativity,
     seed: target.meta.seed,
     model: resolvedModel,
+    referenceImages: target.referenceImages?.length ? target.referenceImages.slice() : undefined,
   }
 
   await runGeneration({ payload, userMessageId })
@@ -571,6 +717,7 @@ function restoreHistory(item: GenerationHistoryItem) {
   size.value = item.size
   count.value = item.count
   outputFormat.value = item.outputFormat
+  clearComposerReferenceImages()
   negativePrompt.value = item.negativePrompt || ''
   quality.value = item.quality || 'auto'
   creativity.value = item.creativity ?? 7
@@ -594,12 +741,22 @@ function restoreHistory(item: GenerationHistoryItem) {
     images.value = item.images
     activeImageIndex.value = 0
     lastRequestId.value = item.requestId || ''
-    toast.info('已恢复历史生成', `${item.images.length} 张图片已加载到画布`)
+    toast.info(
+      '已恢复历史生成',
+      item.referenceImageCount
+        ? `${item.images.length} 张图片已加载到画布 · 参考图需重新上传`
+        : `${item.images.length} 张图片已加载到画布`,
+    )
   } else {
     images.value = []
     activeImageIndex.value = 0
     lastRequestId.value = item.requestId || ''
-    toast.info('已恢复历史参数', '该历史未保存图片，重新生成可再得一次')
+    toast.info(
+      '已恢复历史参数',
+      item.referenceImageCount
+        ? '该历史的参考图不会保存在本地，请重新上传后再生成'
+        : '该历史未保存图片，重新生成可再得一次',
+    )
   }
 }
 
@@ -608,6 +765,7 @@ function resetDraft() {
   prompt.value = defaultPrompt
   templateAnchorPrompt = defaultPrompt
   negativePrompt.value = defaultNegativePrompt
+  clearComposerReferenceImages()
   if (style.value !== 'poster') {
     skipNextStyleSync = true
   }
@@ -657,7 +815,20 @@ async function copyToClipboard(text: string, message: string) {
 
 function exportCurrentConfig() {
   const payload = buildPayload()
-  const blob = new Blob([JSON.stringify(payload, null, 2)], {
+  const exportPayload = {
+    prompt: payload.prompt,
+    style: payload.style,
+    size: payload.size,
+    count: payload.count,
+    outputFormat: payload.outputFormat,
+    negativePrompt: payload.negativePrompt,
+    quality: payload.quality,
+    creativity: payload.creativity,
+    seed: payload.seed,
+    model: payload.model,
+    referenceImageCount: payload.referenceImages?.length || undefined,
+  }
+  const blob = new Blob([JSON.stringify(exportPayload, null, 2)], {
     type: 'application/json',
   })
   const objectUrl = URL.createObjectURL(blob)
@@ -835,6 +1006,11 @@ onUnmounted(() => {
   window.removeEventListener('orientationchange', syncMobileViewport)
   window.visualViewport?.removeEventListener('resize', syncMobileViewport)
   window.visualViewport?.removeEventListener('scroll', syncMobileViewport)
+
+  ownedReferencePreviewUrls.forEach((url) => {
+    URL.revokeObjectURL(url)
+  })
+  ownedReferencePreviewUrls.clear()
 })
 </script>
 
@@ -858,11 +1034,9 @@ onUnmounted(() => {
       @reset="resetDraft"
     />
 
-    <!-- 桌面布局：>= lg 显示完整工作台 -->
     <main
       class="relative z-[2] mx-auto hidden w-full max-w-[1480px] flex-1 lg:grid lg:grid-cols-[minmax(360px,440px)_minmax(0,1fr)] lg:gap-10 lg:px-10 lg:pb-12 lg:pt-10"
     >
-      <!-- 桌面：左栏 Composer；移动：隐藏（用 dock + sheet 替代） -->
       <section class="hidden reveal lg:block" style="--reveal-delay: 40ms;">
         <PromptComposer
           ref="composerRef"
@@ -872,6 +1046,7 @@ onUnmounted(() => {
           v-model:count="count"
           v-model:modelChoice="modelChoice"
           v-model:customModel="customModel"
+          :reference-images="referenceImages"
           :is-generating="isGenerating"
           :elapsed-seconds="elapsedSeconds"
           :can-generate="canGenerate"
@@ -879,6 +1054,8 @@ onUnmounted(() => {
           @generate="handleGenerate"
           @copy="copyToClipboard"
           @open-settings="settingsOpen = true"
+          @select-reference-images="addReferenceImages"
+          @remove-reference-image="removeReferenceImage"
         />
       </section>
 
@@ -918,7 +1095,6 @@ onUnmounted(() => {
       </span>
     </footer>
 
-    <!-- 移动端：ChatGPT 式聊天画布（< lg） -->
     <div class="flex min-h-0 flex-1 flex-col overflow-hidden lg:hidden">
       <ChatStream
         :messages="messages"
@@ -939,6 +1115,7 @@ onUnmounted(() => {
       v-model:prompt="prompt"
       v-model:model-choice="modelChoice"
       v-model:custom-model="customModel"
+      :reference-images="referenceImages"
       :is-generating="isGenerating"
       :can-generate="canGenerate"
       :elapsed-seconds="elapsedSeconds"
@@ -949,6 +1126,8 @@ onUnmounted(() => {
       @send="sendFromChat"
       @layout-change="handleChatDockLayoutChange"
       @open-style-sheet="styleSheetOpen = true"
+      @select-reference-images="addReferenceImages"
+      @remove-reference-image="removeReferenceImage"
     />
 
     <StyleSheet

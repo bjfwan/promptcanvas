@@ -13,6 +13,17 @@ export type ImageStyle =
 
 export type ImageQuality = 'auto' | 'low' | 'medium' | 'high'
 
+export type GenerationMode = 'text' | 'reference'
+
+export interface ReferenceImageAttachment {
+  id: string
+  name: string
+  mimeType: string
+  sizeBytes: number
+  previewUrl: string
+  file?: File
+}
+
 export interface GenerateImageRequest {
   prompt: string
   style: ImageStyle
@@ -24,6 +35,7 @@ export interface GenerateImageRequest {
   creativity?: number
   seed?: string
   model?: string
+  referenceImages?: ReferenceImageAttachment[]
   baseUrl?: string
   apiKey?: string
 }
@@ -64,11 +76,12 @@ export interface ApiErrorResponse {
   requestId?: string
 }
 
-export interface GenerationHistoryItem extends Omit<GenerateImageRequest, 'apiKey' | 'baseUrl'> {
+export interface GenerationHistoryItem extends Omit<GenerateImageRequest, 'apiKey' | 'baseUrl' | 'referenceImages'> {
   id: string
   createdAt: string
   requestId?: string
   imageCount: number
+  referenceImageCount?: number
   images?: GeneratedImage[]
 }
 
@@ -86,11 +99,13 @@ export interface ChatMessageMeta {
   size: ImageSize
   count: number
   outputFormat: GenerateImageRequest['outputFormat']
+  generationMode?: GenerationMode
   model?: string
   quality?: ImageQuality
   creativity?: number
   seed?: string
   negativePrompt?: string
+  referenceImageCount?: number
 }
 
 export interface ChatUserMessage {
@@ -99,6 +114,7 @@ export interface ChatUserMessage {
   content: string
   createdAt: string
   meta: ChatMessageMeta
+  referenceImages?: ReferenceImageAttachment[]
 }
 
 export interface ChatAssistantMessage {

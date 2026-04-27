@@ -72,6 +72,57 @@ interface BuiltRequest {
   pathOnUpstream: string
 }
 
+function summarizeReferenceImages(
+  referenceImages: Array<{
+    id: string
+    name: string
+    mimeType: string
+    sizeBytes: number
+  }>,
+) {
+  return referenceImages.map((image, index) => ({
+    index,
+    id: image.id,
+    name: image.name,
+    mimeType: image.mimeType,
+    sizeKb: Math.round(image.sizeBytes / 1024),
+  }))
+}
+
+function buildEditFormData(payload: {
+  prompt: string
+  size: string
+  count: number
+  outputFormat: string
+  quality: string
+  model: string
+  referenceImages: Array<{
+    name: string
+    file?: File
+  }>
+}, requestId: string) {
+  const formData = new FormData()
+
+  formData.set('prompt', payload.prompt)
+  formData.set('size', payload.size)
+  formData.set('n', String(payload.count))
+  formData.set('output_format', payload.outputFormat)
+  formData.set('quality', payload.quality)
+  formData.set('user', requestId)
+
+  if (payload.model) {
+    formData.set('model', payload.model)
+  }
+
+  payload.referenceImages.forEach((image) => {
+    if (image.file) {
+      formData.append('image[]', image.file, image.name)
+    }
+  })
+
+  return formData
+}
+
 function buildRequest(
   baseUrl: string,
   proxyUrl: string,
@@ -160,8 +211,10 @@ export async function generateImage(payload: GenerateImageRequest): Promise<Gene
     }
 
     const validated = validation.value
+    const promptText = buildPrompt(validated)
+    const hasReferenceImages = validated.referenceImages.length > 0
     const upstreamRequest: Record<string, unknown> = {
-      prompt: buildPrompt(validated),
+      prompt: promptText,
       size: validated.size,
       n: validated.count,
       output_format: validated.outputFormat,
@@ -172,10 +225,28 @@ export async function generateImage(payload: GenerateImageRequest): Promise<Gene
       upstreamRequest.model = validated.model
     }
 
-    const built = buildRequest(baseUrl, proxyUrl, '/images/generations', {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    })
+    const built = hasReferenceImages
+      ? buildRequest(baseUrl, proxyUrl, '/images/edits', {
+          Authorization: `Bearer ${apiKey}`,
+        })
+      : buildRequest(baseUrl, proxyUrl, '/images/generations', {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        })
+    const requestBody = hasReferenceImages
+      ? buildEditFormData(
+          {
+            prompt: promptText,
+            size: validated.size,
+            count: validated.count,
+            outputFormat: validated.outputFormat,
+            quality: validated.quality,
+            model: validated.model,
+            referenceImages: validated.referenceImages,
+          },
+          requestId,
+        )
+      : JSON.stringify(upstreamRequest)
     group.log(`route via ${built.via}`)
     group.log('upstream targetUrl', built.url)
     group.log('upstream method', 'POST')
@@ -183,8 +254,22 @@ export async function generateImage(payload: GenerateImageRequest): Promise<Gene
       ...built.headers,
       Authorization: `Bearer ${maskKey(apiKey)}`,
     })
-    group.log('upstream body (parsed)', upstreamRequest)
-    group.log('upstream body (json)', JSON.stringify(upstreamRequest))
+    group.log('request mode', hasReferenceImages ? 'reference-edit' : 'text-generate')
+    if (hasReferenceImages) {
+      group.log('reference images', summarizeReferenceImages(validated.referenceImages))
+      group.log('upstream body (fields)', {
+        prompt: promptText,
+        size: validated.size,
+        n: validated.count,
+        output_format: validated.outputFormat,
+        quality: validated.quality,
+        user: requestId,
+        model: validated.model || undefined,
+      })
+    } else {
+      group.log('upstream body (parsed)', upstreamRequest)
+      group.log('upstream body (json)', JSON.stringify(upstreamRequest))
+    }
 
     const t0 = nowMs()
     let upstream: Response
@@ -192,7 +277,7 @@ export async function generateImage(payload: GenerateImageRequest): Promise<Gene
       upstream = await fetch(built.url, {
         method: 'POST',
         headers: built.headers,
-        body: JSON.stringify(upstreamRequest),
+        body: requestBody,
       })
     } catch (error) {
       const err = error as Error

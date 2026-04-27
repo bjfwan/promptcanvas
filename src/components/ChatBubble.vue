@@ -3,7 +3,7 @@ import { computed, ref } from 'vue'
 import Icon from './Icon.vue'
 import { resolveImageSource } from '../api'
 import { styleOptions } from '../presets'
-import type { ChatMessage, GeneratedImage } from '../types'
+import type { ChatAssistantMessage, ChatMessage, GeneratedImage } from '../types'
 
 interface Props {
   message: ChatMessage
@@ -27,6 +27,8 @@ function openImage(index: number) {
 
 const isUser = computed(() => props.message.role === 'user')
 
+const isReferenceMessage = computed(() => props.message.meta.generationMode === 'reference')
+
 const styleLabel = computed(() => {
   const match = styleOptions.find((option) => option.value === props.message.meta.style)
   return match?.label ?? props.message.meta.style
@@ -41,6 +43,71 @@ const timeLabel = computed(() => {
   } catch {
     return ''
   }
+})
+
+const assistantMessage = computed<ChatAssistantMessage | null>(() =>
+  props.message.role === 'assistant' ? (props.message as ChatAssistantMessage) : null,
+)
+
+function pendingSizeLabel(size: ChatAssistantMessage['meta']['size']) {
+  if (size === '1024x1536') return '竖图'
+  if (size === '1536x1024') return '横图'
+  return '方图'
+}
+
+function estimatedPendingDuration(message: ChatAssistantMessage) {
+  let seconds = 11
+
+  if (message.meta.size !== '1024x1024') seconds += 2
+  if (message.meta.quality === 'medium') seconds += 1
+  if (message.meta.quality === 'high') seconds += 4
+  if (message.meta.quality === 'low') seconds -= 1
+
+  seconds += Math.max(0, message.meta.count - 1) * 4
+
+  return Math.max(8, seconds)
+}
+
+function estimatePendingProgress(message: ChatAssistantMessage) {
+  const elapsed = Math.max(0, message.elapsedSeconds ?? 0)
+  const target = estimatedPendingDuration(message)
+  const fastPhase = target * 0.38
+
+  if (elapsed <= 0) return 5
+
+  if (elapsed < fastPhase) {
+    return Math.min(58, Math.round(5 + (elapsed / fastPhase) * 53))
+  }
+
+  if (elapsed < target) {
+    return Math.min(86, Math.round(58 + ((elapsed - fastPhase) / Math.max(1, target - fastPhase)) * 28))
+  }
+
+  const overflow = elapsed - target
+  const settle = 86 + (1 - Math.exp(-overflow / Math.max(3, target * 0.28))) * 10
+  return Math.min(96, Math.max(58, Math.round(settle)))
+}
+
+const pendingProgress = computed(() => {
+  const message = assistantMessage.value
+  if (!message || message.status !== 'pending') return 0
+  return estimatePendingProgress(message)
+})
+
+const pendingPercentLabel = computed(() => `${pendingProgress.value}%`)
+
+const pendingStageLabel = computed(() => {
+  const progress = pendingProgress.value
+  if (progress < 24) return '解析提示词'
+  if (progress < 52) return '搭建构图'
+  if (progress < 80) return '渲染细节'
+  return '准备出图'
+})
+
+const pendingMetaLabel = computed(() => {
+  const message = assistantMessage.value
+  if (!message || message.status !== 'pending') return ''
+  return `${message.meta.count} 张 · ${pendingSizeLabel(message.meta.size)}`
 })
 
 const previewFrameClass = computed(() => {
@@ -82,25 +149,47 @@ function isImageReady(image: GeneratedImage, index: number) {
     :class="isUser ? 'justify-end' : 'justify-start'"
     :data-role="message.role"
   >
-    <!-- 用户消息 -->
     <div v-if="message.role === 'user'" class="flex max-w-[86%] flex-col items-end gap-1.5">
+      <div
+        v-if="(message.referenceImages?.length ?? 0) > 0"
+        class="grid max-w-full gap-2 self-end"
+        :class="(message.referenceImages?.length ?? 0) > 1 ? 'grid-cols-2' : 'grid-cols-1'"
+      >
+        <div
+          v-for="image in message.referenceImages"
+          :key="image.id"
+          class="chat-reference-thumb chat-reference-thumb--user"
+        >
+          <img
+            :src="image.previewUrl"
+            :alt="image.name"
+            loading="lazy"
+            decoding="async"
+            class="h-full w-full object-cover"
+          />
+          <span class="chat-reference-thumb__label">{{ image.name }}</span>
+        </div>
+      </div>
       <div
         class="chat-bubble-user rounded-[22px] rounded-br-[8px] bg-ink px-4 py-2.5 text-[15px] leading-6 text-paper shadow-paper-2"
       >
         <p class="whitespace-pre-wrap break-words">{{ message.content }}</p>
       </div>
       <div class="flex items-center gap-2 px-1 font-mono text-[10px] uppercase tracking-[0.18em] text-muted">
+        <span v-if="isReferenceMessage">参考图</span>
+        <span v-if="isReferenceMessage" class="text-line">·</span>
         <span>{{ styleLabel }}</span>
         <span class="text-line">·</span>
         <span>{{ message.meta.size }}</span>
         <span v-if="message.meta.count > 1" class="text-line">·</span>
         <span v-if="message.meta.count > 1">×{{ message.meta.count }}</span>
+        <span v-if="message.meta.referenceImageCount" class="text-line">·</span>
+        <span v-if="message.meta.referenceImageCount">图 {{ message.meta.referenceImageCount }}</span>
         <span v-if="timeLabel" class="text-line">·</span>
         <span v-if="timeLabel" class="tracking-normal">{{ timeLabel }}</span>
       </div>
     </div>
 
-    <!-- 助手消息 -->
     <div v-else class="flex max-w-[92%] flex-col items-start gap-1.5">
       <div class="flex items-center gap-2 px-1 font-mono text-[10px] uppercase tracking-[0.22em] text-muted">
         <span
@@ -112,9 +201,10 @@ function isImageReady(image: GeneratedImage, index: number) {
         <span>canvas</span>
         <span class="text-line">·</span>
         <span>{{ styleLabel }} · {{ message.meta.size }}</span>
+        <span v-if="message.meta.referenceImageCount" class="text-line">·</span>
+        <span v-if="message.meta.referenceImageCount">参考 {{ message.meta.referenceImageCount }}</span>
       </div>
 
-      <!-- pending：骨架 -->
       <div
         v-if="message.status === 'pending'"
         class="chat-bubble-assistant chat-bubble-assistant--pending relative w-full overflow-hidden rounded-[22px] rounded-bl-[8px] border border-line bg-vellum p-3 shadow-paper-2"
@@ -122,9 +212,11 @@ function isImageReady(image: GeneratedImage, index: number) {
         aria-live="polite"
       >
         <div class="chat-pending-frame relative w-full overflow-hidden rounded-2xl" :class="previewFrameClass">
+          <div class="chat-pending-frame__grain absolute inset-0" aria-hidden="true"></div>
           <div class="chat-pending-frame__scan absolute inset-0" aria-hidden="true"></div>
+
           <div
-            class="pointer-events-none absolute inset-x-4 top-4 flex items-center justify-between text-[10px] uppercase tracking-[0.22em] text-muted"
+            class="pointer-events-none absolute inset-x-3 top-3 z-10 flex items-center justify-between text-[10px] uppercase tracking-[0.22em] text-muted"
           >
             <span class="inline-flex items-center gap-2 font-mono">
               <span class="chat-pending-bars" aria-hidden="true">
@@ -132,35 +224,41 @@ function isImageReady(image: GeneratedImage, index: number) {
                 <span></span>
                 <span></span>
               </span>
-              <span>composing</span>
+              <span>{{ pendingStageLabel }}</span>
             </span>
-            <span v-if="typeof message.elapsedSeconds === 'number'" class="font-mono tabular-nums">
-              {{ String(message.elapsedSeconds).padStart(2, '0') }}s
+            <span class="font-mono tabular-nums">
+              {{ typeof message.elapsedSeconds === 'number' ? String(message.elapsedSeconds).padStart(2, '0') + 's' : '' }}
             </span>
           </div>
-          <div class="pointer-events-none absolute inset-0 grid place-items-center px-4" aria-hidden="true">
+
+          <div class="pointer-events-none absolute inset-0 z-10 grid place-items-center px-4" aria-hidden="true">
             <div class="chat-pending-orb">
               <span class="chat-pending-orb__ring"></span>
               <span class="chat-pending-orb__ring" style="animation-delay: 0.9s"></span>
+              <span class="chat-pending-orb__halo"></span>
               <span class="chat-pending-orb__center">
-                <Icon name="sparkle" :size="18" />
+                <span class="chat-pending-orb__percent">{{ pendingPercentLabel }}</span>
+                <span class="chat-pending-orb__hint">{{ pendingStageLabel }}</span>
               </span>
             </div>
           </div>
-          <div class="pointer-events-none absolute inset-x-4 bottom-4 space-y-2.5" aria-hidden="true">
-            <div class="flex items-center gap-1.5">
-              <span class="skeleton block h-2.5 w-12 rounded-full"></span>
-              <span class="skeleton block h-2.5 w-16 rounded-full"></span>
+
+          <div
+            class="pointer-events-none absolute inset-x-3 bottom-3 z-10 space-y-2"
+            aria-hidden="true"
+          >
+            <div class="chat-pending-progress" :style="{ '--progress': pendingProgress + '%' }">
+              <div class="chat-pending-progress__bar"></div>
+              <div class="chat-pending-progress__glow"></div>
             </div>
-            <div class="space-y-2">
-              <span class="skeleton block h-3 w-[42%] rounded-full"></span>
-              <span class="skeleton block h-3 w-[76%] rounded-full"></span>
+            <div class="flex items-center justify-between text-[10px] font-mono uppercase tracking-[0.22em] text-muted/80">
+              <span>{{ pendingMetaLabel }}</span>
+              <span class="tabular-nums">{{ pendingPercentLabel }}</span>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- error：失败气泡 + 重试 chip -->
       <div
         v-else-if="message.status === 'error'"
         class="chat-bubble-assistant chat-bubble-assistant--error w-full rounded-[22px] rounded-bl-[8px] border border-accent/30 bg-accent/[0.06] px-4 py-3 text-[13px] leading-6 text-accent shadow-paper-1"
@@ -201,7 +299,6 @@ function isImageReady(image: GeneratedImage, index: number) {
         </div>
       </div>
 
-      <!-- success：图片网格 -->
       <div
         v-else
         class="chat-bubble-assistant w-full rounded-[22px] rounded-bl-[8px] border border-line bg-vellum p-3 shadow-paper-2"
@@ -300,6 +397,34 @@ function isImageReady(image: GeneratedImage, index: number) {
   font-feature-settings: 'ss01', 'cv11';
 }
 
+.chat-reference-thumb {
+  position: relative;
+  overflow: hidden;
+  border-radius: 18px;
+  border: 1px solid rgba(200, 184, 154, 0.7);
+  background: #f6efe3;
+  min-height: 84px;
+  aspect-ratio: 1;
+}
+
+.chat-reference-thumb--user {
+  max-width: 168px;
+}
+
+.chat-reference-thumb__label {
+  position: absolute;
+  inset: auto 0 0 0;
+  padding: 0.35rem 0.5rem;
+  background: linear-gradient(180deg, transparent, rgba(26, 22, 18, 0.78));
+  color: #faf3e6;
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .chat-pending-frame {
   background:
     radial-gradient(circle at 50% 32%, rgba(250, 243, 230, 0.98), rgba(250, 243, 230, 0.72) 38%, rgba(241, 233, 220, 0.34) 100%),
@@ -347,6 +472,7 @@ function isImageReady(image: GeneratedImage, index: number) {
   place-items: center;
   width: 78px;
   height: 78px;
+  animation: chat-pending-orb-float 4.8s ease-in-out infinite;
 }
 
 .chat-pending-orb__ring {
@@ -354,21 +480,108 @@ function isImageReady(image: GeneratedImage, index: number) {
   inset: 0;
   border-radius: 999px;
   border: 1px solid rgba(26, 22, 18, 0.16);
-  animation: chat-pending-ring 2.4s ease-out infinite;
+  animation: chat-pending-ring 2.4s cubic-bezier(0.34, 1.56, 0.64, 1) infinite;
 }
 
 .chat-pending-orb__center {
   position: relative;
   display: grid;
   place-items: center;
-  width: 42px;
-  height: 42px;
+  width: 48px;
+  height: 48px;
   border-radius: 999px;
   background: rgba(253, 248, 237, 0.98);
   color: #1a1612;
   box-shadow:
     0 0 0 1px rgba(26, 22, 18, 0.08),
     0 18px 32px -24px rgba(26, 22, 18, 0.38);
+  text-align: center;
+}
+
+.chat-pending-orb__halo {
+  position: absolute;
+  inset: -10%;
+  border-radius: 999px;
+  background: conic-gradient(
+    from 0deg,
+    rgba(200, 184, 154, 0.0) 0deg,
+    rgba(200, 184, 154, 0.25) 120deg,
+    rgba(26, 22, 18, 0.18) 240deg,
+    rgba(200, 184, 154, 0.0) 360deg
+  );
+  animation: chat-pending-halo 2.8s linear infinite;
+  opacity: 0.55;
+}
+
+.chat-pending-orb__percent {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.01em;
+}
+
+.chat-pending-orb__hint {
+  display: block;
+  margin-top: 2px;
+  font-size: 8px;
+  font-weight: 500;
+  line-height: 1;
+  opacity: 0.62;
+  letter-spacing: 0.02em;
+}
+
+.chat-pending-progress {
+  position: relative;
+  height: 3px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(26, 22, 18, 0.06);
+}
+
+.chat-pending-progress__bar {
+  position: absolute;
+  inset: 0;
+  width: var(--progress, 0%);
+  height: 100%;
+  border-radius: 999px;
+  background: rgba(26, 22, 18, 0.55);
+  transition: width 0.7s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.chat-pending-progress__glow {
+  position: absolute;
+  inset: 0;
+  width: var(--progress, 0%);
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    rgba(26, 22, 18, 0.0) 0%,
+    rgba(26, 22, 18, 0.18) 40%,
+    rgba(26, 22, 18, 0.0) 100%
+  );
+  transition: width 0.7s cubic-bezier(0.34, 1.56, 0.64, 1);
+  filter: blur(2px);
+}
+
+.chat-pending-frame__grain {
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+  opacity: 0.06;
+  mix-blend-mode: multiply;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-pending-orb,
+  .chat-pending-orb__ring,
+  .chat-pending-orb__halo {
+    animation: none;
+  }
+  .chat-pending-progress__bar,
+  .chat-pending-progress__glow {
+    transition: none;
+  }
 }
 
 .chat-image-placeholder {
@@ -523,6 +736,27 @@ function isImageReady(image: GeneratedImage, index: number) {
   100% {
     transform: scale(1.26);
     opacity: 0;
+  }
+}
+
+@keyframes chat-pending-orb-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes chat-pending-halo {
+  0% {
+    transform: rotate(0deg);
+  }
+
+  100% {
+    transform: rotate(360deg);
   }
 }
 

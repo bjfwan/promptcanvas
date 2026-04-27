@@ -88,7 +88,6 @@ defineExpose({ scrollToBottom })
       aria-label="对话流"
       @scroll.passive="onScroll"
     >
-      <!-- 空状态 -->
       <div
         v-if="messages.length === 0"
         class="flex min-h-full flex-col items-center justify-center px-5 pb-8 pt-10 text-center"
@@ -121,7 +120,6 @@ defineExpose({ scrollToBottom })
         </ul>
       </div>
 
-      <!-- 消息列表 -->
       <ol v-else class="flex flex-col gap-4 px-4 pt-4 sm:px-6">
         <li v-for="message in messages" :key="message.id" class="chat-stream__item reveal">
           <ChatBubble
@@ -135,7 +133,6 @@ defineExpose({ scrollToBottom })
       </ol>
     </div>
 
-    <!-- 滚动至底部按钮（用户已上滑时显示） -->
     <button
       v-if="!stuckToBottom && messages.length > 0"
       type="button"

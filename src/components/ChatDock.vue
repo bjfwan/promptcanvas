@@ -3,9 +3,10 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import Icon from './Icon.vue'
 import StyleSwatch from './StyleSwatch.vue'
 import Select, { type SelectOption } from './Select.vue'
+import { maxReferenceImages } from '../lib/imagesApi'
 import { customModelSentinel, styleOptions } from '../presets'
 import { useDiscoveredModels } from '../composables/useDiscoveredModels'
-import type { GenerateImageRequest, ImageStyle } from '../types'
+import type { ImageStyle, ReferenceImageAttachment } from '../types'
 
 interface Props {
   isGenerating: boolean
@@ -13,6 +14,7 @@ interface Props {
   elapsedSeconds: number
   healthOffline: boolean
   currentStyle: ImageStyle
+  referenceImages: ReferenceImageAttachment[]
   keyboardInset?: number
   viewportHeight?: number
 }
@@ -30,10 +32,13 @@ const emit = defineEmits<{
   (e: 'send'): void
   (e: 'open-style-sheet'): void
   (e: 'layout-change', height: number): void
+  (e: 'select-reference-images', files: File[]): void
+  (e: 'remove-reference-image', id: string): void
 }>()
 
 const dockRef = ref<HTMLDivElement | null>(null)
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
+const referenceInputRef = ref<HTMLInputElement | null>(null)
 const focused = ref(false)
 // “高输入”模式：点击右上角的展开按钮后，输入框会抵近出视口高度以方便输入长提示词
 const tall = ref(false)
@@ -59,6 +64,7 @@ const currentStyleMeta = computed(
 )
 
 const isCustomModel = computed(() => modelChoice.value === customModelSentinel)
+const hasReferenceImages = computed(() => props.referenceImages.length > 0)
 
 const modelLabel = computed(() => {
   if (isCustomModel.value) {
@@ -69,6 +75,27 @@ const modelLabel = computed(() => {
 })
 
 const sendDisabled = computed(() => !props.canGenerate || props.isGenerating)
+
+function openReferencePicker() {
+  referenceInputRef.value?.click()
+}
+
+function onReferenceInputChange(event: Event) {
+  const input = event.target as HTMLInputElement | null
+  const files = input?.files ? Array.from(input.files) : []
+  if (files.length) {
+    emit('select-reference-images', files)
+  }
+  if (input) {
+    input.value = ''
+  }
+  syncLayoutSoon()
+}
+
+function handleRemoveReferenceImage(id: string) {
+  emit('remove-reference-image', id)
+  syncLayoutSoon()
+}
 
 function effectiveViewportHeight() {
   if (typeof window === 'undefined') return props.viewportHeight || 800
@@ -176,6 +203,8 @@ watch(isCustomModel, (next) => {
 
 watch(() => props.healthOffline, syncLayoutSoon)
 
+watch(() => props.referenceImages.length, syncLayoutSoon)
+
 watch(() => props.keyboardInset, syncLayoutSoon)
 
 watch(() => props.viewportHeight, syncLayoutSoon)
@@ -216,7 +245,6 @@ defineExpose({ focusInput })
       aria-hidden="true"
     ></div>
 
-    <!-- 离线提示带 -->
     <div
       v-if="healthOffline"
       class="mx-2.5 mb-2 flex items-center gap-2 rounded-2xl border border-accent/30 bg-accent/[0.06] px-3 py-1.5 text-[11px] font-medium text-accent sm:mx-3"
@@ -230,7 +258,15 @@ defineExpose({ focusInput })
       class="relative mx-2.5 rounded-[26px] border border-line-strong/70 bg-vellum/95 shadow-paper-3 backdrop-blur sm:mx-3 sm:rounded-[28px]"
       :class="{ 'chat-dock__shell--focused': focused }"
     >
-      <!-- 自定义模型输入栏：仅在选择"自定义"时展开 -->
+      <input
+        ref="referenceInputRef"
+        type="file"
+        class="sr-only"
+        accept="image/png,image/jpeg,image/webp,image/gif"
+        multiple
+        @change="onReferenceInputChange"
+      />
+
       <Transition name="chat-dock-custom">
         <div
           v-if="isCustomModel && customModelOpen"
@@ -254,7 +290,6 @@ defineExpose({ focusInput })
         </div>
       </Transition>
 
-      <!-- 主输入区 -->
       <div class="chat-dock__input relative px-2.5 pt-2.5 sm:px-3">
         <textarea
           ref="textareaRef"
@@ -269,7 +304,6 @@ defineExpose({ focusInput })
           @input="autosize"
           @keydown="onKeydown"
         ></textarea>
-        <!-- 展开 / 收起 切换：点击后输入框伸展至接近视口高度 -->
         <button
           type="button"
           class="chat-dock__expand"
@@ -282,9 +316,66 @@ defineExpose({ focusInput })
         </button>
       </div>
 
-      <!-- 工具行：模型 chip / 风格 chip / 发送按钮 -->
+      <Transition name="chat-dock-attachments">
+        <div
+          v-if="hasReferenceImages"
+          class="chat-dock__attachments border-t border-line/70 px-2.5 pb-2 pt-1.5 sm:px-3"
+        >
+          <div class="mb-1.5 flex items-center justify-between gap-2 px-0.5">
+            <span class="inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.2em] text-muted">
+              <Icon name="image" :size="11" />
+              <span>参考图 {{ props.referenceImages.length }} / {{ maxReferenceImages }}</span>
+            </span>
+            <button
+              type="button"
+              class="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium text-muted transition hover:bg-paper-soft hover:text-ink"
+              :disabled="props.referenceImages.length >= maxReferenceImages"
+              @click="openReferencePicker"
+            >
+              <Icon name="upload" :size="11" />
+              <span>继续添加</span>
+            </button>
+          </div>
+
+          <div class="chat-dock__attachment-strip">
+            <div
+              v-for="image in props.referenceImages"
+              :key="image.id"
+              class="chat-dock__attachment-card"
+            >
+              <img
+                :src="image.previewUrl"
+                :alt="image.name"
+                loading="lazy"
+                decoding="async"
+                class="h-full w-full object-cover"
+              />
+              <button
+                type="button"
+                class="chat-dock__attachment-remove"
+                :aria-label="`移除参考图 ${image.name}`"
+                @click="handleRemoveReferenceImage(image.id)"
+              >
+                <Icon name="close" :size="11" />
+              </button>
+              <span class="chat-dock__attachment-name">{{ image.name }}</span>
+            </div>
+          </div>
+        </div>
+      </Transition>
+
       <div class="flex items-center gap-1 px-2 pb-2 pt-1.5 sm:gap-1.5 sm:px-2.5 sm:pt-1">
-        <!-- 模型 chip：用 Select 接管下拉，外观改为药丸 -->
+        <button
+          type="button"
+          class="asset-chip shrink-0"
+          :disabled="props.referenceImages.length >= maxReferenceImages"
+          :aria-label="hasReferenceImages ? `已添加 ${props.referenceImages.length} 张参考图，继续添加` : '添加参考图'"
+          @click="openReferencePicker"
+        >
+          <Icon :name="hasReferenceImages ? 'image' : 'upload'" :size="13" />
+          <span class="asset-chip__label">{{ hasReferenceImages ? `参考 ${props.referenceImages.length}` : '参考图' }}</span>
+        </button>
+
         <div class="model-chip-wrap relative min-w-0">
           <Select
             v-model="modelChoice"
@@ -296,7 +387,6 @@ defineExpose({ focusInput })
           />
         </div>
 
-        <!-- 风格 chip：触发 StyleSheet -->
         <button
           type="button"
           class="style-chip"
@@ -308,7 +398,6 @@ defineExpose({ focusInput })
           <Icon name="chevronDown" :size="11" class="text-muted" />
         </button>
 
-        <!-- 右侧：字符计数 / 进行中状态 + 发送按钮（在一个 flex 容器中以保证 ml-auto 始终生效） -->
         <div class="chat-dock__tail ml-auto flex items-center gap-1 sm:gap-1.5">
           <span
             v-if="isGenerating"
@@ -330,7 +419,6 @@ defineExpose({ focusInput })
             ⌘ ↵ 发送
           </span>
 
-          <!-- 发送按钮 -->
           <button
             type="button"
             class="chat-dock__send"
@@ -530,6 +618,112 @@ defineExpose({ focusInput })
   text-overflow: ellipsis;
 }
 
+.asset-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  height: 34px;
+  padding: 0 0.7rem;
+  border-radius: 999px;
+  background: #faf3e6;
+  border: 1px solid #c8b89a;
+  color: #1a1612;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  transition: background-color 140ms ease, border-color 140ms ease, transform 140ms ease;
+}
+
+.asset-chip:hover:not(:disabled) {
+  background: #fdf8ed;
+  border-color: #1a1612;
+}
+
+.asset-chip:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.asset-chip:disabled {
+  opacity: 0.62;
+  cursor: not-allowed;
+}
+
+.asset-chip__label {
+  white-space: nowrap;
+}
+
+.chat-dock__attachments {
+  overflow: hidden;
+}
+
+.chat-dock__attachment-strip {
+  display: flex;
+  gap: 0.55rem;
+  overflow-x: auto;
+  padding-bottom: 0.1rem;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+
+.chat-dock__attachment-card {
+  position: relative;
+  width: 74px;
+  min-width: 74px;
+  height: 74px;
+  overflow: hidden;
+  border-radius: 16px;
+  border: 1px solid rgba(200, 184, 154, 0.9);
+  background: #f6efe3;
+  box-shadow: 0 12px 20px -18px rgba(26, 22, 18, 0.42);
+}
+
+.chat-dock__attachment-remove {
+  position: absolute;
+  top: 0.28rem;
+  right: 0.28rem;
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: rgba(26, 22, 18, 0.72);
+  color: #faf3e6;
+  backdrop-filter: blur(6px);
+}
+
+.chat-dock__attachment-name {
+  position: absolute;
+  inset: auto 0 0 0;
+  padding: 0.3rem 0.4rem;
+  background: linear-gradient(180deg, transparent, rgba(26, 22, 18, 0.74));
+  color: #faf3e6;
+  font-size: 9px;
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chat-dock-attachments-enter-from,
+.chat-dock-attachments-leave-to {
+  opacity: 0;
+  transform: translateY(4px);
+  max-height: 0;
+}
+
+.chat-dock-attachments-enter-to,
+.chat-dock-attachments-leave-from {
+  opacity: 1;
+  transform: translateY(0);
+  max-height: 180px;
+}
+
+.chat-dock-attachments-enter-active,
+.chat-dock-attachments-leave-active {
+  transition: opacity 0.2s ease-out, transform 0.2s ease-out, max-height 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
 .chat-dock__send {
   position: relative;
   display: inline-grid;
@@ -600,6 +794,10 @@ defineExpose({ focusInput })
     padding-right: 1.55rem;
   }
 
+  .asset-chip__label {
+    display: none;
+  }
+
   .style-chip__label {
     max-width: 5.75rem;
   }
@@ -612,7 +810,10 @@ defineExpose({ focusInput })
 
 @media (prefers-reduced-motion: reduce) {
   .chat-dock__send,
+  .asset-chip,
   .style-chip,
+  .chat-dock-attachments-enter-active,
+  .chat-dock-attachments-leave-active,
   .chat-dock-custom-enter-active,
   .chat-dock-custom-leave-active {
     transition: none;

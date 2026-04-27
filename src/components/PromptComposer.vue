@@ -3,10 +3,11 @@ import { computed, nextTick, ref, watch } from 'vue'
 import Icon from './Icon.vue'
 import StyleSwatch from './StyleSwatch.vue'
 import Select, { type SelectOption } from './Select.vue'
+import { maxReferenceImages } from '../lib/imagesApi'
 import { customModelSentinel, sizeOptions, styleOptions } from '../presets'
 import { stylePrompts } from '../lib/imagesApi'
 import { useDiscoveredModels } from '../composables/useDiscoveredModels'
-import type { ImageSize, ImageStyle } from '../types'
+import type { ImageSize, ImageStyle, ReferenceImageAttachment } from '../types'
 
 const sizeSelectOptions = computed<SelectOption<ImageSize>[]>(() =>
   sizeOptions.map((option) => ({ value: option.value, label: option.label, hint: option.hint })),
@@ -34,6 +35,7 @@ interface Props {
   elapsedSeconds: number
   canGenerate: boolean
   healthOffline: boolean
+  referenceImages: ReferenceImageAttachment[]
   layout?: 'panel' | 'sheet'
 }
 
@@ -53,13 +55,17 @@ const emit = defineEmits<{
   (e: 'copy', text: string, message: string): void
   (e: 'clear'): void
   (e: 'open-settings'): void
+  (e: 'select-reference-images', files: File[]): void
+  (e: 'remove-reference-image', id: string): void
 }>()
 
 const promptRef = ref<HTMLTextAreaElement | null>(null)
+const referenceInputRef = ref<HTMLInputElement | null>(null)
 const previewOpen = ref(false)
 
 const activeStylePrompt = computed(() => stylePrompts[stl.value] ?? '')
 const isRawStyle = computed(() => stl.value === 'raw')
+const hasReferenceImages = computed(() => props.referenceImages.length > 0)
 
 const promptCount = computed(() => prompt.value.length)
 const promptTokens = computed(() => Math.max(1, Math.round(prompt.value.length / 4)))
@@ -97,6 +103,25 @@ function clearPrompt() {
   prompt.value = ''
   emit('clear')
   focusPrompt()
+}
+
+function openReferencePicker() {
+  referenceInputRef.value?.click()
+}
+
+function onReferenceInputChange(event: Event) {
+  const input = event.target as HTMLInputElement | null
+  const files = input?.files ? Array.from(input.files) : []
+  if (files.length) {
+    emit('select-reference-images', files)
+  }
+  if (input) {
+    input.value = ''
+  }
+}
+
+function removeReferenceImage(id: string) {
+  emit('remove-reference-image', id)
 }
 
 defineExpose({ focusPrompt })
@@ -141,14 +166,30 @@ watch(
       <span>后端当前不可用。检查连接后再生成图片。</span>
     </div>
 
-    <!-- Prompt -->
     <section class="space-y-2.5">
+      <input
+        ref="referenceInputRef"
+        type="file"
+        class="sr-only"
+        accept="image/png,image/jpeg,image/webp,image/gif"
+        multiple
+        @change="onReferenceInputChange"
+      />
       <div class="flex items-center justify-between">
         <label for="prompt-input" class="label inline-flex items-center gap-1.5">
           <Icon name="pencil" :size="12" />
           <span>提示词</span>
         </label>
         <div class="flex items-center gap-1">
+          <button
+            type="button"
+            class="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium text-muted transition hover:bg-paper-soft hover:text-ink"
+            :disabled="props.referenceImages.length >= maxReferenceImages"
+            @click="openReferencePicker"
+          >
+            <Icon :name="hasReferenceImages ? 'image' : 'upload'" :size="11" />
+            <span>{{ hasReferenceImages ? `参考图 ${props.referenceImages.length}` : '参考图' }}</span>
+          </button>
           <button
             type="button"
             class="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium text-muted transition hover:bg-paper-soft hover:text-ink"
@@ -196,6 +237,53 @@ watch(
           />
         </div>
       </div>
+      <div
+        v-if="hasReferenceImages"
+        class="rounded-2xl border border-line bg-vellum/70 p-3"
+      >
+        <div class="mb-2 flex items-center justify-between gap-2">
+          <p class="inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.18em] text-muted">
+            <Icon name="image" :size="10" />
+            <span>参考图 {{ props.referenceImages.length }} / {{ maxReferenceImages }}</span>
+          </p>
+          <button
+            type="button"
+            class="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium text-muted transition hover:bg-paper-soft hover:text-ink"
+            :disabled="props.referenceImages.length >= maxReferenceImages"
+            @click="openReferencePicker"
+          >
+            <Icon name="upload" :size="11" />
+            <span>继续添加</span>
+          </button>
+        </div>
+
+        <div class="flex flex-wrap gap-2">
+          <div
+            v-for="image in props.referenceImages"
+            :key="image.id"
+            class="group relative h-24 w-24 overflow-hidden rounded-2xl border border-line bg-paper-soft"
+          >
+            <img
+              :src="image.previewUrl"
+              :alt="image.name"
+              loading="lazy"
+              decoding="async"
+              class="h-full w-full object-cover"
+            />
+            <button
+              type="button"
+              class="absolute right-1.5 top-1.5 inline-grid h-6 w-6 place-items-center rounded-full bg-ink/75 text-paper opacity-0 transition group-hover:opacity-100"
+              :aria-label="`移除参考图 ${image.name}`"
+              @click="removeReferenceImage(image.id)"
+            >
+              <Icon name="close" :size="11" />
+            </button>
+            <span class="absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-ink/80 to-transparent px-2 pb-1 pt-4 text-[10px] font-medium text-paper">
+              {{ image.name }}
+            </span>
+          </div>
+        </div>
+      </div>
       <div class="flex items-center justify-between text-[11px]">
         <p class="flex items-center gap-2">
           <span class="font-mono uppercase tracking-[0.2em]" :class="promptTone.tone">{{ promptTone.label }}</span>
@@ -216,7 +304,6 @@ watch(
       </p>
     </section>
 
-    <!-- 提示词模板 -->
     <section class="space-y-3">
       <div class="flex items-center justify-between">
         <label class="label inline-flex items-center gap-1.5">
@@ -252,7 +339,6 @@ watch(
         </button>
       </div>
 
-      <!-- 模板预览手风琴：点展开可看到生图时会拼接的「风格指引」原文 -->
       <button
         type="button"
         class="flex w-full items-center justify-between rounded-2xl border border-line bg-cream/50 px-3 py-2.5 text-left text-[12px] transition hover:border-line-strong hover:bg-paper-soft"
@@ -296,7 +382,6 @@ watch(
       </Transition>
     </section>
 
-    <!-- Size / Count -->
     <section class="grid gap-4 sm:grid-cols-2">
       <div>
         <label class="label mb-2 inline-flex items-center gap-1.5" for="comp-size">
@@ -324,7 +409,6 @@ watch(
       </div>
     </section>
 
-    <!-- 桌面端粘性 generate；mobile sheet 中也保留 -->
     <div
       v-if="layout === 'panel'"
       class="sticky bottom-0 -mx-4 border-t border-line/80 bg-paper/95 px-4 pb-[max(env(safe-area-inset-bottom),0.75rem)] pt-3 backdrop-blur sm:-mx-6 sm:px-6 lg:static lg:mx-0 lg:border-0 lg:bg-transparent lg:px-0 lg:pb-0 lg:pt-0 lg:backdrop-blur-none"
@@ -355,7 +439,6 @@ watch(
       </button>
     </div>
 
-    <!-- sheet 模式：单独 sticky 提交按钮 -->
     <div v-else class="sticky bottom-0 -mx-5 border-t border-line/70 bg-paper/95 px-5 pb-2 pt-3 backdrop-blur">
       <button
         type="submit"

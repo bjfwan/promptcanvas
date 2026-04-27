@@ -1,4 +1,4 @@
-import type { GeneratedImage, GenerateImageRequest } from '../types'
+import type { GeneratedImage, GenerateImageRequest, ReferenceImageAttachment } from '../types'
 
 export const allowedSizes: ReadonlySet<string> = new Set([
   '1024x1024',
@@ -7,6 +7,16 @@ export const allowedSizes: ReadonlySet<string> = new Set([
 ])
 
 export const allowedFormats: ReadonlySet<string> = new Set(['png', 'jpeg', 'webp'])
+
+export const allowedReferenceImageMimeTypes: ReadonlySet<string> = new Set([
+  'image/png',
+  'image/jpeg',
+  'image/webp',
+  'image/gif',
+])
+
+export const maxReferenceImages = 4
+export const maxReferenceImageSizeBytes = 20 * 1024 * 1024
 
 export const allowedQualities: ReadonlySet<string> = new Set([
   'auto',
@@ -55,6 +65,7 @@ export interface ValidatedPayload {
   creativity: number | null
   seed: string
   model: string
+  referenceImages: ReferenceImageAttachment[]
 }
 
 export interface ValidationResult {
@@ -83,9 +94,16 @@ export function validatePayload(body: unknown): ValidationResult {
   const creativity = raw.creativity === undefined ? null : (raw.creativity as number | null)
   const seed = typeof raw.seed === 'string' ? raw.seed.trim() : ''
   const model = typeof raw.model === 'string' ? raw.model.trim() : ''
+  const referenceImages = raw.referenceImages === undefined
+    ? []
+    : (Array.isArray(raw.referenceImages) ? raw.referenceImages : null)
 
   if (!prompt) {
     return { error: 'prompt 不能为空' }
+  }
+
+  if (referenceImages === null) {
+    return { error: 'referenceImages 必须是数组' }
   }
 
   if (prompt.length > 1000) {
@@ -136,6 +154,59 @@ export function validatePayload(body: unknown): ValidationResult {
     return { error: 'model 只允许字母、数字、点、下划线、横线、斜杠' }
   }
 
+  if (referenceImages.length > maxReferenceImages) {
+    return { error: `referenceImages 最多支持 ${maxReferenceImages} 张` }
+  }
+
+  const normalizedReferenceImages: ReferenceImageAttachment[] = []
+
+  for (const entry of referenceImages) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+      return { error: 'referenceImages 项格式不正确' }
+    }
+
+    const attachment = entry as ReferenceImageAttachment
+    const file = attachment.file
+    const mimeType = typeof attachment.mimeType === 'string' ? attachment.mimeType.trim().toLowerCase() : ''
+    const previewUrl = typeof attachment.previewUrl === 'string' ? attachment.previewUrl.trim() : ''
+    const name = typeof attachment.name === 'string' ? attachment.name.trim() : ''
+    const sizeBytes = typeof attachment.sizeBytes === 'number' ? attachment.sizeBytes : Number.NaN
+
+    if (!(typeof File !== 'undefined' && file instanceof File)) {
+      return { error: 'referenceImages 必须包含可上传的图片文件' }
+    }
+
+    const resolvedMimeType = (file.type || mimeType).trim().toLowerCase()
+    if (!allowedReferenceImageMimeTypes.has(resolvedMimeType)) {
+      return { error: '参考图只支持 PNG、JPEG、WEBP、GIF' }
+    }
+
+    if (!name) {
+      return { error: '参考图文件名不能为空' }
+    }
+
+    if (!previewUrl) {
+      return { error: '参考图预览地址不能为空' }
+    }
+
+    if (!Number.isFinite(sizeBytes) || sizeBytes <= 0) {
+      return { error: '参考图大小无效' }
+    }
+
+    if (sizeBytes > maxReferenceImageSizeBytes) {
+      return { error: `单张参考图不能超过 ${Math.round(maxReferenceImageSizeBytes / 1024 / 1024)}MB` }
+    }
+
+    normalizedReferenceImages.push({
+      ...attachment,
+      file,
+      name,
+      mimeType: resolvedMimeType,
+      previewUrl,
+      sizeBytes,
+    })
+  }
+
   if (!allowedSizes.has(size)) {
     return { error: 'size 只支持 1024x1024、1024x1536、1536x1024' }
   }
@@ -160,6 +231,7 @@ export function validatePayload(body: unknown): ValidationResult {
       creativity,
       seed,
       model,
+      referenceImages: normalizedReferenceImages,
     },
   }
 }
@@ -325,5 +397,6 @@ export function payloadToValidated(payload: GenerateImageRequest): ValidationRes
     creativity: payload.creativity,
     seed: payload.seed,
     model: payload.model,
+    referenceImages: payload.referenceImages,
   })
 }

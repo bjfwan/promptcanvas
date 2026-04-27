@@ -154,6 +154,8 @@ onBeforeUnmount(() => {
                         <span>{{ item.style }}</span>
                         <span class="text-line">·</span>
                         <span class="font-mono">{{ item.size }}</span>
+                        <span v-if="item.referenceImageCount" class="text-line">·</span>
+                        <span v-if="item.referenceImageCount">参考 {{ item.referenceImageCount }}</span>
                         <span v-if="item.seed" class="text-line">·</span>
                         <span v-if="item.seed" class="font-mono">seed {{ item.seed }}</span>
                       </div>
