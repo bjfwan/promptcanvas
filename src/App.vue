@@ -1,9 +1,33 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { ApiRequestError, checkHealth, generateImage, resolveImageSource } from './api'
-import { promptTemplates, qualityOptions, sizeOptions, styleOptions } from './presets'
+import { customModelSentinel, modelOptions, qualityOptions, sizeOptions, styleOptions, stylePresetById } from './presets'
 import { clearDraft, clearHistory, loadDraft, loadHistory, prependHistory, saveDraft } from './storage'
-import type { GeneratedImage, GenerateImageRequest, GenerationHistoryItem, ImageQuality, ImageSize, ImageStyle, PromptTemplate } from './types'
+import type {
+  ChatAssistantMessage,
+  ChatMessage,
+  ChatMessageMeta,
+  ChatUserMessage,
+  GeneratedImage,
+  GenerateImageRequest,
+  GenerationHistoryItem,
+  ImageQuality,
+  ImageSize,
+  ImageStyle,
+} from './types'
+import AppHeader from './components/AppHeader.vue'
+import PromptComposer from './components/PromptComposer.vue'
+import CanvasStage from './components/CanvasStage.vue'
+import Toaster from './components/Toaster.vue'
+import Lightbox from './components/Lightbox.vue'
+import ChatStream from './components/ChatStream.vue'
+import ChatDock from './components/ChatDock.vue'
+import StyleSheet from './components/StyleSheet.vue'
+import SettingsDialog from './components/SettingsDialog.vue'
+import HistoryDialog from './components/HistoryDialog.vue'
+import { useToast } from './composables/useToast'
+import { useTheme } from './composables/useTheme'
+import { useLightbox } from './composables/useLightbox'
 
 const defaultPrompt = '一只穿着复古宇航服的橘猫，站在月球摄影棚里，像 1970 年代科幻电影海报'
 const defaultNegativePrompt = '低清晰度、模糊、水印、错误文字、畸形手指、画面杂乱'
@@ -17,28 +41,34 @@ const outputFormat = ref<GenerateImageRequest['outputFormat']>('png')
 const quality = ref<ImageQuality>('auto')
 const creativity = ref(7)
 const seed = ref('')
+const modelChoice = ref<string>('')
+const customModel = ref<string>('')
 const images = ref<GeneratedImage[]>([])
 const activeImageIndex = ref(0)
 const isGenerating = ref(false)
 const errorMessage = ref('')
 const lastRequestId = ref('')
 const elapsedSeconds = ref(0)
-const copiedMessage = ref('')
 const history = ref<GenerationHistoryItem[]>(loadHistory())
 const healthStatus = ref<'checking' | 'online' | 'offline'>('checking')
 const healthMessage = ref('正在检查后端连接')
-const healthModel = ref('')
 const healthRequestId = ref('')
 
-type TabValue = 'compose' | 'result' | 'library'
+const toast = useToast()
+const { theme, toggle: toggleTheme } = useTheme()
+const lightbox = useLightbox()
+const composerOpen = ref(false)
+const settingsOpen = ref(false)
+const historyOpen = ref(false)
+const styleSheetOpen = ref(false)
+const composerRef = ref<InstanceType<typeof PromptComposer> | null>(null)
+const chatDockRef = ref<InstanceType<typeof ChatDock> | null>(null)
 
-const tabs: Array<{ value: TabValue; label: string }> = [
-  { value: 'compose', label: 'Compose' },
-  { value: 'result', label: 'Canvas' },
-  { value: 'library', label: 'Library' },
-]
+// 聊天对话流（移动端 ChatGPT 式画布的数据源）
+const messages = ref<ChatMessage[]>([])
 
-const activeTab = ref<TabValue>('compose')
+// 所有预设示例 prompt 集合，用来判断当前 prompt 是否“未被用户接手修改”
+const presetExamplePrompts = new Set(styleOptions.map((preset) => preset.examplePrompt))
 
 const restoredDraft = loadDraft()
 
@@ -52,13 +82,17 @@ if (restoredDraft) {
   if (qualityOptions.some((option) => option.value === restoredDraft.quality)) quality.value = restoredDraft.quality as ImageQuality
   if (typeof restoredDraft.creativity === 'number' && restoredDraft.creativity >= 1 && restoredDraft.creativity <= 10) creativity.value = restoredDraft.creativity
   if (typeof restoredDraft.seed === 'string') seed.value = restoredDraft.seed
+  if (typeof restoredDraft.modelChoice === 'string' && (restoredDraft.modelChoice === '' || modelOptions.some((option) => option.value === restoredDraft.modelChoice))) {
+    modelChoice.value = restoredDraft.modelChoice
+  }
+  if (typeof restoredDraft.customModel === 'string') customModel.value = restoredDraft.customModel
 }
 
 let timerId: number | undefined
 let draftSaveTimer: number | undefined
 
 watch(
-  [prompt, negativePrompt, style, size, count, outputFormat, quality, creativity, seed],
+  [prompt, negativePrompt, style, size, count, outputFormat, quality, creativity, seed, modelChoice, customModel],
   () => {
     if (draftSaveTimer) {
       window.clearTimeout(draftSaveTimer)
@@ -75,34 +109,18 @@ watch(
         quality: quality.value,
         creativity: creativity.value,
         seed: seed.value,
+        modelChoice: modelChoice.value,
+        customModel: customModel.value,
       })
     }, 400)
   },
 )
 
-watch(activeTab, () => {
-  if (typeof window !== 'undefined' && window.innerWidth < 1024) {
-    window.scrollTo({ top: 0, behavior: 'smooth' })
-  }
-})
-
 const selectedStyle = computed(() => styleOptions.find((item) => item.value === style.value))
-const selectedSize = computed(() => sizeOptions.find((item) => item.value === size.value))
+const selectedStyleLabel = computed(() => selectedStyle.value?.label ?? style.value)
 const trimmedPrompt = computed(() => prompt.value.trim())
-const canGenerate = computed(() => trimmedPrompt.value.length >= 4 && !isGenerating.value)
-const activeImage = computed(() => images.value[activeImageIndex.value])
-const activeImageSource = computed(() => activeImage.value ? resolveImageSource(activeImage.value) : '')
-const previewFrameClass = computed(() => {
-  if (size.value === '1024x1536') {
-    return 'aspect-[2/3]'
-  }
-
-  if (size.value === '1536x1024') {
-    return 'aspect-[3/2]'
-  }
-
-  return 'aspect-square'
-})
+const canGenerate = computed(() => trimmedPrompt.value.length >= 4 && !isGenerating.value && healthStatus.value !== 'offline')
+const promptPreview = computed(() => trimmedPrompt.value.split('\n')[0]?.slice(0, 64) ?? '')
 
 function createId() {
   if ('randomUUID' in crypto) {
@@ -113,6 +131,11 @@ function createId() {
 }
 
 function buildPayload(): GenerateImageRequest {
+  const resolvedModel =
+    modelChoice.value === customModelSentinel
+      ? customModel.value.trim()
+      : modelChoice.value.trim()
+
   return {
     prompt: trimmedPrompt.value,
     style: style.value,
@@ -123,47 +146,126 @@ function buildPayload(): GenerateImageRequest {
     quality: quality.value,
     creativity: creativity.value,
     seed: seed.value.trim() || undefined,
+    model: resolvedModel || undefined,
   }
 }
 
-async function handleGenerate() {
-  if (!canGenerate.value) {
-    return
+function payloadToMeta(payload: GenerateImageRequest): ChatMessageMeta {
+  return {
+    style: payload.style,
+    size: payload.size,
+    count: payload.count,
+    outputFormat: payload.outputFormat,
+    model: payload.model,
+    quality: payload.quality,
+    creativity: payload.creativity,
+    seed: payload.seed,
+    negativePrompt: payload.negativePrompt,
   }
+}
 
-  const payload = buildPayload()
+function updateAssistantMessage(
+  id: string,
+  mutator: (message: ChatAssistantMessage) => ChatAssistantMessage,
+) {
+  messages.value = messages.value.map((message) =>
+    message.id === id && message.role === 'assistant' ? mutator(message) : message,
+  )
+}
+
+async function runGeneration(args: {
+  payload: GenerateImageRequest
+  userMessageId: string
+}): Promise<void> {
+  const meta = payloadToMeta(args.payload)
+  const assistantId = createId()
+  messages.value = [
+    ...messages.value,
+    {
+      id: assistantId,
+      role: 'assistant',
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+      replyTo: args.userMessageId,
+      meta,
+      elapsedSeconds: 0,
+    },
+  ]
+
   isGenerating.value = true
   errorMessage.value = ''
-  copiedMessage.value = ''
   images.value = []
   activeImageIndex.value = 0
   lastRequestId.value = ''
   elapsedSeconds.value = 0
 
+  // 关闭可能打开的输入抽屉，让用户立刻看到画布
+  composerOpen.value = false
+  settingsOpen.value = false
+  styleSheetOpen.value = false
+
+  let elapsed = 0
+  if (timerId) {
+    window.clearInterval(timerId)
+    timerId = undefined
+  }
   timerId = window.setInterval(() => {
-    elapsedSeconds.value += 1
+    elapsed += 1
+    elapsedSeconds.value = elapsed
+    updateAssistantMessage(assistantId, (current) => ({ ...current, elapsedSeconds: elapsed }))
   }, 1000)
 
   try {
-    const result = await generateImage(payload)
+    const result = await generateImage(args.payload)
 
     images.value = result.images
     lastRequestId.value = result.requestId || ''
-    activeTab.value = 'result'
     history.value = prependHistory({
-      ...payload,
+      ...args.payload,
       id: createId(),
       createdAt: new Date().toISOString(),
       requestId: result.requestId,
       imageCount: result.images.length,
     })
+
+    updateAssistantMessage(assistantId, (current) => ({
+      ...current,
+      status: 'success',
+      images: result.images,
+      requestId: result.requestId,
+      elapsedSeconds: elapsed,
+    }))
+
+    toast.success(
+      `已生成 ${result.images.length} 张`,
+      result.requestId ? `req ${result.requestId.slice(0, 8)}` : undefined,
+    )
   } catch (error) {
+    let message = '生成失败，请稍后重试。'
+    let code: string | undefined
+    let requestId: string | undefined
+
     if (error instanceof ApiRequestError) {
-      errorMessage.value = error.requestId ? `${error.message}（请求 ID：${error.requestId}）` : error.message
-      lastRequestId.value = error.requestId || ''
-    } else {
-      errorMessage.value = error instanceof Error ? error.message : '生成失败，请稍后重试。'
+      message = error.message
+      code = error.code
+      requestId = error.requestId
+    } else if (error instanceof Error) {
+      message = error.message
     }
+
+    errorMessage.value = requestId ? `${message}（请求 ID：${requestId}）` : message
+    lastRequestId.value = requestId || ''
+
+    updateAssistantMessage(assistantId, (current) => ({
+      ...current,
+      status: 'error',
+      errorMessage: message,
+      errorCode: code,
+      requestId,
+      elapsedSeconds: elapsed,
+    }))
+
+    toast.error(message, requestId ? `req ${requestId.slice(0, 8)}` : undefined)
   } finally {
     isGenerating.value = false
 
@@ -174,11 +276,93 @@ async function handleGenerate() {
   }
 }
 
+async function handleGenerate(options?: { clearAfter?: boolean }) {
+  if (!canGenerate.value) {
+    if (!trimmedPrompt.value) toast.error('请先写下提示词', '至少 4 个字')
+    else if (healthStatus.value === 'offline') toast.error('后端离线', '检查连接后再试')
+    return
+  }
+
+  const payload = buildPayload()
+  const userId = createId()
+
+  // 写入用户消息（chat 视图立刻看到）
+  messages.value = [
+    ...messages.value,
+    {
+      id: userId,
+      role: 'user',
+      content: payload.prompt,
+      createdAt: new Date().toISOString(),
+      meta: payloadToMeta(payload),
+    },
+  ]
+
+  if (options?.clearAfter) {
+    prompt.value = ''
+  }
+
+  await runGeneration({ payload, userMessageId: userId })
+}
+
+async function regenerateFromMessage(userMessageId: string) {
+  if (isGenerating.value) {
+    toast.info('正在生成中，请稍候')
+    return
+  }
+
+  const target = messages.value.find(
+    (message): message is ChatUserMessage =>
+      message.id === userMessageId && message.role === 'user',
+  )
+
+  if (!target) {
+    toast.error('找不到对应的用户消息')
+    return
+  }
+
+  if (healthStatus.value === 'offline') {
+    toast.error('后端离线', '检查连接后再试')
+    return
+  }
+
+  const resolvedModel = target.meta.model?.trim() || undefined
+  const payload: GenerateImageRequest = {
+    prompt: target.content,
+    style: target.meta.style,
+    size: target.meta.size,
+    count: target.meta.count,
+    outputFormat: target.meta.outputFormat,
+    negativePrompt: target.meta.negativePrompt,
+    quality: target.meta.quality,
+    creativity: target.meta.creativity,
+    seed: target.meta.seed,
+    model: resolvedModel,
+  }
+
+  await runGeneration({ payload, userMessageId })
+}
+
+function sendFromChat() {
+  void handleGenerate({ clearAfter: true })
+}
+
+function pickStyleFromChat(value: ImageStyle) {
+  // 在空对话流中点击风格建议：切换风格 + 自动写入示例 prompt
+  style.value = value
+  const preset = stylePresetById.get(value)
+  if (preset) {
+    prompt.value = preset.examplePrompt
+    if (preset.defaultSize) size.value = preset.defaultSize
+    nextTick(() => chatDockRef.value?.focusInput())
+  }
+}
+
 async function downloadImage(image: GeneratedImage, index: number) {
   const source = resolveImageSource(image)
 
   if (!source) {
-    errorMessage.value = '这张图片没有可下载地址。'
+    toast.error('这张图片没有可下载地址')
     return
   }
 
@@ -196,6 +380,7 @@ async function downloadImage(image: GeneratedImage, index: number) {
     anchor.click()
     anchor.remove()
     URL.revokeObjectURL(objectUrl)
+    toast.success('图片已下载', filename)
   } catch {
     const anchor = document.createElement('a')
     anchor.href = source
@@ -203,14 +388,6 @@ async function downloadImage(image: GeneratedImage, index: number) {
     anchor.target = '_blank'
     anchor.click()
   }
-}
-
-function applyTemplate(template: PromptTemplate) {
-  prompt.value = template.prompt
-  style.value = template.style
-  size.value = template.size
-  errorMessage.value = ''
-  activeTab.value = 'compose'
 }
 
 function restoreHistory(item: GenerationHistoryItem) {
@@ -223,8 +400,21 @@ function restoreHistory(item: GenerationHistoryItem) {
   quality.value = item.quality || 'auto'
   creativity.value = item.creativity ?? 7
   seed.value = item.seed || ''
+  const restoredModel = (item.model || '').trim()
+  if (!restoredModel) {
+    modelChoice.value = ''
+    customModel.value = ''
+  } else if (modelOptions.some((option) => option.value === restoredModel)) {
+    modelChoice.value = restoredModel
+    customModel.value = ''
+  } else {
+    modelChoice.value = customModelSentinel
+    customModel.value = restoredModel
+  }
   errorMessage.value = ''
-  activeTab.value = 'compose'
+  composerOpen.value = false
+  historyOpen.value = false
+  toast.info('已恢复历史参数')
 }
 
 function resetDraft() {
@@ -238,19 +428,23 @@ function resetDraft() {
   quality.value = 'auto'
   creativity.value = 7
   seed.value = ''
+  modelChoice.value = ''
+  customModel.value = ''
   errorMessage.value = ''
+  toast.info('已重置为默认参数')
 }
 
 function clearLocalHistory() {
   clearHistory()
   history.value = []
+  toast.info('已清空历史')
 }
 
 function openImage(image: GeneratedImage) {
   const source = resolveImageSource(image)
 
   if (!source) {
-    errorMessage.value = '这张图片没有可打开地址。'
+    toast.error('这张图片没有可打开地址')
     return
   }
 
@@ -258,18 +452,16 @@ function openImage(image: GeneratedImage) {
 }
 
 async function copyToClipboard(text: string, message: string) {
-  if (!text.trim()) {
+  if (!text || !text.trim()) {
+    toast.error('没有可复制的内容')
     return
   }
 
   try {
     await navigator.clipboard.writeText(text)
-    copiedMessage.value = message
-    window.setTimeout(() => {
-      copiedMessage.value = ''
-    }, 1800)
+    toast.success(message)
   } catch {
-    errorMessage.value = '复制失败，请手动复制。'
+    toast.error('复制失败，请手动复制')
   }
 }
 
@@ -287,15 +479,7 @@ function exportCurrentConfig() {
   anchor.click()
   anchor.remove()
   URL.revokeObjectURL(objectUrl)
-}
-
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat('zh-CN', {
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(new Date(value))
+  toast.success('参数已导出', 'JSON')
 }
 
 async function refreshHealth() {
@@ -306,12 +490,10 @@ async function refreshHealth() {
     const health = await checkHealth()
 
     healthStatus.value = 'online'
-    healthModel.value = health.model || ''
     healthRequestId.value = health.requestId || ''
     healthMessage.value = health.model ? `后端在线 · ${health.model}` : '后端在线'
   } catch (error) {
     healthStatus.value = 'offline'
-    healthModel.value = ''
 
     if (error instanceof ApiRequestError) {
       healthRequestId.value = error.requestId || ''
@@ -324,21 +506,40 @@ async function refreshHealth() {
   }
 }
 
-function handleKeydown(event: KeyboardEvent) {
-  if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
-    event.preventDefault()
-    void handleGenerate()
+function focusPrompt() {
+  // 桌面：focus 左侧 composer；移动：focus 底部 ChatDock 输入
+  if (typeof window !== 'undefined' && window.innerWidth >= 1024) {
+    composerRef.value?.focusPrompt()
+  } else {
+    chatDockRef.value?.focusInput()
   }
 }
 
+// 点击提示词模板（风格）时，若当前 prompt 仍为默认/另一模板示例，则自动填为当前模板示例并全选以便编辑
+let skipFirstStyleSync = true
+watch(style, (newValue, oldValue) => {
+  if (skipFirstStyleSync) {
+    skipFirstStyleSync = false
+    return
+  }
+  if (newValue === oldValue) return
+  const preset = stylePresetById.get(newValue)
+  if (!preset) return
+  const trimmed = prompt.value.trim()
+  const replaceable =
+    trimmed === defaultPrompt.trim() || presetExamplePrompts.has(trimmed) || trimmed.length === 0
+  if (replaceable) {
+    prompt.value = preset.examplePrompt
+    if (preset.defaultSize) size.value = preset.defaultSize
+  }
+  toast.info('已切换提示词模板', `${preset.label} · ${preset.accent}`)
+})
+
 onMounted(() => {
   refreshHealth()
-  window.addEventListener('keydown', handleKeydown)
 })
 
 onUnmounted(() => {
-  window.removeEventListener('keydown', handleKeydown)
-
   if (timerId) {
     window.clearInterval(timerId)
     timerId = undefined
@@ -352,320 +553,141 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="min-h-dvh bg-paper text-ink">
-    <header class="sticky top-0 z-30 border-b border-line/80 bg-paper/85 pt-[env(safe-area-inset-top)] backdrop-blur">
-      <div class="mx-auto flex w-full max-w-[1440px] items-center justify-between gap-4 px-4 py-3.5 sm:px-6 lg:px-10 lg:py-4">
-        <div class="flex items-center gap-3">
-          <span class="grid h-9 w-9 place-items-center rounded-full border border-ink/25 font-display text-base">P</span>
-          <div class="leading-tight">
-            <p class="font-display text-[17px] tracking-tightish">Prompt<span class="italic text-accent">Canvas</span></p>
-            <p class="mt-0.5 hidden text-[10px] uppercase tracking-[0.24em] text-muted sm:block">image studio · v0.1</p>
-          </div>
-        </div>
+  <div class="relative flex min-h-dvh flex-col bg-paper text-ink">
+    <a
+      href="#canvas"
+      class="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[80] focus:rounded-md focus:bg-ink focus:px-3 focus:py-2 focus:text-paper"
+    >
+      跳到画布
+    </a>
 
-        <div class="flex items-center gap-2">
-          <button
-            type="button"
-            class="inline-flex items-center gap-2 rounded-full border px-3 py-2 text-[11px] font-medium uppercase tracking-[0.16em] transition sm:py-1.5"
-            :class="{
-              'border-line text-muted': healthStatus === 'checking',
-              'border-line bg-cream text-ink hover:border-ink/40': healthStatus === 'online',
-              'border-accent/40 bg-accent/[0.08] text-accent': healthStatus === 'offline',
-            }"
-            :title="healthMessage"
-            :aria-label="`后端状态：${healthStatus === 'checking' ? '检查中' : healthStatus === 'online' ? '在线' : '离线'}。点击重新检查。`"
-            @click="refreshHealth"
-          >
-            <span
-              class="h-1.5 w-1.5 rounded-full"
-              :class="{
-                'motion-safe:animate-pulse bg-muted/60': healthStatus === 'checking',
-                'bg-ink': healthStatus === 'online',
-                'bg-accent': healthStatus === 'offline',
-              }"
-              aria-hidden="true"
-            ></span>
-            <span class="hidden sm:inline">{{ healthStatus === 'checking' ? '检查中' : healthStatus === 'online' ? '在线' : '离线' }}</span>
-          </button>
-          <button type="button" class="rounded-full border border-line bg-cream px-3 py-2 text-[11px] font-medium uppercase tracking-[0.16em] text-muted transition hover:border-ink/30 hover:text-ink sm:py-1.5" aria-label="重置表单为默认值" @click="resetDraft">
-            重置
-          </button>
-        </div>
-      </div>
+    <AppHeader
+      :health-status="healthStatus"
+      :health-message="healthMessage"
+      :theme="theme"
+      @refresh-health="refreshHealth"
+      @toggle-theme="toggleTheme"
+      @open-history="historyOpen = true"
+      @open-settings="settingsOpen = true"
+      @reset="resetDraft"
+    />
 
-      <nav class="flex items-stretch border-t border-line/60 lg:hidden">
-        <button
-          v-for="tab in tabs"
-          :key="tab.value"
-          type="button"
-          class="relative flex-1 py-3 text-[11px] font-medium uppercase tracking-[0.22em] transition"
-          :class="activeTab === tab.value ? 'text-ink' : 'text-muted'"
-          @click="activeTab = tab.value"
-        >
-          {{ tab.label }}
-          <span v-if="activeTab === tab.value" class="absolute bottom-0 left-1/2 h-[2px] w-7 -translate-x-1/2 bg-ink"></span>
-        </button>
-      </nav>
-    </header>
-
-    <main class="mx-auto w-full max-w-[1440px] px-4 pb-16 pt-6 sm:px-6 lg:grid lg:grid-cols-[minmax(320px,380px)_minmax(0,1fr)_minmax(280px,320px)] lg:gap-10 lg:px-10 lg:pt-10">
-      <section class="space-y-7" :class="{ 'hidden lg:block': activeTab !== 'compose' }">
-        <header class="space-y-2">
-          <p class="label">01 · Compose</p>
-          <h1 class="font-display text-3xl leading-[1.05] tracking-tightish lg:text-[2.5rem]">写下你想看见的<span class="italic">画面</span></h1>
-        </header>
-
-        <form class="space-y-6" @submit.prevent="handleGenerate">
-          <div v-if="healthStatus === 'offline'" class="rounded-md border border-accent/30 bg-accent/[0.06] px-4 py-3 text-[13px] leading-6 text-accent">
-            后端当前不可用。检查连接后再生成图片。
-          </div>
-
-          <div>
-            <div class="mb-2 flex items-center justify-between">
-              <label for="prompt" class="label">提示词</label>
-              <button type="button" class="text-[11px] font-medium text-muted transition hover:text-ink" @click="copyToClipboard(prompt, '已复制')">
-                {{ copiedMessage || '复制' }}
-              </button>
-            </div>
-            <textarea
-              id="prompt"
-              v-model="prompt"
-              rows="6"
-              maxlength="1200"
-              class="field-textarea"
-              placeholder="一张极简咖啡品牌海报，暖色调，自然光，留白充足"
-            ></textarea>
-            <p class="mt-1.5 text-right font-mono text-[10px] tabular-nums text-muted">{{ prompt.length }} / 1200</p>
-          </div>
-
-          <div>
-            <p class="label mb-3">风格</p>
-            <div class="grid grid-cols-2 gap-2">
-              <button
-                v-for="item in styleOptions"
-                :key="item.value"
-                type="button"
-                class="rounded-md border px-3 py-2.5 text-left transition"
-                :class="style === item.value ? 'border-ink bg-ink text-cream' : 'border-line bg-cream text-ink hover:border-ink/40'"
-                @click="style = item.value"
-              >
-                <span class="block text-[13px] font-medium">{{ item.label }}</span>
-                <span class="mt-0.5 block text-[11px]" :class="style === item.value ? 'text-cream/65' : 'text-muted'">{{ item.accent }}</span>
-              </button>
-            </div>
-          </div>
-
-          <div class="grid gap-4 sm:grid-cols-3">
-            <div>
-              <label class="label mb-2">尺寸</label>
-              <select v-model="size" class="field-select">
-                <option v-for="item in sizeOptions" :key="item.value" :value="item.value">{{ item.label }}</option>
-              </select>
-            </div>
-            <div>
-              <label class="label mb-2">数量</label>
-              <select v-model.number="count" class="field-select">
-                <option v-for="n in 4" :key="n" :value="n">{{ n }} 张</option>
-              </select>
-            </div>
-            <div>
-              <label class="label mb-2">格式</label>
-              <select v-model="outputFormat" class="field-select">
-                <option value="png">PNG</option>
-                <option value="jpeg">JPEG</option>
-                <option value="webp">WEBP</option>
-              </select>
-            </div>
-          </div>
-
-          <details class="group border-t border-line pt-5">
-            <summary class="flex cursor-pointer list-none items-center justify-between">
-              <span class="label">Advanced · 可选</span>
-              <span class="text-[11px] text-muted transition group-open:rotate-180">▾</span>
-            </summary>
-            <div class="mt-4 space-y-4">
-              <div>
-                <label class="label mb-2">负面提示词</label>
-                <textarea v-model="negativePrompt" rows="2" maxlength="400" class="field-textarea" placeholder="不想出现的元素，例如：模糊、水印"></textarea>
-              </div>
-              <div class="grid gap-4 sm:grid-cols-2">
-                <div>
-                  <label class="label mb-2">质量</label>
-                  <select v-model="quality" class="field-select">
-                    <option v-for="item in qualityOptions" :key="item.value" :value="item.value">{{ item.label }}</option>
-                  </select>
-                </div>
-                <div>
-                  <label class="label mb-2">Seed</label>
-                  <input v-model="seed" class="field-input" placeholder="可选" autocomplete="off" spellcheck="false" />
-                </div>
-              </div>
-              <div>
-                <div class="mb-2 flex items-center justify-between">
-                  <span class="label">创意强度</span>
-                  <span class="font-mono text-[11px] tabular-nums text-ink">{{ creativity }} / 10</span>
-                </div>
-                <input v-model.number="creativity" type="range" min="1" max="10" step="1" class="w-full accent-ink" />
-              </div>
-            </div>
-          </details>
-
-          <div class="sticky bottom-0 -mx-4 border-t border-line/80 bg-paper/95 px-4 pb-[max(env(safe-area-inset-bottom),0.75rem)] pt-3 backdrop-blur sm:-mx-6 sm:px-6 lg:static lg:mx-0 lg:border-0 lg:bg-transparent lg:px-0 lg:pb-0 lg:pt-0 lg:backdrop-blur-none">
-            <button
-              type="submit"
-              :disabled="!canGenerate"
-              class="flex w-full items-center justify-between rounded-md bg-ink px-5 py-4 text-sm font-medium text-cream transition hover:bg-accent disabled:cursor-not-allowed disabled:bg-ink/40"
-              aria-keyshortcuts="Meta+Enter Control+Enter"
-            >
-              <span class="flex items-center gap-3">
-                <span class="font-display text-base italic">{{ isGenerating ? 'Composing' : 'Generate' }}</span>
-                <span v-if="isGenerating" class="font-mono text-[11px] tabular-nums text-cream/70">{{ elapsedSeconds }}s</span>
-              </span>
-              <span class="hidden font-mono text-[10px] uppercase tracking-[0.22em] text-cream/65 sm:inline" aria-hidden="true">⌘ ↵</span>
-            </button>
-          </div>
-        </form>
+    <!-- 桌面布局：>= lg 显示完整工作台 -->
+    <main
+      class="relative z-[2] mx-auto hidden w-full max-w-[1480px] flex-1 lg:grid lg:grid-cols-[minmax(360px,440px)_minmax(0,1fr)] lg:gap-10 lg:px-10 lg:pb-12 lg:pt-10"
+    >
+      <!-- 桌面：左栏 Composer；移动：隐藏（用 dock + sheet 替代） -->
+      <section class="hidden reveal lg:block" style="--reveal-delay: 40ms;">
+        <PromptComposer
+          ref="composerRef"
+          v-model:prompt="prompt"
+          v-model:style="style"
+          v-model:size="size"
+          v-model:count="count"
+          v-model:modelChoice="modelChoice"
+          v-model:customModel="customModel"
+          :is-generating="isGenerating"
+          :elapsed-seconds="elapsedSeconds"
+          :can-generate="canGenerate"
+          :health-offline="healthStatus === 'offline'"
+          @generate="handleGenerate"
+          @copy="copyToClipboard"
+          @open-settings="settingsOpen = true"
+        />
       </section>
 
-      <section class="mt-10 lg:mt-0" :class="{ 'hidden lg:block': activeTab !== 'result' }">
-        <header class="mb-5 flex items-end justify-between gap-4">
-          <div class="space-y-2">
-            <p class="label">02 · Canvas</p>
-            <h2 class="font-display text-3xl leading-[1.05] tracking-tightish lg:text-[2.5rem]">画布</h2>
-          </div>
-          <div class="flex flex-wrap items-center justify-end gap-1.5">
-            <span class="chip">{{ selectedStyle?.label }}</span>
-            <span class="chip font-mono">{{ size }}</span>
-            <span v-if="lastRequestId" class="chip font-mono normal-case tracking-normal">{{ lastRequestId.slice(0, 12) }}</span>
-          </div>
-        </header>
-
-        <div v-if="errorMessage" class="mb-5 rounded-md border border-accent/30 bg-accent/[0.06] px-4 py-3 text-[13px] leading-6 text-accent">
-          {{ errorMessage }}
-        </div>
-
-        <div v-if="isGenerating" class="grid place-items-center rounded-xl border border-line bg-cream py-24 text-center" role="status" aria-live="polite">
-          <div>
-            <div class="mx-auto mb-6 h-px w-14 motion-safe:animate-pulse bg-ink" aria-hidden="true"></div>
-            <p class="font-display text-2xl italic tracking-tightish">composing</p>
-            <p class="mt-2 font-mono text-[11px] uppercase tracking-[0.2em] text-muted">{{ elapsedSeconds }}s elapsed</p>
-          </div>
-        </div>
-
-        <div v-else-if="activeImage" class="space-y-5">
-          <div class="overflow-hidden rounded-xl border border-line bg-cream">
-            <div class="grid place-items-center bg-paper p-3 sm:p-5" :class="previewFrameClass">
-              <img :src="activeImageSource" alt="生成图片" loading="lazy" decoding="async" class="h-full max-h-[70vh] w-full object-contain" />
-            </div>
-          </div>
-
-          <div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            <button type="button" class="result-button" @click="downloadImage(activeImage, activeImageIndex)">下载</button>
-            <button type="button" class="result-button" @click="openImage(activeImage)">打开</button>
-            <button type="button" class="result-button" @click="copyToClipboard(activeImage.revisedPrompt || prompt, '已复制')">复制提示词</button>
-            <button type="button" class="result-button" @click="exportCurrentConfig">导出 JSON</button>
-          </div>
-
-          <div v-if="images.length > 1" class="-mx-1 flex gap-2 overflow-x-auto px-1 pb-2">
-            <button
-              v-for="(image, index) in images"
-              :key="image.id || index"
-              type="button"
-              class="shrink-0 overflow-hidden rounded-md border bg-cream p-1 transition"
-              :class="activeImageIndex === index ? 'border-ink' : 'border-line hover:border-ink/40'"
-              @click="activeImageIndex = index"
-            >
-              <img :src="resolveImageSource(image)" alt="" loading="lazy" decoding="async" class="aspect-square w-16 rounded-sm object-cover sm:w-20" />
-            </button>
-          </div>
-
-          <div v-if="activeImage.revisedPrompt" class="rounded-md border border-line bg-cream/60 p-4">
-            <p class="label mb-2">Revised prompt</p>
-            <p class="text-[13px] leading-6 text-ink/75">{{ activeImage.revisedPrompt }}</p>
-          </div>
-        </div>
-
-        <div v-else class="grid place-items-center rounded-xl border border-dashed border-line bg-cream/40 py-20 text-center sm:py-24">
-          <div class="max-w-sm px-6">
-            <p class="font-display text-3xl italic tracking-tightish text-muted">an empty canvas</p>
-            <p class="mt-3 text-[13px] leading-6 text-muted">写下提示词，或者从库里选一个模板，然后点击 Generate。</p>
-            <button type="button" class="mt-6 inline-flex items-center gap-2 rounded-md border border-line bg-cream px-4 py-2.5 text-[13px] font-medium text-ink transition hover:border-ink/40 lg:hidden" @click="activeTab = 'compose'">
-              去写提示词 <span aria-hidden="true">→</span>
-            </button>
-          </div>
-        </div>
+      <section id="canvas" class="reveal" style="--reveal-delay: 120ms;">
+        <CanvasStage
+          :images="images"
+          :active-image-index="activeImageIndex"
+          :is-generating="isGenerating"
+          :elapsed-seconds="elapsedSeconds"
+          :error-message="errorMessage"
+          :last-request-id="lastRequestId"
+          :size="size"
+          :style-label="selectedStyleLabel"
+          :prompt-preview="promptPreview"
+          :has-prompt="trimmedPrompt.length >= 4"
+          @select="(index) => (activeImageIndex = index)"
+          @open-lightbox="(index) => lightbox.open(images, index)"
+          @download="downloadImage"
+          @open="openImage"
+          @copy="copyToClipboard"
+          @export="exportCurrentConfig"
+          @go-compose="focusPrompt"
+          @generate="handleGenerate"
+        />
       </section>
 
-      <aside class="mt-10 space-y-8 lg:mt-0" :class="{ 'hidden lg:block': activeTab !== 'library' }">
-        <section>
-          <header class="mb-4 space-y-2">
-            <p class="label">03 · Templates</p>
-            <h3 class="font-display text-2xl tracking-tightish">提示词模板</h3>
-          </header>
-          <div class="space-y-2">
-            <button
-              v-for="template in promptTemplates"
-              :key="template.id"
-              type="button"
-              class="block w-full rounded-md border border-line bg-cream/60 p-3.5 text-left transition hover:border-ink/40 hover:bg-cream"
-              @click="applyTemplate(template)"
-            >
-              <div class="flex items-center justify-between gap-3">
-                <span class="text-[13px] font-medium text-ink">{{ template.title }}</span>
-                <span class="font-mono text-[10px] uppercase tracking-wider text-muted">{{ template.style }}</span>
-              </div>
-              <p class="mt-1 text-[11px] text-muted">{{ template.tone }}</p>
-              <p class="mt-2 line-clamp-2 text-[12px] leading-5 text-ink/70">{{ template.prompt }}</p>
-            </button>
-          </div>
-        </section>
-
-        <section>
-          <header class="mb-4 flex items-end justify-between">
-            <div class="space-y-2">
-              <p class="label">04 · History</p>
-              <h3 class="font-display text-2xl tracking-tightish">最近生成</h3>
-            </div>
-            <button v-if="history.length" type="button" class="text-[11px] font-medium text-muted transition hover:text-accent" @click="clearLocalHistory">
-              清空
-            </button>
-          </header>
-
-          <div v-if="history.length" class="space-y-2">
-            <button
-              v-for="item in history"
-              :key="item.id"
-              type="button"
-              class="block w-full rounded-md border border-line bg-cream/60 p-3.5 text-left transition hover:border-ink/40 hover:bg-cream"
-              @click="restoreHistory(item)"
-            >
-              <div class="flex items-center justify-between">
-                <span class="font-mono text-[10px] uppercase tracking-wider text-muted">{{ formatDate(item.createdAt) }}</span>
-                <span class="font-mono text-[10px] text-muted">×{{ item.imageCount }}</span>
-              </div>
-              <p class="mt-1.5 line-clamp-2 text-[12px] leading-5 text-ink/80">{{ item.prompt }}</p>
-              <div class="mt-2 flex flex-wrap items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted">
-                <span>{{ item.style }}</span>
-                <span class="text-line">·</span>
-                <span class="font-mono">{{ item.size }}</span>
-              </div>
-            </button>
-          </div>
-          <p v-else class="rounded-md border border-dashed border-line bg-cream/40 px-4 py-5 text-[12px] leading-5 text-muted">
-            生成成功后，最近 8 条参数会保存在浏览器本地。
-          </p>
-        </section>
-
-        <section class="border-t border-line pt-6 text-[12px] leading-6 text-muted">
-          <p>前端请求 <code class="rounded bg-cream px-1.5 py-0.5 font-mono text-[11px] text-ink">POST /api/images/generate</code>。</p>
-          <p class="mt-2">所有数据保留在你的浏览器和后端之间。</p>
-          <p v-if="healthRequestId" class="mt-3 font-mono text-[10px] tracking-wider">last req · {{ healthRequestId }}</p>
-        </section>
-      </aside>
     </main>
 
-    <footer class="border-t border-line/70 py-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] text-center font-mono text-[10px] uppercase tracking-[0.24em] text-muted">
-      crafted local · {{ new Date().getFullYear() }}
+    <footer
+      class="relative z-[2] hidden border-t border-line/70 py-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] text-center font-mono text-[10px] uppercase tracking-[0.24em] text-muted lg:block"
+    >
+      <span class="inline-flex items-center justify-center gap-2">
+        <span>crafted local · {{ new Date().getFullYear() }}</span>
+        <span class="text-line">/</span>
+        <span>所有数据保留在你的浏览器与后端之间</span>
+      </span>
     </footer>
+
+    <!-- 移动端：ChatGPT 式聊天画布（< lg） -->
+    <div class="flex min-h-0 flex-1 flex-col lg:hidden">
+      <ChatStream
+        :messages="messages"
+        :bottom-padding="180"
+        class="flex-1 min-h-0"
+        @retry="regenerateFromMessage"
+        @open-image="(imgs, index) => lightbox.open(imgs, index)"
+        @download="downloadImage"
+        @copy="copyToClipboard"
+        @pick-suggestion="pickStyleFromChat"
+      />
+    </div>
+
+    <ChatDock
+      ref="chatDockRef"
+      class="lg:hidden"
+      v-model:prompt="prompt"
+      v-model:model-choice="modelChoice"
+      v-model:custom-model="customModel"
+      :is-generating="isGenerating"
+      :can-generate="canGenerate"
+      :elapsed-seconds="elapsedSeconds"
+      :health-offline="healthStatus === 'offline'"
+      :current-style="style"
+      @send="sendFromChat"
+      @open-style-sheet="styleSheetOpen = true"
+    />
+
+    <StyleSheet
+      v-model:open="styleSheetOpen"
+      :current="style"
+      @select="(value) => (style = value)"
+    />
+
+    <SettingsDialog
+      v-model:open="settingsOpen"
+      v-model:negativePrompt="negativePrompt"
+      v-model:outputFormat="outputFormat"
+      v-model:quality="quality"
+      v-model:creativity="creativity"
+      v-model:seed="seed"
+      v-model:modelChoice="modelChoice"
+      v-model:customModel="customModel"
+      @export="exportCurrentConfig"
+      @reset="resetDraft"
+    />
+
+    <HistoryDialog
+      v-model:open="historyOpen"
+      :history="history"
+      @restore="restoreHistory"
+      @clear="clearLocalHistory"
+    />
+
+    <Lightbox />
+
+    <Toaster />
   </div>
 </template>

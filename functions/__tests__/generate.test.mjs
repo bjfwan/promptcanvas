@@ -240,3 +240,77 @@ test('preserves requestId from context.data on success', async () => {
 
   assert.equal(data.requestId, 'req_custom_xyz')
 })
+
+test('payload.model overrides OPENAI_IMAGE_MODEL env', async () => {
+  const captured = []
+
+  mockFetch(async (_url, init) => {
+    captured.push(JSON.parse(init.body))
+    return new Response(JSON.stringify({ data: [{ b64_json: 'AAAA' }] }), { status: 200 })
+  })
+
+  const response = await onRequestPost(createContext({
+    body: validBody({ model: 'gpt-image-1024x1024' }),
+    env: { OPENAI_API_KEY: 'sk-test', OPENAI_IMAGE_MODEL: 'gpt-image-1' },
+  }))
+  const data = await response.json()
+
+  assert.equal(response.status, 200)
+  assert.equal(captured[0].model, 'gpt-image-1024x1024')
+  assert.equal(data.usage.model, 'gpt-image-1024x1024')
+})
+
+test('falls back to OPENAI_IMAGE_MODEL env when payload.model not provided', async () => {
+  const captured = []
+
+  mockFetch(async (_url, init) => {
+    captured.push(JSON.parse(init.body))
+    return new Response(JSON.stringify({ data: [{ b64_json: 'AAAA' }] }), { status: 200 })
+  })
+
+  await onRequestPost(createContext({
+    body: validBody(),
+    env: { OPENAI_API_KEY: 'sk-test', OPENAI_IMAGE_MODEL: 'gpt-image-2' },
+  }))
+
+  assert.equal(captured[0].model, 'gpt-image-2')
+})
+
+test('treats blank model string as not provided and falls back to env', async () => {
+  const captured = []
+
+  mockFetch(async (_url, init) => {
+    captured.push(JSON.parse(init.body))
+    return new Response(JSON.stringify({ data: [{ b64_json: 'AAAA' }] }), { status: 200 })
+  })
+
+  const response = await onRequestPost(createContext({
+    body: validBody({ model: '   ' }),
+    env: { OPENAI_API_KEY: 'sk-test', OPENAI_IMAGE_MODEL: 'gpt-image-2' },
+  }))
+
+  assert.equal(response.status, 200)
+  assert.equal(captured[0].model, 'gpt-image-2')
+})
+
+test('rejects model containing illegal characters', async () => {
+  const response = await onRequestPost(createContext({
+    body: validBody({ model: 'evil model with spaces' }),
+  }))
+  const data = await response.json()
+
+  assert.equal(response.status, 400)
+  assert.equal(data.error.code, 'INVALID_REQUEST')
+  assert.match(data.error.message, /model/)
+})
+
+test('rejects model longer than 64 characters', async () => {
+  const response = await onRequestPost(createContext({
+    body: validBody({ model: 'a'.repeat(65) }),
+  }))
+  const data = await response.json()
+
+  assert.equal(response.status, 400)
+  assert.equal(data.error.code, 'INVALID_REQUEST')
+  assert.match(data.error.message, /model/)
+})

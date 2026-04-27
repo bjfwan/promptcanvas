@@ -44,6 +44,7 @@ export function validatePayload(body) {
     : 'auto'
   const creativity = body.creativity === undefined ? null : body.creativity
   const seed = typeof body.seed === 'string' ? body.seed.trim() : ''
+  const model = typeof body.model === 'string' ? body.model.trim() : ''
 
   if (!prompt) {
     return { error: 'prompt 不能为空' }
@@ -85,6 +86,18 @@ export function validatePayload(body) {
     return { error: 'seed 不能超过 120 个字符' }
   }
 
+  if (body.model !== undefined && typeof body.model !== 'string') {
+    return { error: 'model 必须是字符串' }
+  }
+
+  if (model.length > 64) {
+    return { error: 'model 不能超过 64 个字符' }
+  }
+
+  if (model && !/^[A-Za-z0-9._\-/]+$/.test(model)) {
+    return { error: 'model 只允许字母、数字、点、下划线、横线、斜杠' }
+  }
+
   if (!allowedSizes.has(size)) {
     return { error: 'size 只支持 1024x1024、1024x1536、1536x1024' }
   }
@@ -108,6 +121,7 @@ export function validatePayload(body) {
       quality,
       creativity,
       seed,
+      model,
     },
   }
 }

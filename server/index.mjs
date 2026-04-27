@@ -258,10 +258,11 @@ export function createApp(options = {}) {
 
     const payload = validation.value
     const openai = getOpenAIClient()
+    const effectiveModel = payload.model || config.model
 
     try {
       const response = await openai.images.generate({
-        model: config.model,
+        model: effectiveModel,
         prompt: buildPrompt(payload),
         size: payload.size,
         n: payload.count,
@@ -279,7 +280,7 @@ export function createApp(options = {}) {
         requestId: req.requestId,
         images,
         usage: {
-          model: config.model,
+          model: effectiveModel,
         },
       })
     } catch (error) {

@@ -14,6 +14,8 @@ export interface DraftPayload {
   quality?: string
   creativity?: number
   seed?: string
+  modelChoice?: string
+  customModel?: string
 }
 
 export function loadDraft(): DraftPayload | null {

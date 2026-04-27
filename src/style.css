@@ -61,21 +61,94 @@
     @apply block text-[11px] font-medium uppercase tracking-[0.18em] text-muted;
   }
 
+  .display-eyebrow {
+    @apply font-mono text-[10px] font-medium uppercase tracking-[0.28em] text-muted;
+  }
+
+  .display-h1 {
+    @apply font-display text-3xl leading-[1.05] tracking-tightish text-ink lg:text-[2.5rem];
+  }
+
+  .display-h2 {
+    @apply font-display text-3xl leading-[1.05] tracking-tightish text-ink lg:text-[2.25rem];
+  }
+
   .field-select,
   .field-input {
-    @apply w-full rounded-md border border-line bg-cream px-3.5 py-2.5 text-base font-medium text-ink outline-none transition placeholder:text-muted/60 focus:border-ink/40 sm:text-sm;
+    @apply w-full rounded-[0.625rem] border border-line bg-cream/70 px-3.5 py-2.5 text-base font-medium text-ink outline-none transition placeholder:text-muted/60 hover:border-line-strong focus:border-ink focus:bg-paper focus:shadow-[0_0_0_3px_rgba(26,22,18,0.10)] sm:text-sm;
   }
 
   .field-textarea {
-    @apply w-full resize-none rounded-md border border-line bg-cream px-4 py-3 text-base leading-relaxed text-ink outline-none transition placeholder:text-muted/60 focus:border-ink/40 sm:text-[15px];
+    @apply w-full resize-none rounded-2xl border border-line bg-cream/70 px-4 py-3 text-base leading-relaxed text-ink outline-none transition placeholder:text-muted/60 hover:border-line-strong focus:border-ink focus:bg-paper focus:shadow-[0_0_0_3px_rgba(26,22,18,0.10)] sm:text-[15px];
   }
 
   .result-button {
-    @apply inline-flex items-center justify-center rounded-md border border-line bg-cream px-3 py-3 text-[13px] font-medium text-ink transition hover:border-ink/40 hover:bg-paper sm:py-2.5 sm:text-xs;
+    @apply inline-flex items-center justify-center gap-1.5 rounded-xl border border-line bg-vellum px-3 py-3 text-[13px] font-medium text-ink transition hover:-translate-y-px hover:border-line-strong hover:bg-cream hover:shadow-paper-1 sm:py-2.5 sm:text-xs;
   }
 
   .chip {
-    @apply inline-flex items-center gap-1.5 rounded-full border border-line bg-cream px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.14em] text-muted;
+    @apply inline-flex items-center gap-1.5 rounded-full border border-line bg-vellum px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.14em] text-muted;
+  }
+
+  .surface-1 {
+    @apply rounded-2xl border border-line bg-vellum/80;
+  }
+
+  .surface-2 {
+    @apply rounded-3xl border border-line bg-vellum shadow-paper-2;
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-2xl bg-ink text-paper transition hover:bg-ink/95 active:translate-y-px disabled:cursor-not-allowed disabled:bg-ink/35 disabled:text-paper/70;
+  }
+
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 rounded-full border border-line bg-vellum px-4 py-2.5 text-[13px] font-medium text-ink transition hover:border-line-strong hover:bg-cream;
+  }
+
+  .btn-quiet {
+    @apply inline-flex items-center gap-1.5 rounded-md text-[12px] font-medium text-muted transition hover:text-ink;
+  }
+
+  .icon-btn,
+  .icon-btn-sm {
+    @apply inline-grid place-items-center rounded-full border border-line bg-vellum text-ink transition hover:border-line-strong hover:bg-cream focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/15;
+  }
+
+  .icon-btn {
+    @apply h-10 w-10;
+  }
+
+  .icon-btn-sm {
+    @apply h-9 w-9;
+  }
+
+  .scrim {
+    @apply absolute inset-0 bg-ink/45 backdrop-blur-[6px];
+  }
+
+  .skeleton {
+    @apply relative overflow-hidden bg-paper-soft/70;
+  }
+
+  .skeleton::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgba(253, 248, 237, 0.65),
+      transparent
+    );
+    animation: progress-sweep 1.6s linear infinite;
+  }
+
+  .truncate-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
   }
 
   .paper-bg {
@@ -85,19 +158,33 @@
 
   .reveal {
     animation: reveal-up 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+    animation-delay: var(--reveal-delay, 0ms);
   }
 
   .toast {
-    @apply pointer-events-auto inline-flex items-center gap-2 rounded-md border bg-cream/95 px-3.5 py-2.5 text-[12px] font-medium backdrop-blur;
-    box-shadow: 0 16px 32px -16px rgba(26, 22, 18, 0.22);
+    @apply pointer-events-auto inline-flex items-center gap-2 rounded-2xl border bg-vellum/95 px-3.5 py-2.5 text-[12px] font-medium shadow-paper-2 backdrop-blur;
   }
 
   .toast-success {
-    @apply border-line text-ink;
+    @apply border-line-strong text-ink;
   }
 
   .toast-error {
     @apply border-accent/40 bg-accent/[0.08] text-accent;
+  }
+
+  .toast-info {
+    @apply border-line text-ink;
+  }
+}
+
+@layer utilities {
+  .animate-breathe {
+    animation: breathe 2.4s ease-in-out infinite;
+  }
+
+  .animate-progress-sweep {
+    animation: progress-sweep 1.6s linear infinite;
   }
 }
 

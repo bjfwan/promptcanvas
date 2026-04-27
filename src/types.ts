@@ -22,6 +22,7 @@ export interface GenerateImageRequest {
   quality?: ImageQuality
   creativity?: number
   seed?: string
+  model?: string
 }
 
 export interface GeneratedImage {
@@ -69,3 +70,39 @@ export interface PromptTemplate {
   style: ImageStyle
   size: ImageSize
 }
+
+export interface ChatMessageMeta {
+  style: ImageStyle
+  size: ImageSize
+  count: number
+  outputFormat: GenerateImageRequest['outputFormat']
+  model?: string
+  quality?: ImageQuality
+  creativity?: number
+  seed?: string
+  negativePrompt?: string
+}
+
+export interface ChatUserMessage {
+  id: string
+  role: 'user'
+  content: string
+  createdAt: string
+  meta: ChatMessageMeta
+}
+
+export interface ChatAssistantMessage {
+  id: string
+  role: 'assistant'
+  status: 'pending' | 'success' | 'error'
+  createdAt: string
+  replyTo: string
+  meta: ChatMessageMeta
+  images?: GeneratedImage[]
+  requestId?: string
+  errorMessage?: string
+  errorCode?: string
+  elapsedSeconds?: number
+}
+
+export type ChatMessage = ChatUserMessage | ChatAssistantMessage

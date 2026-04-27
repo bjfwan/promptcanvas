@@ -37,6 +37,7 @@ interface ValidatedPayload {
   quality: string
   creativity: number | null
   seed: string
+  model: string
 }
 
 export const onRequestPost: PagesFunction<Env> = async (context) => {
@@ -61,7 +62,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   }
 
   const payload = validation.value
-  const model = context.env.OPENAI_IMAGE_MODEL || 'gpt-image-1'
+  const model = payload.model || context.env.OPENAI_IMAGE_MODEL || 'gpt-image-1'
   const timeoutMs = parsePositiveInteger(context.env.OPENAI_TIMEOUT_MS, 120_000)
   const baseUrl = resolveBaseUrl(context.env.OPENAI_BASE_URL)
   const controller = new AbortController()
