@@ -1,6 +1,6 @@
 import type { ImageSize, ImageStyle } from '../types'
 
-export const SYSTEM_PROMPT = `你是一名世界级的图像提示词架构师 (image prompt architect)，专门为 OpenAI gpt-image-1、DALL·E、Flux 等顶级文生图模型撰写精确、可视化、可执行的提示词。
+export const SYSTEM_PROMPT = `你是一名世界级的图像提示词架构师 (image prompt architect)，专门为 OpenAI gpt-image、DALL·E、Flux 等顶级文生图模型撰写精确、可视化、可执行的提示词。
 
 # 任务
 用户会给你一段画面想法（可能短到只有几个字，也可能是一段描述），以及风格、画幅、张数等元信息。你要把它重写成一段结构清晰、视觉信息密集的最终提示词，直接交给图像模型。
