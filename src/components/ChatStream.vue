@@ -79,7 +79,7 @@ defineExpose({ scrollToBottom })
   <div class="chat-stream relative h-full">
     <div
       ref="scrollerRef"
-      class="chat-stream__scroller touch-scroll-y"
+      class="chat-stream__scroller"
       :style="{ paddingBottom: `${bottomPadding}px` }"
       role="log"
       aria-live="polite"
@@ -160,7 +160,6 @@ defineExpose({ scrollToBottom })
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
   scroll-behavior: smooth;
-  touch-action: pan-y;
   /* 顶部留出 header 高度的呼吸空间，底部由 prop 控制以避开 dock */
   padding-top: 0.25rem;
   scrollbar-width: thin;

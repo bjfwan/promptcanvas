@@ -202,7 +202,6 @@
 
   .touch-scroll-y {
     -webkit-overflow-scrolling: touch;
-    touch-action: pan-y;
   }
 
   .canvas-frame {

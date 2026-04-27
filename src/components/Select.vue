@@ -485,7 +485,6 @@ onBeforeUnmount(() => {
   outline: none;
   scrollbar-width: thin;
   scrollbar-color: rgba(26, 22, 18, 0.22) transparent;
-  touch-action: pan-y;
 }
 
 .select-list::-webkit-scrollbar {
