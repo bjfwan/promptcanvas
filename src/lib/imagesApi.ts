@@ -22,12 +22,22 @@ export const mimeTypes: Record<string, string> = {
 }
 
 export const stylePrompts: Record<string, string> = {
-  natural: '自然写实风格，光线真实，色彩协调',
-  poster: '电影海报风格，主体突出，排版有冲击力',
-  product: '商业产品摄影风格，干净背景，质感清晰',
-  portrait: '高质量人物肖像风格，面部自然，细节丰富',
-  anime: '精致动漫插画风格，线条清晰，色彩鲜明',
-  cinematic: '电影感视觉风格，戏剧化光影，构图完整',
+  natural:
+    '自然写实摄影：真实自然光与可信色彩，35mm 视角与浅景深突出主体，质感细腻，避免塑料感与过度后期',
+  poster:
+    '电影 / 品牌海报排版：主视觉居中聚焦，强构图与负空间留白，配色克制有层次，整体具备印刷级视觉冲击力',
+  product:
+    '高端商业产品摄影：无缝纸背景，柔光箱主光配蜂窝反射补光，材质反光与细节锐利干净，构图简洁突出产品本身',
+  portrait:
+    '杂志级人物肖像：85mm 中焦镜头质感，柔和方向性主光，皮肤真实保留毛孔与微表情，焦点锐利落在眼睛',
+  anime:
+    '高品质日系动画插画：干净赛璐璐线稿，鲜明但协调的色块，光影分明层次清晰，避免线稿杂乱与脏色',
+  cinematic:
+    '电影截图质感：2.39:1 宽银幕构图，戏剧性方向光与冷暖对比，胶片颗粒与色彩分级，氛围感优先于细节堆叠',
+  logo:
+    '极简品牌标志设计：纯色背景上的几何抽象符号，单色或最多双色，无渐变无阴影，线条粗细一致，缩到 32px 仍可辨识',
+  interior:
+    '建筑 / 空间摄影：广角但不畸变，自然光为主光源，材质与软装真实可信，画面有空间纵深与生活气息，避免 CG 塑料感',
 }
 
 export interface ValidatedPayload {
@@ -156,14 +166,14 @@ export function resolveCreativityInstruction(creativity: number | null): string 
   }
 
   if (creativity <= 3) {
-    return `创意强度：${creativity}/10，优先忠实还原用户提示词，避免过度发散`
+    return `创意强度：${creativity}/10 · 忠实还原描述，禁止主观发挥与额外要素`
   }
 
   if (creativity <= 7) {
-    return `创意强度：${creativity}/10，在保持主题准确的基础上增强画面表现力`
+    return `创意强度：${creativity}/10 · 主题严格准确，但加强光影、构图与氛围`
   }
 
-  return `创意强度：${creativity}/10，可以加入更大胆的构图、光影和视觉细节`
+  return `创意强度：${creativity}/10 · 可大胆扩展构图、光线与细节，强化视觉戏剧性`
 }
 
 export function buildPrompt(payload: {
@@ -177,13 +187,11 @@ export function buildPrompt(payload: {
   const styleInstruction = stylePrompts[payload.style] || payload.style
 
   return [
-    `用户提示词：${payload.prompt}`,
-    styleInstruction ? `风格要求：${styleInstruction}` : null,
-    payload.negativePrompt ? `避免内容：${payload.negativePrompt}` : null,
+    `画面内容：${payload.prompt}`,
+    styleInstruction ? `风格指引：${styleInstruction}` : null,
+    payload.negativePrompt ? `避免要素：${payload.negativePrompt}` : null,
     resolveCreativityInstruction(payload.creativity),
-    payload.seed ? `一致性标记：${payload.seed}` : null,
-    `输出格式：${payload.outputFormat.toUpperCase()}`,
-    '输出要求：高质量、构图完整、细节清晰',
+    payload.seed ? `一致性参考：${payload.seed}` : null,
   ]
     .filter(Boolean)
     .join('\n')

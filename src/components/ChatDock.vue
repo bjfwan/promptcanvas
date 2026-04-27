@@ -336,8 +336,8 @@ defineExpose({ focusInput })
 /* “高输入模式”：点击展开按钮后输入框立即伸展至接近整个视口高度，
    即使当前内容很短，输入框也保持高大状态以方便长篇撰写 */
 .chat-dock__textarea--tall {
-  min-height: 60vh;
-  max-height: 72vh;
+  min-height: 32dvh;
+  max-height: 50dvh;
 }
 
 /* 右上角的 展开 / 收起 切换按钮 */

@@ -118,6 +118,16 @@ watch(
 
 const selectedStyle = computed(() => styleOptions.find((item) => item.value === style.value))
 const selectedStyleLabel = computed(() => selectedStyle.value?.label ?? style.value)
+const selectedModelLabel = computed(() => {
+  if (modelChoice.value === customModelSentinel) {
+    const trimmed = customModel.value.trim()
+    return trimmed ? trimmed : ''
+  }
+  const value = modelChoice.value.trim()
+  if (!value) return ''
+  const match = discoveredModels.mergedModelOptions.value.find((option) => option.value === value)
+  return match?.label || value
+})
 const trimmedPrompt = computed(() => prompt.value.trim())
 const canGenerate = computed(
   () =>
@@ -226,12 +236,21 @@ async function runGeneration(args: {
 
     images.value = result.images
     lastRequestId.value = result.requestId || ''
+    const persistableImages: GeneratedImage[] = result.images
+      .filter((image) => typeof image.url === 'string' && image.url.length > 0)
+      .map((image) => ({
+        id: image.id,
+        url: image.url,
+        mimeType: image.mimeType,
+        revisedPrompt: image.revisedPrompt,
+      }))
     history.value = prependHistory({
       ...args.payload,
       id: createId(),
       createdAt: new Date().toISOString(),
       requestId: result.requestId,
       imageCount: result.images.length,
+      images: persistableImages.length ? persistableImages : undefined,
     })
 
     updateAssistantMessage(assistantId, (current) => ({
@@ -374,6 +393,27 @@ function pickStyleFromChat(value: ImageStyle) {
   }
 }
 
+async function fetchAsBlob(url: string, headers?: Record<string, string>): Promise<Blob | null> {
+  try {
+    const response = await fetch(url, { headers })
+    if (!response.ok) return null
+    return await response.blob()
+  } catch {
+    return null
+  }
+}
+
+function triggerBlobDownload(blob: Blob, filename: string) {
+  const objectUrl = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = objectUrl
+  anchor.download = filename
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+  URL.revokeObjectURL(objectUrl)
+}
+
 async function downloadImage(image: GeneratedImage, index: number) {
   const source = resolveImageSource(image)
 
@@ -382,27 +422,52 @@ async function downloadImage(image: GeneratedImage, index: number) {
     return
   }
 
+  if (source.startsWith('data:')) {
+    const response = await fetch(source)
+    const blob = await response.blob()
+    const ext = (image.mimeType?.split('/')[1] || outputFormat.value).split(';')[0]
+    triggerBlobDownload(blob, `promptcanvas-${Date.now()}-${index + 1}.${ext}`)
+    toast.success('图片已下载')
+    return
+  }
+
   const extension = image.mimeType?.split('/')[1] || outputFormat.value
   const filename = `promptcanvas-${Date.now()}-${index + 1}.${extension}`
 
-  try {
-    const response = await fetch(source)
-    const blob = await response.blob()
-    const objectUrl = URL.createObjectURL(blob)
-    const anchor = document.createElement('a')
-    anchor.href = objectUrl
-    anchor.download = filename
-    document.body.appendChild(anchor)
-    anchor.click()
-    anchor.remove()
-    URL.revokeObjectURL(objectUrl)
+  const direct = await fetchAsBlob(source)
+  if (direct) {
+    triggerBlobDownload(direct, filename)
     toast.success('图片已下载', filename)
-  } catch {
+    return
+  }
+
+  const proxyUrl = (provider.snapshot().proxyUrl || '').trim().replace(/\/+$/, '')
+  if (proxyUrl) {
+    try {
+      const u = new URL(source)
+      const upstreamBase = `${u.protocol}//${u.host}`
+      const proxiedUrl = `${proxyUrl}${u.pathname}${u.search}`
+      const viaProxy = await fetchAsBlob(proxiedUrl, { 'X-Upstream-Base': upstreamBase })
+      if (viaProxy) {
+        triggerBlobDownload(viaProxy, filename)
+        toast.success('图片已下载（经代理）', filename)
+        return
+      }
+    } catch {}
+  }
+
+  try {
     const anchor = document.createElement('a')
     anchor.href = source
     anchor.download = filename
     anchor.target = '_blank'
+    anchor.rel = 'noopener'
+    document.body.appendChild(anchor)
     anchor.click()
+    anchor.remove()
+    toast.info('已在新标签打开', '原站不允许跨域下载，可右键图片另存为')
+  } catch {
+    window.open(source, '_blank', 'noopener,noreferrer')
   }
 }
 
@@ -430,7 +495,18 @@ function restoreHistory(item: GenerationHistoryItem) {
   errorMessage.value = ''
   composerOpen.value = false
   historyOpen.value = false
-  toast.info('已恢复历史参数')
+
+  if (item.images && item.images.length) {
+    images.value = item.images
+    activeImageIndex.value = 0
+    lastRequestId.value = item.requestId || ''
+    toast.info('已恢复历史生成', `${item.images.length} 张图片已加载到画布`)
+  } else {
+    images.value = []
+    activeImageIndex.value = 0
+    lastRequestId.value = item.requestId || ''
+    toast.info('已恢复历史参数', '该历史未保存图片，重新生成可再得一次')
+  }
 }
 
 function resetDraft() {
@@ -672,6 +748,7 @@ onUnmounted(() => {
           :last-request-id="lastRequestId"
           :size="size"
           :style-label="selectedStyleLabel"
+          :model-label="selectedModelLabel"
           :prompt-preview="promptPreview"
           :has-prompt="trimmedPrompt.length >= 4"
           @select="(index) => (activeImageIndex = index)"

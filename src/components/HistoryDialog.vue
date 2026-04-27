@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, watch } from 'vue'
 import Icon from './Icon.vue'
+import { resolveImageSource } from '../api'
 import type { GenerationHistoryItem } from '../types'
 
 interface Props {
@@ -108,24 +109,54 @@ onBeforeUnmount(() => {
                 >
                   <button
                     type="button"
-                    class="block w-full rounded-2xl border border-line bg-cream/70 p-3.5 text-left transition hover:-translate-y-px hover:border-line-strong hover:bg-cream hover:shadow-paper-2"
+                    class="flex w-full items-stretch gap-3 rounded-2xl border border-line bg-cream/70 p-3 text-left transition hover:-translate-y-px hover:border-line-strong hover:bg-cream hover:shadow-paper-2"
                     @click="applyAndClose(item)"
                   >
-                    <div class="flex items-center justify-between">
-                      <span class="font-mono text-[10px] uppercase tracking-wider text-muted">
-                        {{ formatDate(item.createdAt) }}
-                      </span>
-                      <span class="font-mono text-[10px] text-muted">×{{ item.imageCount }}</span>
+                    <div class="shrink-0">
+                      <div
+                        v-if="item.images && item.images.length"
+                        class="relative h-20 w-20 overflow-hidden rounded-xl border border-line bg-paper-soft sm:h-24 sm:w-24"
+                      >
+                        <img
+                          :src="resolveImageSource(item.images[0])"
+                          alt=""
+                          loading="lazy"
+                          decoding="async"
+                          class="h-full w-full object-cover"
+                          referrerpolicy="no-referrer"
+                        />
+                        <span
+                          v-if="item.imageCount > 1"
+                          class="absolute bottom-1 right-1 rounded-full bg-ink/75 px-1.5 py-px font-mono text-[9px] text-paper"
+                        >
+                          ×{{ item.imageCount }}
+                        </span>
+                      </div>
+                      <div
+                        v-else
+                        class="grid h-20 w-20 place-items-center rounded-xl border border-dashed border-line bg-paper-soft/60 text-muted sm:h-24 sm:w-24"
+                        aria-hidden="true"
+                      >
+                        <Icon name="frame" :size="18" />
+                      </div>
                     </div>
-                    <p class="mt-1.5 truncate-2 text-[12px] leading-5 text-ink/85">{{ item.prompt }}</p>
-                    <div
-                      class="mt-2 flex flex-wrap items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted"
-                    >
-                      <span>{{ item.style }}</span>
-                      <span class="text-line">·</span>
-                      <span class="font-mono">{{ item.size }}</span>
-                      <span v-if="item.seed" class="text-line">·</span>
-                      <span v-if="item.seed" class="font-mono">seed {{ item.seed }}</span>
+                    <div class="flex min-w-0 flex-1 flex-col gap-1.5">
+                      <div class="flex items-center justify-between gap-2">
+                        <span class="font-mono text-[10px] uppercase tracking-wider text-muted">
+                          {{ formatDate(item.createdAt) }}
+                        </span>
+                        <span class="font-mono text-[10px] text-muted">×{{ item.imageCount }}</span>
+                      </div>
+                      <p class="truncate-2 text-[12px] leading-5 text-ink/85">{{ item.prompt }}</p>
+                      <div
+                        class="mt-auto flex flex-wrap items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted"
+                      >
+                        <span>{{ item.style }}</span>
+                        <span class="text-line">·</span>
+                        <span class="font-mono">{{ item.size }}</span>
+                        <span v-if="item.seed" class="text-line">·</span>
+                        <span v-if="item.seed" class="font-mono">seed {{ item.seed }}</span>
+                      </div>
                     </div>
                   </button>
                 </li>

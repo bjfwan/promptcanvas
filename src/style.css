@@ -186,6 +186,83 @@
   .animate-progress-sweep {
     animation: progress-sweep 1.6s linear infinite;
   }
+
+  .canvas-frame {
+    width: 100%;
+    border-radius: 28px;
+    overflow: hidden;
+    position: relative;
+    margin-inline: auto;
+  }
+  .canvas-frame[data-orient="portrait"] {
+    aspect-ratio: 2 / 3;
+    max-height: 62dvh;
+    max-width: calc(62dvh * 2 / 3);
+  }
+  .canvas-frame[data-orient="landscape"] {
+    aspect-ratio: 3 / 2;
+    max-height: 52dvh;
+    max-width: calc(52dvh * 3 / 2);
+  }
+  .canvas-frame[data-orient="square"] {
+    aspect-ratio: 1;
+    max-height: 58dvh;
+    max-width: 58dvh;
+  }
+
+  .canvas-scan::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 26%;
+    background: linear-gradient(
+      to bottom,
+      transparent 0%,
+      rgba(26, 22, 18, 0.025) 45%,
+      rgba(26, 22, 18, 0.07) 60%,
+      rgba(26, 22, 18, 0.025) 75%,
+      transparent 100%
+    );
+    animation: canvas-scan 3.6s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite;
+    pointer-events: none;
+  }
+
+  .canvas-grid {
+    background-image:
+      linear-gradient(to right, rgba(26, 22, 18, 0.04) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(26, 22, 18, 0.04) 1px, transparent 1px);
+    background-size: 32px 32px;
+  }
+
+  .ink-dot {
+    width: 4px;
+    height: 4px;
+    border-radius: 9999px;
+    background: rgb(26 22 18 / 0.55);
+    animation: ink-blink 1.4s ease-in-out infinite;
+  }
+  .ink-dot:nth-child(2) { animation-delay: 0.18s; }
+  .ink-dot:nth-child(3) { animation-delay: 0.36s; }
+
+  .halo-pulse {
+    animation: halo-pulse 2.4s ease-in-out infinite;
+  }
+}
+
+@keyframes canvas-scan {
+  0% { transform: translateY(-100%); }
+  60% { transform: translateY(380%); }
+  100% { transform: translateY(380%); }
+}
+
+@keyframes ink-blink {
+  0%, 100% { opacity: 0.18; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes halo-pulse {
+  0%, 100% { opacity: 0.4; transform: scale(0.96); }
+  50% { opacity: 1; transform: scale(1); }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -68,6 +68,7 @@ export interface GenerationHistoryItem extends Omit<GenerateImageRequest, 'apiKe
   createdAt: string
   requestId?: string
   imageCount: number
+  images?: GeneratedImage[]
 }
 
 export interface PromptTemplate {

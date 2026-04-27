@@ -15,6 +15,7 @@ interface Props {
   styleLabel: string
   promptPreview: string
   hasPrompt: boolean
+  modelLabel?: string
 }
 
 const props = defineProps<Props>()
@@ -33,15 +34,13 @@ const emit = defineEmits<{
 const activeImage = computed(() => props.images[props.activeImageIndex])
 const activeSrc = computed(() => (activeImage.value ? resolveImageSource(activeImage.value) : ''))
 
-const previewFrameClass = computed(() => {
-  if (props.size === '1024x1536') return 'aspect-[2/3]'
-  if (props.size === '1536x1024') return 'aspect-[3/2]'
-  return 'aspect-square'
+const orient = computed<'portrait' | 'landscape' | 'square'>(() => {
+  if (props.size === '1024x1536') return 'portrait'
+  if (props.size === '1536x1024') return 'landscape'
+  return 'square'
 })
 
 const elapsedLabel = computed(() => `${props.elapsedSeconds.toString().padStart(2, '0')}s`)
-
-const skeletonRow = computed(() => Array.from({ length: Math.max(1, Math.min(props.images.length || 1, 4)) }))
 </script>
 
 <template>
@@ -74,53 +73,78 @@ const skeletonRow = computed(() => Array.from({ length: Math.max(1, Math.min(pro
       <span>{{ errorMessage }}</span>
     </div>
 
-    <!-- Generating skeleton -->
     <div
       v-if="isGenerating"
-      class="space-y-4"
+      class="canvas-frame canvas-scan canvas-grid surface-2 bg-paper-soft"
+      :data-orient="orient"
       role="status"
       aria-live="polite"
     >
-      <div class="surface-2 relative overflow-hidden p-3 sm:p-4" :class="previewFrameClass">
-        <div class="skeleton h-full w-full rounded-xl"></div>
-        <div
-          class="pointer-events-none absolute inset-x-3 top-3 flex items-start justify-between text-[10px] uppercase tracking-[0.22em] text-muted sm:inset-x-4 sm:top-4"
-        >
-          <span class="font-mono">composing</span>
-          <span class="font-mono tabular-nums">{{ elapsedLabel }}</span>
+      <div class="absolute inset-0 grid grid-rows-[auto_1fr_auto] p-5 sm:p-6">
+        <div class="flex items-center justify-between font-mono text-[10px] uppercase tracking-[0.22em] text-muted">
+          <span class="inline-flex items-center gap-1.5">
+            <Icon name="sparkle" :size="11" class="animate-breathe" />
+            composing
+          </span>
+          <span class="tabular-nums">{{ elapsedLabel }}</span>
         </div>
-        <div class="absolute inset-x-0 bottom-4 grid place-items-center text-center">
-          <p class="font-display text-xl italic tracking-tightish text-ink">{{ promptPreview || 'untitled draft' }}</p>
-          <p class="mt-1.5 font-mono text-[10px] uppercase tracking-[0.22em] text-muted">{{ size }} · {{ styleLabel }}</p>
-        </div>
-      </div>
 
-      <div v-if="skeletonRow.length > 1" class="grid grid-cols-4 gap-2">
-        <div v-for="(_, idx) in skeletonRow" :key="idx" class="skeleton aspect-square rounded-lg"></div>
+        <div class="grid place-items-center">
+          <div class="relative grid h-24 w-24 place-items-center sm:h-28 sm:w-28">
+            <span class="halo-pulse absolute inset-0 rounded-full border border-line-strong/35" aria-hidden="true"></span>
+            <span
+              class="halo-pulse absolute inset-3 rounded-full border border-line/60"
+              style="animation-delay: 0.6s"
+              aria-hidden="true"
+            ></span>
+            <span
+              class="halo-pulse absolute inset-6 rounded-full border border-line/40"
+              style="animation-delay: 1.2s"
+              aria-hidden="true"
+            ></span>
+            <Icon name="sparkle" :size="18" class="text-ink/65" />
+          </div>
+          <div class="mt-5 flex items-center gap-1.5" aria-hidden="true">
+            <span class="ink-dot"></span>
+            <span class="ink-dot"></span>
+            <span class="ink-dot"></span>
+          </div>
+        </div>
+
+        <div class="space-y-2.5">
+          <p class="font-display text-[15px] italic leading-snug tracking-tightish text-ink/85 truncate-2 sm:text-base">
+            {{ promptPreview || 'untitled draft' }}
+          </p>
+          <div class="flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[10px] uppercase tracking-[0.2em] text-muted">
+            <span>{{ size }}</span>
+            <span class="text-line">·</span>
+            <span>{{ styleLabel }}</span>
+            <template v-if="modelLabel">
+              <span class="text-line">·</span>
+              <span class="truncate normal-case tracking-normal">{{ modelLabel }}</span>
+            </template>
+          </div>
+        </div>
       </div>
     </div>
 
-    <!-- Result -->
     <div v-else-if="activeImage" class="space-y-5">
-      <div class="surface-2 group relative overflow-hidden">
+      <div class="canvas-frame surface-2 group bg-paper-soft" :data-orient="orient">
         <button
           type="button"
-          class="block w-full text-left transition focus-visible:outline-none"
+          class="absolute inset-0 grid place-items-center p-3 transition focus-visible:outline-none sm:p-5"
           aria-label="放大查看图片"
           @click="emit('open-lightbox', activeImageIndex)"
         >
-          <div class="grid place-items-center bg-paper-soft p-3 sm:p-5" :class="previewFrameClass">
-            <img
-              :src="activeSrc"
-              alt="生成图片"
-              loading="lazy"
-              decoding="async"
-              class="h-full max-h-[72vh] w-full rounded-lg object-contain shadow-paper-1 transition duration-500 group-hover:scale-[1.01]"
-            />
-          </div>
+          <img
+            :src="activeSrc"
+            alt="生成图片"
+            loading="lazy"
+            decoding="async"
+            class="max-h-full max-w-full rounded-xl object-contain shadow-paper-1 transition duration-500 group-hover:scale-[1.01]"
+          />
         </button>
 
-        <!-- Hover toolbar (desktop) -->
         <div
           class="pointer-events-none absolute right-3 top-3 hidden translate-y-1 gap-1.5 opacity-0 transition group-hover:translate-y-0 group-hover:opacity-100 sm:flex"
         >
@@ -222,43 +246,45 @@ const skeletonRow = computed(() => Array.from({ length: Math.max(1, Math.min(pro
       </div>
     </div>
 
-    <!-- Empty state -->
     <div
       v-else
-      class="surface-1 grid place-items-center border-dashed bg-cream/60 py-16 text-center sm:py-24"
+      class="canvas-frame surface-1 border-dashed bg-cream/60"
+      :data-orient="orient"
     >
-      <div class="max-w-md px-6">
-        <div
-          class="mx-auto mb-5 grid h-12 w-12 place-items-center rounded-full border border-line-strong/60 bg-vellum text-ink shadow-inner-paper"
-          aria-hidden="true"
-        >
-          <Icon name="frame" :size="20" />
-        </div>
-        <p class="font-display text-3xl italic tracking-tightish text-ink/85">an empty canvas</p>
-        <p class="mt-3 text-[13px] leading-6 text-muted">
-          写下提示词，或者从右侧"模板"里选一个起点，然后点击 Generate。
-        </p>
+      <div class="absolute inset-0 grid place-items-center text-center">
+        <div class="max-w-md px-6">
+          <div
+            class="mx-auto mb-5 grid h-12 w-12 place-items-center rounded-full border border-line-strong/60 bg-vellum text-ink shadow-inner-paper"
+            aria-hidden="true"
+          >
+            <Icon name="frame" :size="20" />
+          </div>
+          <p class="font-display text-2xl italic tracking-tightish text-ink/85 sm:text-3xl">an empty canvas</p>
+          <p class="mt-3 text-[13px] leading-6 text-muted">
+            写下提示词，或者从右侧"模板"里选一个起点，然后点击 Generate。
+          </p>
 
-        <div class="mt-6 flex flex-col items-center gap-2.5 sm:flex-row sm:justify-center">
-          <button
-            v-if="hasPrompt"
-            type="button"
-            class="btn-primary px-5"
-            @click="emit('generate')"
-          >
-            <Icon name="lightning" :size="14" />
-            <span>立即生成</span>
-          </button>
-          <button
-            v-else
-            type="button"
-            class="btn-ghost px-4 lg:hidden"
-            @click="emit('go-compose')"
-          >
-            <Icon name="textCursor" :size="14" />
-            去写提示词
-            <Icon name="arrowRight" :size="14" />
-          </button>
+          <div class="mt-6 flex flex-col items-center gap-2.5 sm:flex-row sm:justify-center">
+            <button
+              v-if="hasPrompt"
+              type="button"
+              class="btn-primary px-5"
+              @click="emit('generate')"
+            >
+              <Icon name="lightning" :size="14" />
+              <span>立即生成</span>
+            </button>
+            <button
+              v-else
+              type="button"
+              class="btn-ghost px-4 lg:hidden"
+              @click="emit('go-compose')"
+            >
+              <Icon name="textCursor" :size="14" />
+              去写提示词
+              <Icon name="arrowRight" :size="14" />
+            </button>
+          </div>
         </div>
       </div>
     </div>
