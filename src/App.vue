@@ -52,7 +52,7 @@ const lastRequestId = ref('')
 const elapsedSeconds = ref(0)
 const history = ref<GenerationHistoryItem[]>(loadHistory())
 const healthStatus = ref<'checking' | 'online' | 'offline'>('checking')
-const healthMessage = ref('正在检查后端连接')
+const healthMessage = ref('正在检查 API 配置')
 const healthRequestId = ref('')
 
 const toast = useToast()
@@ -65,11 +65,7 @@ const historyOpen = ref(false)
 const styleSheetOpen = ref(false)
 const composerRef = ref<InstanceType<typeof PromptComposer> | null>(null)
 const chatDockRef = ref<InstanceType<typeof ChatDock> | null>(null)
-
-// 聊天对话流（移动端 ChatGPT 式画布的数据源）
 const messages = ref<ChatMessage[]>([])
-
-// 所有预设示例 prompt 集合，用来判断当前 prompt 是否“未被用户接手修改”
 const presetExamplePrompts = new Set(styleOptions.map((preset) => preset.examplePrompt))
 
 const restoredDraft = loadDraft()
@@ -297,7 +293,7 @@ async function handleGenerate(options?: { clearAfter?: boolean }) {
       return
     }
     if (!trimmedPrompt.value) toast.error('请先写下提示词', '至少 4 个字')
-    else if (healthStatus.value === 'offline') toast.error('后端离线', '检查连接后再试')
+    else if (healthStatus.value === 'offline') toast.error('API 未配置', '请先在「设置」中填写 baseUrl 与 Key')
     return
   }
 
@@ -340,7 +336,7 @@ async function regenerateFromMessage(userMessageId: string) {
   }
 
   if (healthStatus.value === 'offline') {
-    toast.error('后端离线', '检查连接后再试')
+    toast.error('API 未配置', '请先在「设置」中填写 baseUrl 与 Key')
     return
   }
 
@@ -502,14 +498,14 @@ function exportCurrentConfig() {
 
 async function refreshHealth() {
   healthStatus.value = 'checking'
-  healthMessage.value = '正在检查后端连接'
+  healthMessage.value = '正在检查 API 配置'
 
   try {
     const health = await checkHealth()
 
     healthStatus.value = 'online'
     healthRequestId.value = health.requestId || ''
-    healthMessage.value = health.model ? `后端在线 · ${health.model}` : '后端在线'
+    healthMessage.value = health.model ? `已连接 · ${health.model}` : '已连接服务商'
   } catch (error) {
     healthStatus.value = 'offline'
 
@@ -520,7 +516,7 @@ async function refreshHealth() {
     }
 
     healthRequestId.value = ''
-    healthMessage.value = '无法连接后端，请确认服务是否启动。'
+    healthMessage.value = '未配置 API 服务商，请打开「设置」填写 baseUrl 与 Key'
   }
 }
 
@@ -556,6 +552,13 @@ watch(style, (newValue, oldValue) => {
 onMounted(() => {
   refreshHealth()
 })
+
+watch(
+  () => provider.isConfigured.value,
+  () => {
+    refreshHealth()
+  },
+)
 
 onUnmounted(() => {
   if (timerId) {
@@ -645,7 +648,7 @@ onUnmounted(() => {
       <span class="inline-flex items-center justify-center gap-2">
         <span>crafted local · {{ new Date().getFullYear() }}</span>
         <span class="text-line">/</span>
-        <span>所有数据保留在你的浏览器与后端之间</span>
+        <span>所有数据仅在你的浏览器与服务商之间流动</span>
       </span>
     </footer>
 

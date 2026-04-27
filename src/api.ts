@@ -1,7 +1,15 @@
 import { snapshotProviderConfig } from './composables/useProviderConfig'
-import type { ApiErrorResponse, GenerateImageRequest, GenerateImageResponse, HealthResponse } from './types'
-
-const baseUrl = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') ?? ''
+import {
+  buildPrompt,
+  normalizeImages,
+  payloadToValidated,
+  resolveOpenAIError,
+} from './lib/imagesApi'
+import type {
+  GenerateImageRequest,
+  GenerateImageResponse,
+  HealthResponse,
+} from './types'
 
 export const PROVIDER_NOT_CONFIGURED = 'PROVIDER_NOT_CONFIGURED'
 
@@ -17,71 +25,149 @@ export class ApiRequestError extends Error {
   }
 }
 
-async function readJson<T>(response: Response): Promise<T | null> {
-  return response.json().catch(() => null)
+function generateRequestId(): string {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+    return `req_${crypto.randomUUID()}`
+  }
+  return `req_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`
 }
 
-function resolveErrorMessage(data: ApiErrorResponse | null, fallback: string) {
-  return data?.error?.message || fallback
+async function readJson<T = unknown>(response: Response): Promise<T | null> {
+  try {
+    return (await response.json()) as T
+  } catch {
+    return null
+  }
+}
+
+interface UpstreamErrorBody {
+  error?: {
+    code?: string
+    message?: string
+    type?: string
+  }
 }
 
 export async function generateImage(payload: GenerateImageRequest): Promise<GenerateImageResponse> {
   const provider = snapshotProviderConfig()
   const apiKey = (payload.apiKey ?? provider.apiKey ?? '').trim()
-  const providerBaseUrl = (payload.baseUrl ?? provider.baseUrl ?? '').trim().replace(/\/+$/, '')
+  const baseUrl = (payload.baseUrl ?? provider.baseUrl ?? '').trim().replace(/\/+$/, '')
+  const requestId = generateRequestId()
 
-  if (!apiKey || !providerBaseUrl) {
+  if (!apiKey || !baseUrl) {
     throw new ApiRequestError(
       '尚未配置 API 服务商，请打开右上角「设置」填入 API 端点和 API Key。',
+      PROVIDER_NOT_CONFIGURED,
+      requestId,
+    )
+  }
+
+  if (apiKey === 'sk-xxxx') {
+    throw new ApiRequestError(
+      'apiKey 不能是占位值 sk-xxxx，请填写真实 Key',
+      'INVALID_REQUEST',
+      requestId,
+    )
+  }
+
+  let parsedBaseUrl: URL
+  try {
+    parsedBaseUrl = new URL(baseUrl)
+  } catch {
+    throw new ApiRequestError('baseUrl 不是合法 URL', 'INVALID_REQUEST', requestId)
+  }
+  if (parsedBaseUrl.protocol !== 'https:' && parsedBaseUrl.protocol !== 'http:') {
+    throw new ApiRequestError('baseUrl 必须是 http(s) 协议', 'INVALID_REQUEST', requestId)
+  }
+
+  const validation = payloadToValidated(payload)
+  if (validation.error || !validation.value) {
+    throw new ApiRequestError(
+      validation.error ?? '请求参数校验失败',
+      'INVALID_REQUEST',
+      requestId,
+    )
+  }
+
+  const validated = validation.value
+  const upstreamRequest: Record<string, unknown> = {
+    prompt: buildPrompt(validated),
+    size: validated.size,
+    n: validated.count,
+    output_format: validated.outputFormat,
+    quality: validated.quality,
+    user: requestId,
+  }
+  if (validated.model) {
+    upstreamRequest.model = validated.model
+  }
+
+  let upstream: Response
+  try {
+    upstream = await fetch(`${baseUrl}/images/generations`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(upstreamRequest),
+    })
+  } catch (error) {
+    const err = error as Error
+    const mapped = resolveOpenAIError({
+      name: err?.name,
+      message: err?.message,
+    })
+    throw new ApiRequestError(mapped.message, mapped.code, requestId)
+  }
+
+  if (!upstream.ok) {
+    const errorBody = await readJson<UpstreamErrorBody>(upstream)
+    const mapped = resolveOpenAIError({
+      status: upstream.status,
+      code: errorBody?.error?.code,
+      message: errorBody?.error?.message,
+    })
+    throw new ApiRequestError(mapped.message, mapped.code, requestId)
+  }
+
+  const data = await readJson<{ data?: unknown }>(upstream)
+  const images = normalizeImages(data, validated.outputFormat)
+  if (!images.length) {
+    throw new ApiRequestError(
+      '上游没有返回图片，请稍后再试',
+      'OPENAI_REQUEST_FAILED',
+      requestId,
+    )
+  }
+
+  return {
+    requestId,
+    images,
+    usage: { model: validated.model || undefined },
+  }
+}
+
+export async function checkHealth(): Promise<HealthResponse> {
+  const provider = snapshotProviderConfig()
+  if (!provider.baseUrl || !provider.apiKey) {
+    throw new ApiRequestError(
+      '尚未配置 API 服务商，请在「设置」中填入 API 端点和 API Key',
       PROVIDER_NOT_CONFIGURED,
     )
   }
 
-  const body = {
-    ...payload,
-    apiKey,
-    baseUrl: providerBaseUrl,
+  return {
+    ok: true,
+    requestId: generateRequestId(),
   }
-
-  const response = await fetch(`${baseUrl}/api/images/generate`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(body),
-  })
-
-  const data = await readJson<GenerateImageResponse & ApiErrorResponse>(response)
-
-  if (!response.ok) {
-    const message = resolveErrorMessage(data, `请求失败，状态码：${response.status}`)
-    throw new ApiRequestError(message, data?.error?.code, data?.requestId)
-  }
-
-  if (!data?.images?.length) {
-    throw new Error('后端没有返回图片，请检查接口返回格式。')
-  }
-
-  return data
 }
 
-export async function checkHealth(): Promise<HealthResponse> {
-  const response = await fetch(`${baseUrl}/api/health`)
-  const data = await readJson<HealthResponse & ApiErrorResponse>(response)
-
-  if (!response.ok) {
-    const message = resolveErrorMessage(data, `后端状态检查失败，状态码：${response.status}`)
-    throw new ApiRequestError(message, data?.error?.code, data?.requestId)
-  }
-
-  if (!data?.ok) {
-    throw new ApiRequestError('后端未返回健康状态。', undefined, data?.requestId)
-  }
-
-  return data
-}
-
-export function resolveImageSource(image: { url?: string | null; b64Json?: string | null; mimeType?: string | null }) {
+export function resolveImageSource(image: {
+  url?: string | null
+  b64Json?: string | null
+  mimeType?: string | null
+}) {
   if (image.url) {
     return image.url
   }
