@@ -36,6 +36,7 @@ export default {
         header: '40',
         dock: '45',
         sheet: '50',
+        lightbox: '55',
         toast: '60',
       },
       animation: {
