@@ -16,6 +16,6 @@ pages_build_output_dir = "dist"
 [vars]
 # 中转站完整 base URL（必须带 /v1）；走官方 OpenAI 时改为 https://api.openai.com/v1
 OPENAI_BASE_URL = "https://api.chshapi.cn/v1"
-OPENAI_IMAGE_MODEL = "gpt-image-1"
+OPENAI_IMAGE_MODEL = "gpt-image-2"
 # Cloudflare Pages Functions 免费档单次执行 30s 上限，留 5s 余量
 OPENAI_TIMEOUT_MS = "25000"
