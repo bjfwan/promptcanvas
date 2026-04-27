@@ -31,27 +31,61 @@ export const mimeTypes: Record<string, string> = {
   webp: 'image/webp',
 }
 
-// 每条会在生图时作为「风格指引」并到用户提示词后面。
-// 设计原则：具体镜头/光位/材质 + 明确 avoid 清单 + 适度中英混用以提高可识别性。
-// raw = 空字符串：不拼接任何风格指引，原样发送用户提示词。
 export const stylePrompts: Record<string, string> = {
   natural:
-    '自然写实摄影 · 35mm f/2 真实日光，侧逆主光带方向性阴影，色彩真实但层次细腻；纪实候机式构图，主体浅景深锐利，背景自然虚化。Avoid: plastic skin, HDR look, over-saturation, posterized colors',
+    'Photorealistic documentary photography captured with a 35mm lens at f/2, featuring natural daylight with side-back lighting that creates directional shadows. The composition uses shallow depth of field with sharp focus on the subject while the background naturally blurs into bokeh. Colors are authentic with subtle tonal depth, preserving honest textures like skin pores, fabric weave, and material imperfections. The atmosphere feels candid and unposed, as if captured by a street photographer. Avoid: plastic skin, HDR effects, over-saturation, posterized colors, artificial lighting, studio polish',
   poster:
-    '编辑级海报排版 · 主视觉聚焦 + 30–40% 负空间留给标题区，受控2–3 色配色（其中一色作 accent），非对称平衡构图与明确视觉层次，印刷级对比度与色调深度。Avoid: cluttered layout, decorative noise, weak focal hierarchy',
+    'Editorial poster design with a strong focal point occupying the visual center, framed by 30-40% negative space reserved for title typography. The color palette is controlled with 2-3 hues where one serves as an accent, creating asymmetric balance with clear visual hierarchy. Contrast and tonal depth meet print-quality standards. Typography uses geometric sans-serif or elegant serif fonts with generous letter spacing. The overall aesthetic feels contemporary and intentional, suitable for advertising or editorial use. Avoid: cluttered layout, decorative noise, weak focal hierarchy, poor color harmony, inconsistent typography',
   product:
-    '高端商业产品摄影 · 100mm macro f/8，大柔光箱主光 + 反光板补光 + 轻微 rim light，无缝纸或亚克力台面，材质保留真实反光与高光细节；紧凑裁切产品占主体，下方柔和椭圆阴影。Avoid: rainbow reflections, plastic glare, busy background',
+    'Premium commercial product photography shot with a 100mm macro lens at f/8 for maximum sharpness. Lighting uses a large softbox as the main light source with a reflector for fill and a subtle rim light to define edges. The surface is seamless paper or acrylic, showcasing authentic material reflections and highlight details. The product occupies 60% of the frame with a tight crop, sitting on a soft elliptical shadow below. Every material texture is rendered with precision—glass reflections, metal sheen, fabric weave. The result feels like a high-end magazine advertisement. Avoid: rainbow reflections, plastic glare, busy background, harsh shadows, unrealistic materials',
   portrait:
-    '杂志级人物肖像 · 85mm f/1.8 头肩构图，窗光 30–45° 主光 + 柔和反光板补光，焦点锐利落在近端眼睛；皮肤保留毛孔、雀斑、微表情，克制调色，姿态从容。Avoid: airbrushed plastic skin, over-smoothing, doll-like eyes',
+    'Magazine-quality portrait shot with an 85mm lens at f/1.8 in head-and-shoulders composition. Window light from 30-45° serves as the main light, supplemented by a soft reflector fill. Focus is razor-sharp on the near eye while the background melts into creamy bokeh. Skin texture is preserved with visible pores, freckles, and micro-expressions—no airbrushing or over-smoothing. Color grading is restrained and natural. The subject wears a relaxed, authentic expression with natural posture. The overall quality rivals professional editorial photography. Avoid: airbrushed plastic skin, over-smoothing, doll-like eyes, unnatural skin texture, over-processed look',
   anime:
-    '现代日系赛璐璐动画插画 · 干净一致的线稿粗细，每个色域 3–4 块平涂色，明确的光影分离与克制的高光点缀，角色表情生动但结构准确。Avoid: muddy colors, messy linework, photoreal blending, derivative anime tropes',
+    'Modern Japanese cel-shaded anime illustration featuring clean consistent line weight throughout. Each color area uses 3-4 flat color blocks with clear light-shadow separation and restrained highlight accents. Character anatomy is accurate with lively expressive faces. The style references contemporary anime aesthetics without derivative tropes. Backgrounds use simplified geometric shapes with atmospheric depth. Line art is crisp with no artifacts. Color palette is vibrant but harmonious, avoiding muddy tones. The result feels like professional animation key art or character design sheets. Avoid: muddy colors, messy linework, photorealistic blending, derivative anime tropes, inconsistent line quality',
   cinematic:
-    '2.39:1 宽银幕电影截图 · 40mm 变形镜头质感与水平镜头眩光 + 椭圆 bokeh，方向性主光与深阴影，根据情绪选 teal-and-amber 或 muted pastel 调色，35mm 胶片颗粒与空气透视；A24 式构图，留白克制。Avoid: flat lighting, forced symmetry, over-detailed clutter',
+    'Cinematic still frame captured with a 2.39:1 widescreen aspect ratio, featuring the optical quality of a 40mm anamorphic lens with horizontal lens flare and elliptical bokeh. Directional key light creates deep shadows with strong contrast. Color grading uses teal-and-amber or muted pastel palettes depending on mood, with subtle 35mm film grain and atmospheric perspective. Composition follows A24-style aesthetics with restrained negative space and intentional framing. The image feels extracted from a high-budget film, with dramatic tension and visual storytelling. Avoid: flat lighting, forced symmetry, over-detailed clutter, digital look, video quality',
   logo:
-    '极简品牌标志 · 纯色背景 + 单一前景色（或克制的双色配对），纯平面向量美学，无渐变、无阴影、无发光；线条粗细一致，缩到 16×16 像素仍可辨识；本图不渲染任何文字或字母。Avoid: gradients, drop shadow, glow, photoreal texture',
+    'Minimalist brand logo design using pure flat vector aesthetics. The mark sits on a solid color background with a single foreground color or restrained two-color pairing. No gradients, shadows, or glow effects—clean geometric shapes only. Line weight is consistent throughout, ensuring the logo remains recognizable when scaled down to 16×16 pixels. The design emphasizes strong silhouette and balanced negative space. No text, letters, or typographic elements are rendered. The aesthetic is contemporary, scalable, and suitable for both digital and print applications. Avoid: gradients, drop shadows, glow effects, photorealistic textures, complex details, decorative elements',
   interior:
-    '建筑内部摄影 · 24mm 广角直线镜头校正垂直线，主光为窗光自然采光 + 柔和环境补光，材质真实（实木纹理、织物经纬、哑光石材），机位胯高营造人本视角，画面有刻意负空间与生活痕迹（叠好的毯子、半读的书）。Avoid: CG plastic surfaces, impossible perspective, fish-eye distortion',
+    'Architectural interior photography shot with a 24mm wide-angle lens with corrected vertical lines. Natural window light serves as the primary source with soft ambient fill to balance shadows. All materials are rendered authentically—wood grain, fabric weave, matte stone, brushed metal. Camera height is at waist level to create a human-centered perspective. The composition includes intentional negative space and lived-in details like a folded blanket, half-read book, or steaming coffee cup. The atmosphere feels inviting and genuinely inhabited, not staged. Avoid: CG plastic surfaces, impossible perspective, fish-eye distortion, artificial materials, sterile emptiness',
   raw: '',
+}
+
+type SubjectType = 'person' | 'landscape' | 'object' | 'abstract' | 'architecture' | 'food' | 'general'
+
+const subjectKeywords: Record<SubjectType, string[]> = {
+  person: ['person', 'man', 'woman', 'girl', 'boy', 'child', 'people', 'face', 'portrait', 'human', 'character', '人', '男人', '女人', '女孩', '男孩', '孩子', '人物', '脸', '肖像'],
+  landscape: ['landscape', 'mountain', 'ocean', 'sea', 'sky', 'forest', 'river', 'lake', 'beach', 'sunset', 'sunrise', 'nature', 'scenery', 'view', '风景', '山', '海', '天空', '森林', '河流', '湖泊', '海滩', '日落', '日出', '自然'],
+  object: ['product', 'bottle', 'cup', 'chair', 'table', 'car', 'phone', 'computer', 'watch', 'shoe', 'bag', '物品', '产品', '瓶子', '杯子', '椅子', '桌子', '车', '手机', '电脑', '手表', '鞋', '包'],
+  abstract: ['abstract', 'pattern', 'texture', 'geometric', 'shapes', 'design', 'artistic', 'conceptual', '抽象', '图案', '纹理', '几何', '形状', '设计', '艺术', '概念'],
+  architecture: ['building', 'house', 'architecture', 'interior', 'room', 'city', 'street', 'bridge', 'tower', '建筑', '房子', '室内', '房间', '城市', '街道', '桥', '塔'],
+  food: ['food', 'meal', 'dish', 'restaurant', 'cooking', 'fruit', 'vegetable', 'bread', 'cake', 'coffee', '食物', '餐', '菜', '餐厅', '烹饪', '水果', '蔬菜', '面包', '蛋糕', '咖啡'],
+  general: [],
+}
+
+export function detectSubjectType(prompt: string): SubjectType {
+  const lowerPrompt = prompt.toLowerCase()
+  
+  for (const [type, keywords] of Object.entries(subjectKeywords)) {
+    if (type === 'general') continue
+    for (const keyword of keywords) {
+      if (lowerPrompt.includes(keyword)) {
+        return type as SubjectType
+      }
+    }
+  }
+  
+  return 'general'
+}
+
+const adaptiveEnhancements: Record<SubjectType, string> = {
+  person: 'Natural skin texture and realistic proportions preferred',
+  landscape: 'Natural atmospheric depth and environmental details',
+  object: 'Authentic material textures and lighting',
+  abstract: 'Cohesive composition and color harmony',
+  architecture: 'Correct perspective and authentic materials',
+  food: 'Natural textures and appetizing appearance',
+  general: '',
 }
 
 export interface ValidatedPayload {
@@ -260,12 +294,14 @@ export function buildPrompt(payload: {
   creativity: number | null
   seed: string
 }): string {
-  // 用 ?? 而非 ||：raw 风格明确设为空字符串 → 不附加风格指引；仅在未定义时才 fallback 到 style 字面量
   const styleInstruction = stylePrompts[payload.style] ?? payload.style
+  const subjectType = detectSubjectType(payload.prompt)
+  const adaptiveEnhancement = adaptiveEnhancements[subjectType]
 
   return [
     `画面内容：${payload.prompt}`,
     styleInstruction ? `风格指引：${styleInstruction}` : null,
+    adaptiveEnhancement ? `主体优化：${adaptiveEnhancement}` : null,
     payload.negativePrompt ? `避免要素：${payload.negativePrompt}` : null,
     resolveCreativityInstruction(payload.creativity),
     payload.seed ? `一致性参考：${payload.seed}` : null,
