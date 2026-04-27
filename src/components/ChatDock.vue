@@ -28,6 +28,8 @@ const emit = defineEmits<{
 
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
 const focused = ref(false)
+// “高输入”模式：点击右上角的展开按钮后，输入框会抵近出视口高度以方便输入长提示词
+const tall = ref(false)
 const customModelOpen = ref(false)
 const customModelInputRef = ref<HTMLInputElement | null>(null)
 
@@ -68,11 +70,33 @@ function autosize() {
   const lineHeight = parseFloat(computed.lineHeight) || 24
   const padY =
     (parseFloat(computed.paddingTop) || 0) + (parseFloat(computed.paddingBottom) || 0)
-  const cap = focused.value ? 200 : 96
+  // 输入框上限（随“是否展开 / 是否聚焦”动态变化）
+  //   常规模式：失焦 ~8 行 / 聚焦 ~11 行，与聊天输入习惯匹配
+  //   高输入模式：抵近视口高度以便于修改长提示词
+  const viewportH = window.innerHeight || 800
+  let cap: number
+  if (tall.value) {
+    cap = focused.value ? Math.round(viewportH * 0.72) : Math.round(viewportH * 0.6)
+  } else {
+    cap = focused.value ? 280 : 200
+  }
   // 把上限对齐到整行倍数，避免出现“半行被裁切”的视觉残影
   const lines = Math.max(1, Math.floor(Math.max(lineHeight, cap - padY) / lineHeight))
   const snapped = lines * lineHeight + padY
   el.style.height = `${Math.min(el.scrollHeight, snapped)}px`
+}
+
+function toggleTall() {
+  tall.value = !tall.value
+  // 展开后顺便聚焦输入区，方便立即输入
+  if (tall.value) {
+    nextTick(() => {
+      textareaRef.value?.focus()
+      autosize()
+    })
+  } else {
+    nextTick(autosize)
+  }
 }
 
 function focusInput() {
@@ -100,6 +124,10 @@ watch(prompt, () => {
 })
 
 watch(focused, () => {
+  nextTick(autosize)
+})
+
+watch(tall, () => {
   nextTick(autosize)
 })
 
@@ -163,7 +191,7 @@ defineExpose({ focusInput })
       </Transition>
 
       <!-- 主输入区 -->
-      <div class="px-3 pt-2.5">
+      <div class="chat-dock__input relative px-3 pt-2.5">
         <textarea
           ref="textareaRef"
           v-model="prompt"
@@ -171,11 +199,23 @@ defineExpose({ focusInput })
           maxlength="1200"
           placeholder="今天画点什么…"
           class="chat-dock__textarea"
+          :class="{ 'chat-dock__textarea--tall': tall }"
           @focus="focused = true"
           @blur="focused = false"
           @input="autosize"
           @keydown="onKeydown"
         ></textarea>
+        <!-- 展开 / 收起 切换：点击后输入框伸展至接近视口高度 -->
+        <button
+          type="button"
+          class="chat-dock__expand"
+          :class="{ 'chat-dock__expand--active': tall }"
+          :aria-pressed="tall"
+          :aria-label="tall ? '收起输入框' : '展开输入框'"
+          @click="toggleTall"
+        >
+          <Icon :name="tall ? 'shrink' : 'expand'" :size="14" />
+        </button>
       </div>
 
       <!-- 工具行：模型 chip / 风格 chip / 发送按钮 -->
@@ -269,9 +309,10 @@ defineExpose({ focusInput })
 
 .chat-dock__textarea {
   width: 100%;
+  /* 从单行高度起步，以让“每多一行输入输入区就变高一行”的视觉反馈明显可见 */
   min-height: 40px;
-  max-height: 200px;
-  padding: 0.55rem 0.5rem 0.55rem 0.5rem;
+  max-height: 280px;
+  padding: 0.55rem 0.5rem 0.6rem 0.5rem;
   resize: none;
   background: transparent;
   border: none;
@@ -286,6 +327,53 @@ defineExpose({ focusInput })
   scrollbar-width: thin;
   scrollbar-color: rgba(26, 22, 18, 0.18) transparent;
   overscroll-behavior: contain;
+  /* 高度变化增加过渡，让“伸缩”明显可感知 */
+  transition: max-height 220ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    height 140ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* “高输入模式”：使输入框可以伸展到接近整个视口高度 */
+.chat-dock__textarea--tall {
+  max-height: 72vh;
+}
+
+/* 右上角的 展开 / 收起 切换按钮 */
+.chat-dock__expand {
+  position: absolute;
+  top: 0.6rem;
+  right: 0.6rem;
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background: rgba(241, 233, 220, 0.6);
+  color: #6c6357;
+  cursor: pointer;
+  transition: background-color 160ms ease, color 160ms ease, border-color 160ms ease,
+    transform 160ms ease;
+}
+
+.chat-dock__expand:hover {
+  background: #faf3e6;
+  color: #1a1612;
+  border-color: rgba(26, 22, 18, 0.18);
+}
+
+.chat-dock__expand:active {
+  transform: translateY(1px);
+}
+
+.chat-dock__expand--active {
+  background: #1a1612;
+  color: #faf3e6;
+  border-color: #1a1612;
+}
+
+.chat-dock__expand--active:hover {
+  background: #2a221a;
+  color: #faf3e6;
 }
 
 .chat-dock__textarea::-webkit-scrollbar {
