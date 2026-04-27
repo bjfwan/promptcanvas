@@ -68,6 +68,24 @@ const styleSheetOpen = ref(false)
 const composerRef = ref<InstanceType<typeof PromptComposer> | null>(null)
 const chatDockRef = ref<InstanceType<typeof ChatDock> | null>(null)
 const messages = ref<ChatMessage[]>([])
+const mobileDockHeight = ref(180)
+const mobileViewportHeight = ref<number | null>(null)
+const mobileKeyboardInset = ref(0)
+const mobileRootStyle = computed(() => {
+  if (!mobileViewportHeight.value) return undefined
+  return {
+    minHeight: `${mobileViewportHeight.value}px`,
+    height: `${mobileViewportHeight.value}px`,
+  }
+})
+const mobileChatBottomPadding = computed(() => Math.max(120, mobileDockHeight.value + 16))
+const mobileJumpButtonBottom = computed(() => {
+  const desired = mobileDockHeight.value + 12
+  const limit = mobileViewportHeight.value
+    ? Math.max(96, Math.round(mobileViewportHeight.value * 0.34))
+    : desired
+  return Math.max(18, Math.min(desired, limit))
+})
 // 记录「最近一次由系统/模板写入输入框的 prompt 文本」，供调试与可能的恢复逻辑使用。
 // 当前实现：切提示词模板时始终覆盖输入框，使用户「选模板 → 改 → 选另一个模板」这类场景下
 // 输入框总能同步到最新模板示例；anchor 同步跟进。
@@ -101,6 +119,7 @@ if (restoredDraft) {
 
 let timerId: number | undefined
 let draftSaveTimer: number | undefined
+const primedImageOrigins = new Set<string>()
 
 watch(
   [prompt, negativePrompt, style, size, count, outputFormat, quality, creativity, seed, modelChoice, customModel],
@@ -155,6 +174,58 @@ function createId() {
   }
 
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`
+}
+
+function primeImageOrigin(src: string) {
+  if (typeof document === 'undefined' || /^(data|blob):/i.test(src)) return
+
+  try {
+    const url = new URL(src, window.location.href)
+    if (primedImageOrigins.has(url.origin)) return
+
+    primedImageOrigins.add(url.origin)
+
+    const dnsPrefetch = document.createElement('link')
+    dnsPrefetch.rel = 'dns-prefetch'
+    dnsPrefetch.href = url.origin
+    document.head.appendChild(dnsPrefetch)
+
+    const preconnect = document.createElement('link')
+    preconnect.rel = 'preconnect'
+    preconnect.href = url.origin
+    preconnect.crossOrigin = 'anonymous'
+    document.head.appendChild(preconnect)
+  } catch {
+    return
+  }
+}
+
+function primeImageSource(src: string, fetchPriority: 'high' | 'auto') {
+  if (typeof window === 'undefined' || !src) return
+
+  primeImageOrigin(src)
+
+  const preloader = new Image() as HTMLImageElement & {
+    fetchPriority?: 'high' | 'low' | 'auto'
+  }
+
+  preloader.decoding = 'async'
+  if ('fetchPriority' in preloader) {
+    preloader.fetchPriority = fetchPriority
+  }
+  preloader.src = src
+
+  if (typeof preloader.decode === 'function') {
+    void preloader.decode().catch(() => undefined)
+  }
+}
+
+function primeGeneratedImages(list: GeneratedImage[]) {
+  list.slice(0, 3).forEach((image, index) => {
+    const src = resolveImageSource(image)
+    if (!src) return
+    primeImageSource(src, index === 0 ? 'high' : 'auto')
+  })
 }
 
 function buildPayload(): GenerateImageRequest {
@@ -245,6 +316,7 @@ async function runGeneration(args: {
   try {
     const result = await generateImage(args.payload)
 
+    primeGeneratedImages(result.images)
     images.value = result.images
     lastRequestId.value = result.requestId || ''
     const persistableImages: GeneratedImage[] = result.images
@@ -676,6 +748,31 @@ function focusPrompt() {
   }
 }
 
+function handleChatDockLayoutChange(height: number) {
+  if (!Number.isFinite(height)) return
+  mobileDockHeight.value = Math.max(0, Math.round(height))
+}
+
+function syncMobileViewport() {
+  if (typeof window === 'undefined') return
+
+  if (window.innerWidth >= 1024) {
+    mobileViewportHeight.value = null
+    mobileKeyboardInset.value = 0
+    return
+  }
+
+  const visualViewport = window.visualViewport
+  const layoutHeight = window.innerHeight || document.documentElement.clientHeight || 0
+  const visualHeight = visualViewport?.height ?? layoutHeight
+  const offsetTop = visualViewport?.offsetTop ?? 0
+  const nextViewportHeight = Math.round(visualHeight + offsetTop)
+  const nextKeyboardInset = Math.max(layoutHeight - visualHeight - offsetTop, 0)
+
+  mobileViewportHeight.value = nextViewportHeight > 0 ? nextViewportHeight : null
+  mobileKeyboardInset.value = nextKeyboardInset > 88 ? Math.round(nextKeyboardInset) : 0
+}
+
 // 切换提示词模板（风格）时的同步逻辑：
 //   - skipNextStyleSync 为 true：调用者（历史恢复 / 重置 / 空状态点选建议）已手动同步 prompt + anchor，跳过
 //   - 目标为 raw：不动 prompt，仅提示已切为「不套模板」
@@ -709,6 +806,11 @@ watch(style, (newValue, oldValue) => {
 
 onMounted(() => {
   refreshHealth({ silent: true })
+  syncMobileViewport()
+  window.addEventListener('resize', syncMobileViewport)
+  window.addEventListener('orientationchange', syncMobileViewport)
+  window.visualViewport?.addEventListener('resize', syncMobileViewport)
+  window.visualViewport?.addEventListener('scroll', syncMobileViewport)
 })
 
 watch(
@@ -728,11 +830,16 @@ onUnmounted(() => {
     window.clearTimeout(draftSaveTimer)
     draftSaveTimer = undefined
   }
+
+  window.removeEventListener('resize', syncMobileViewport)
+  window.removeEventListener('orientationchange', syncMobileViewport)
+  window.visualViewport?.removeEventListener('resize', syncMobileViewport)
+  window.visualViewport?.removeEventListener('scroll', syncMobileViewport)
 })
 </script>
 
 <template>
-  <div class="relative flex min-h-dvh flex-col bg-paper text-ink">
+  <div class="relative flex min-h-dvh flex-col bg-paper text-ink" :style="mobileRootStyle">
     <a
       href="#canvas"
       class="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[80] focus:rounded-md focus:bg-ink focus:px-3 focus:py-2 focus:text-paper"
@@ -815,7 +922,8 @@ onUnmounted(() => {
     <div class="flex min-h-0 flex-1 flex-col overflow-hidden lg:hidden">
       <ChatStream
         :messages="messages"
-        :bottom-padding="180"
+        :bottom-padding="mobileChatBottomPadding"
+        :jump-bottom="mobileJumpButtonBottom"
         class="flex-1 min-h-0"
         @retry="regenerateFromMessage"
         @open-image="(imgs, index) => lightbox.open(imgs, index)"
@@ -836,7 +944,10 @@ onUnmounted(() => {
       :elapsed-seconds="elapsedSeconds"
       :health-offline="healthStatus === 'offline'"
       :current-style="style"
+      :keyboard-inset="mobileKeyboardInset"
+      :viewport-height="mobileViewportHeight ?? 0"
       @send="sendFromChat"
+      @layout-change="handleChatDockLayoutChange"
       @open-style-sheet="styleSheetOpen = true"
     />
 

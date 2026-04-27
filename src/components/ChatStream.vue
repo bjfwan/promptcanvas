@@ -9,10 +9,12 @@ import type { ChatMessage, GeneratedImage, ImageStyle } from '../types'
 interface Props {
   messages: ChatMessage[]
   bottomPadding?: number
+  jumpBottom?: number
 }
 
 const props = withDefaults(defineProps<Props>(), {
   bottomPadding: 200,
+  jumpBottom: 14,
 })
 
 const emit = defineEmits<{
@@ -138,6 +140,7 @@ defineExpose({ scrollToBottom })
       v-if="!stuckToBottom && messages.length > 0"
       type="button"
       class="chat-stream__jump"
+      :style="{ bottom: `${jumpBottom}px` }"
       aria-label="滚动到底部"
       @click="scrollToBottom(true)"
     >
@@ -181,7 +184,6 @@ defineExpose({ scrollToBottom })
 
 .chat-stream__jump {
   position: absolute;
-  bottom: 14px;
   right: 14px;
   display: inline-grid;
   place-items: center;

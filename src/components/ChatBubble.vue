@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import Icon from './Icon.vue'
 import { resolveImageSource } from '../api'
 import { styleOptions } from '../presets'
@@ -56,6 +56,24 @@ const assistantImageGridClass = computed(() => {
   if (total <= 1) return 'grid-cols-1'
   return 'grid-cols-2'
 })
+
+const revealedImageKeys = ref<Record<string, boolean>>({})
+
+function imageSource(image: GeneratedImage) {
+  return resolveImageSource(image)
+}
+
+function imageStateKey(image: GeneratedImage, index: number) {
+  return `${props.message.id}:${image.id || index}:${imageSource(image)}`
+}
+
+function markImageReady(image: GeneratedImage, index: number) {
+  revealedImageKeys.value[imageStateKey(image, index)] = true
+}
+
+function isImageReady(image: GeneratedImage, index: number) {
+  return !!revealedImageKeys.value[imageStateKey(image, index)]
+}
 </script>
 
 <template>
@@ -99,18 +117,46 @@ const assistantImageGridClass = computed(() => {
       <!-- pending：骨架 -->
       <div
         v-if="message.status === 'pending'"
-        class="chat-bubble-assistant relative w-full overflow-hidden rounded-[22px] rounded-bl-[8px] border border-line bg-vellum p-3 shadow-paper-2"
+        class="chat-bubble-assistant chat-bubble-assistant--pending relative w-full overflow-hidden rounded-[22px] rounded-bl-[8px] border border-line bg-vellum p-3 shadow-paper-2"
         role="status"
         aria-live="polite"
       >
-        <div class="skeleton w-full rounded-2xl" :class="previewFrameClass"></div>
-        <div
-          class="pointer-events-none absolute inset-x-5 top-5 flex items-center justify-between text-[10px] uppercase tracking-[0.22em] text-muted"
-        >
-          <span class="font-mono">composing</span>
-          <span v-if="typeof message.elapsedSeconds === 'number'" class="font-mono tabular-nums">
-            {{ String(message.elapsedSeconds).padStart(2, '0') }}s
-          </span>
+        <div class="chat-pending-frame relative w-full overflow-hidden rounded-2xl" :class="previewFrameClass">
+          <div class="chat-pending-frame__scan absolute inset-0" aria-hidden="true"></div>
+          <div
+            class="pointer-events-none absolute inset-x-4 top-4 flex items-center justify-between text-[10px] uppercase tracking-[0.22em] text-muted"
+          >
+            <span class="inline-flex items-center gap-2 font-mono">
+              <span class="chat-pending-bars" aria-hidden="true">
+                <span></span>
+                <span></span>
+                <span></span>
+              </span>
+              <span>composing</span>
+            </span>
+            <span v-if="typeof message.elapsedSeconds === 'number'" class="font-mono tabular-nums">
+              {{ String(message.elapsedSeconds).padStart(2, '0') }}s
+            </span>
+          </div>
+          <div class="pointer-events-none absolute inset-0 grid place-items-center px-4" aria-hidden="true">
+            <div class="chat-pending-orb">
+              <span class="chat-pending-orb__ring"></span>
+              <span class="chat-pending-orb__ring" style="animation-delay: 0.9s"></span>
+              <span class="chat-pending-orb__center">
+                <Icon name="sparkle" :size="18" />
+              </span>
+            </div>
+          </div>
+          <div class="pointer-events-none absolute inset-x-4 bottom-4 space-y-2.5" aria-hidden="true">
+            <div class="flex items-center gap-1.5">
+              <span class="skeleton block h-2.5 w-12 rounded-full"></span>
+              <span class="skeleton block h-2.5 w-16 rounded-full"></span>
+            </div>
+            <div class="space-y-2">
+              <span class="skeleton block h-3 w-[42%] rounded-full"></span>
+              <span class="skeleton block h-3 w-[76%] rounded-full"></span>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -175,12 +221,22 @@ const assistantImageGridClass = computed(() => {
           >
             <div class="grid place-items-center" :class="previewFrameClass">
               <img
-                :src="resolveImageSource(image)"
+                v-if="isImageReady(image, index)"
+                :src="imageSource(image)"
                 :alt="`生成图片 ${index + 1}`"
-                loading="lazy"
+                loading="eager"
                 decoding="async"
                 class="h-full w-full object-contain"
+                @load="markImageReady(image, index)"
               />
+              <div v-else class="chat-image-placeholder" :class="previewFrameClass">
+                <div class="chat-image-placeholder__glow"></div>
+                <div class="chat-image-placeholder__loader">
+                  <span></span>
+                  <span></span>
+                  <span></span>
+                </div>
+              </div>
             </div>
             <span
               class="pointer-events-none absolute inset-x-2 bottom-2 flex items-center justify-between rounded-xl bg-ink/60 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.18em] text-paper opacity-0 backdrop-blur transition group-hover:opacity-100"
@@ -232,6 +288,116 @@ const assistantImageGridClass = computed(() => {
 <style scoped>
 .chat-bubble-user {
   font-feature-settings: 'ss01', 'cv11';
+}
+
+.chat-pending-frame {
+  background:
+    radial-gradient(circle at 50% 32%, rgba(250, 243, 230, 0.98), rgba(250, 243, 230, 0.72) 38%, rgba(241, 233, 220, 0.34) 100%),
+    linear-gradient(180deg, rgba(253, 248, 237, 0.96), rgba(241, 233, 220, 0.7));
+}
+
+.chat-pending-frame__scan::before {
+  content: '';
+  position: absolute;
+  inset: -20% 18% auto;
+  height: 46%;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0));
+  filter: blur(8px);
+  animation: chat-pending-scan 3.2s cubic-bezier(0.22, 0.7, 0.2, 1) infinite;
+}
+
+.chat-pending-bars {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 10px;
+}
+
+.chat-pending-bars span {
+  width: 3px;
+  height: 100%;
+  border-radius: 999px;
+  background: rgba(26, 22, 18, 0.46);
+  transform-origin: center bottom;
+  animation: chat-pending-bars 1.05s ease-in-out infinite;
+}
+
+.chat-pending-bars span:nth-child(2) {
+  animation-delay: 0.14s;
+}
+
+.chat-pending-bars span:nth-child(3) {
+  animation-delay: 0.28s;
+}
+
+.chat-pending-orb {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 78px;
+  height: 78px;
+}
+
+.chat-pending-orb__ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  border: 1px solid rgba(26, 22, 18, 0.16);
+  animation: chat-pending-ring 2.4s ease-out infinite;
+}
+
+.chat-pending-orb__center {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 999px;
+  background: rgba(253, 248, 237, 0.98);
+  color: #1a1612;
+  box-shadow:
+    0 0 0 1px rgba(26, 22, 18, 0.08),
+    0 18px 32px -24px rgba(26, 22, 18, 0.38);
+}
+
+.chat-image-placeholder {
+  background: linear-gradient(180deg, rgba(253, 248, 237, 0.9), rgba(241, 233, 220, 0.58));
+}
+
+.chat-image-placeholder__glow {
+  align-self: center;
+  width: min(56%, 168px);
+  height: min(56%, 168px);
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(253, 248, 237, 0.95), rgba(253, 248, 237, 0) 68%);
+  filter: blur(6px);
+}
+
+.chat-image-placeholder__loader {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0.55rem 0.8rem;
+  border-radius: 999px;
+  background: rgba(253, 248, 237, 0.84);
+  box-shadow: 0 18px 34px -26px rgba(26, 22, 18, 0.45);
+}
+
+.chat-image-placeholder__loader span {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(26, 22, 18, 0.55);
+  animation: chat-image-loader 1.15s ease-in-out infinite;
+}
+
+.chat-image-placeholder__loader span:nth-child(2) {
+  animation-delay: 0.14s;
+}
+
+.chat-image-placeholder__loader span:nth-child(3) {
+  animation-delay: 0.28s;
 }
 
 .chat-action-chip {

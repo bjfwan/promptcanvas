@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import Icon from './Icon.vue'
 import StyleSwatch from './StyleSwatch.vue'
 import Select, { type SelectOption } from './Select.vue'
@@ -13,9 +13,14 @@ interface Props {
   elapsedSeconds: number
   healthOffline: boolean
   currentStyle: ImageStyle
+  keyboardInset?: number
+  viewportHeight?: number
 }
 
-const props = defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), {
+  keyboardInset: 0,
+  viewportHeight: 0,
+})
 
 const prompt = defineModel<string>('prompt', { required: true })
 const modelChoice = defineModel<string>('modelChoice', { required: true })
@@ -24,14 +29,17 @@ const customModel = defineModel<string>('customModel', { required: true })
 const emit = defineEmits<{
   (e: 'send'): void
   (e: 'open-style-sheet'): void
+  (e: 'layout-change', height: number): void
 }>()
 
+const dockRef = ref<HTMLDivElement | null>(null)
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
 const focused = ref(false)
 // “高输入”模式：点击右上角的展开按钮后，输入框会抵近出视口高度以方便输入长提示词
 const tall = ref(false)
 const customModelOpen = ref(false)
 const customModelInputRef = ref<HTMLInputElement | null>(null)
+let dockResizeObserver: ResizeObserver | null = null
 
 const discoveredModels = useDiscoveredModels()
 
@@ -62,6 +70,29 @@ const modelLabel = computed(() => {
 
 const sendDisabled = computed(() => !props.canGenerate || props.isGenerating)
 
+function effectiveViewportHeight() {
+  if (typeof window === 'undefined') return props.viewportHeight || 800
+  const visualViewport = window.visualViewport
+  const visualHeight = visualViewport
+    ? Math.round(visualViewport.height + visualViewport.offsetTop)
+    : 0
+  const layoutHeight = window.innerHeight || document.documentElement.clientHeight || 800
+  return Math.max(props.viewportHeight || 0, visualHeight, layoutHeight)
+}
+
+function reportLayout() {
+  const el = dockRef.value
+  if (!el) return
+  emit('layout-change', Math.round(el.offsetHeight))
+}
+
+function syncLayoutSoon() {
+  nextTick(() => {
+    autosize()
+    reportLayout()
+  })
+}
+
 function autosize() {
   const el = textareaRef.value
   if (!el) return
@@ -73,7 +104,7 @@ function autosize() {
   // 输入框上限（随“是否展开 / 是否聚焦”动态变化）
   //   常规模式：失焦 ~8 行 / 聚焦 ~11 行，与聊天输入习惯匹配
   //   高输入模式：抵近视口高度以便于修改长提示词
-  const viewportH = window.innerHeight || 800
+  const viewportH = effectiveViewportHeight()
   let cap: number
   if (tall.value) {
     cap = focused.value ? Math.round(viewportH * 0.72) : Math.round(viewportH * 0.6)
@@ -93,9 +124,10 @@ function toggleTall() {
     nextTick(() => {
       textareaRef.value?.focus()
       autosize()
+      reportLayout()
     })
   } else {
-    nextTick(autosize)
+    syncLayoutSoon()
   }
 }
 
@@ -103,6 +135,7 @@ function focusInput() {
   nextTick(() => {
     textareaRef.value?.focus()
     autosize()
+    reportLayout()
   })
 }
 
@@ -120,15 +153,15 @@ function onKeydown(event: KeyboardEvent) {
 }
 
 watch(prompt, () => {
-  nextTick(autosize)
+  syncLayoutSoon()
 })
 
 watch(focused, () => {
-  nextTick(autosize)
+  syncLayoutSoon()
 })
 
 watch(tall, () => {
-  nextTick(autosize)
+  syncLayoutSoon()
 })
 
 watch(isCustomModel, (next) => {
@@ -138,6 +171,36 @@ watch(isCustomModel, (next) => {
   } else {
     customModelOpen.value = false
   }
+  syncLayoutSoon()
+})
+
+watch(() => props.healthOffline, syncLayoutSoon)
+
+watch(() => props.keyboardInset, syncLayoutSoon)
+
+watch(() => props.viewportHeight, syncLayoutSoon)
+
+onMounted(() => {
+  syncLayoutSoon()
+  if (typeof ResizeObserver !== 'undefined' && dockRef.value) {
+    dockResizeObserver = new ResizeObserver(() => {
+      reportLayout()
+    })
+    dockResizeObserver.observe(dockRef.value)
+  }
+  window.addEventListener('resize', syncLayoutSoon)
+  window.addEventListener('orientationchange', syncLayoutSoon)
+  window.visualViewport?.addEventListener('resize', syncLayoutSoon)
+  window.visualViewport?.addEventListener('scroll', syncLayoutSoon)
+})
+
+onBeforeUnmount(() => {
+  dockResizeObserver?.disconnect()
+  dockResizeObserver = null
+  window.removeEventListener('resize', syncLayoutSoon)
+  window.removeEventListener('orientationchange', syncLayoutSoon)
+  window.visualViewport?.removeEventListener('resize', syncLayoutSoon)
+  window.visualViewport?.removeEventListener('scroll', syncLayoutSoon)
 })
 
 defineExpose({ focusInput })
@@ -145,7 +208,8 @@ defineExpose({ focusInput })
 
 <template>
   <div
-    class="chat-dock fixed inset-x-0 bottom-0 z-dock pb-[max(env(safe-area-inset-bottom,0px),0.5rem)] pt-2"
+    ref="dockRef"
+    class="chat-dock absolute inset-x-0 bottom-0 z-dock pb-[max(env(safe-area-inset-bottom,0px),0.5rem)] pt-2"
   >
     <div
       class="pointer-events-none absolute inset-x-0 -top-8 h-8 bg-gradient-to-t from-paper to-transparent"
@@ -155,7 +219,7 @@ defineExpose({ focusInput })
     <!-- 离线提示带 -->
     <div
       v-if="healthOffline"
-      class="mx-3 mb-2 flex items-center gap-2 rounded-2xl border border-accent/30 bg-accent/[0.06] px-3 py-1.5 text-[11px] font-medium text-accent"
+      class="mx-2.5 mb-2 flex items-center gap-2 rounded-2xl border border-accent/30 bg-accent/[0.06] px-3 py-1.5 text-[11px] font-medium text-accent sm:mx-3"
       role="alert"
     >
       <Icon name="warning" :size="13" />
@@ -163,14 +227,14 @@ defineExpose({ focusInput })
     </div>
 
     <div
-      class="relative mx-3 rounded-[28px] border border-line-strong/70 bg-vellum/95 shadow-paper-3 backdrop-blur"
+      class="relative mx-2.5 rounded-[26px] border border-line-strong/70 bg-vellum/95 shadow-paper-3 backdrop-blur sm:mx-3 sm:rounded-[28px]"
       :class="{ 'chat-dock__shell--focused': focused }"
     >
       <!-- 自定义模型输入栏：仅在选择"自定义"时展开 -->
       <Transition name="chat-dock-custom">
         <div
           v-if="isCustomModel && customModelOpen"
-          class="border-b border-line/70 px-3 pb-2 pt-2.5"
+          class="border-b border-line/70 px-2.5 pb-2 pt-2.5 sm:px-3"
         >
           <label class="mb-1 inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.2em] text-muted" for="chat-custom-model">
             <Icon name="pencil" :size="11" />
@@ -181,7 +245,7 @@ defineExpose({ focusInput })
             ref="customModelInputRef"
             v-model="customModel"
             type="text"
-            class="w-full rounded-xl border border-line bg-paper px-3 py-2 text-[13px] font-mono text-ink outline-none transition focus:border-ink focus:shadow-[0_0_0_3px_rgba(26,22,18,0.10)]"
+            class="w-full rounded-xl border border-line bg-paper px-3 py-2 text-base font-mono text-ink outline-none transition focus:border-ink focus:shadow-[0_0_0_3px_rgba(26,22,18,0.10)] sm:text-[13px]"
             placeholder="例如 dall-e-3、flux-pro 等中转站支持的模型名"
             autocomplete="off"
             spellcheck="false"
@@ -191,7 +255,7 @@ defineExpose({ focusInput })
       </Transition>
 
       <!-- 主输入区 -->
-      <div class="chat-dock__input relative px-3 pt-2.5">
+      <div class="chat-dock__input relative px-2.5 pt-2.5 sm:px-3">
         <textarea
           ref="textareaRef"
           v-model="prompt"
@@ -219,7 +283,7 @@ defineExpose({ focusInput })
       </div>
 
       <!-- 工具行：模型 chip / 风格 chip / 发送按钮 -->
-      <div class="flex items-center gap-1.5 px-2.5 pb-2 pt-1">
+      <div class="flex items-center gap-1 px-2 pb-2 pt-1.5 sm:gap-1.5 sm:px-2.5 sm:pt-1">
         <!-- 模型 chip：用 Select 接管下拉，外观改为药丸 -->
         <div class="model-chip-wrap relative min-w-0">
           <Select
@@ -245,7 +309,7 @@ defineExpose({ focusInput })
         </button>
 
         <!-- 右侧：字符计数 / 进行中状态 + 发送按钮（在一个 flex 容器中以保证 ml-auto 始终生效） -->
-        <div class="chat-dock__tail ml-auto flex items-center gap-1.5">
+        <div class="chat-dock__tail ml-auto flex items-center gap-1 sm:gap-1.5">
           <span
             v-if="isGenerating"
             class="inline-flex items-center gap-1 whitespace-nowrap px-1 font-mono text-[10px] uppercase tracking-[0.2em] text-muted"
@@ -310,17 +374,17 @@ defineExpose({ focusInput })
 .chat-dock__textarea {
   width: 100%;
   /* 从单行高度起步，以让“每多一行输入输入区就变高一行”的视觉反馈明显可见 */
-  min-height: 40px;
+  min-height: 42px;
   max-height: 280px;
   /* 右侧预留足够空间给“展开/收起”按钮，避免文本被遮挡 */
-  padding: 0.55rem 2.25rem 0.6rem 0.5rem;
+  padding: 0.6rem 2.6rem 0.65rem 0.5rem;
   resize: none;
   background: transparent;
   border: none;
   outline: none;
   color: #1a1612;
   font-family: 'Inter Tight', system-ui, -apple-system, 'Segoe UI', sans-serif;
-  font-size: 15px;
+  font-size: 16px;
   line-height: 1.55;
   letter-spacing: 0.005em;
   /* 超出上限时允许在 textarea 内部滚动（触屏可拖动） */
@@ -344,12 +408,12 @@ defineExpose({ focusInput })
 /* 右上角的 展开 / 收起 切换按钮 */
 .chat-dock__expand {
   position: absolute;
-  top: 0.6rem;
-  right: 0.6rem;
+  top: 0.55rem;
+  right: 0.55rem;
   display: inline-grid;
   place-items: center;
-  width: 26px;
-  height: 26px;
+  width: 30px;
+  height: 30px;
   border-radius: 999px;
   border: 1px solid transparent;
   background: rgba(241, 233, 220, 0.6);
@@ -399,10 +463,10 @@ defineExpose({ focusInput })
 
 /* 把 Select 的方形 trigger 改造成药丸形 chip */
 .model-chip-wrap :deep(.select-trigger) {
-  height: 32px;
+  height: 34px;
   /* 在窄屏上使用动态上限，防止较长的模型名把字符计数或发送键挤出行
      内部的 .select-trigger__label 已启用 ellipsis，超出后会以“…”截断 */
-  max-width: clamp(7.25rem, 32vw, 11rem);
+  max-width: clamp(6.75rem, 33vw, 10.5rem);
   border-radius: 999px;
   padding: 0 1.7rem 0 0.7rem;
   background: #faf3e6;
@@ -437,8 +501,8 @@ defineExpose({ focusInput })
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
-  height: 32px;
-  padding: 0 0.65rem 0 0.4rem;
+  height: 34px;
+  padding: 0 0.7rem 0 0.45rem;
   border-radius: 999px;
   background: #faf3e6;
   border: 1px solid #c8b89a;
@@ -470,8 +534,8 @@ defineExpose({ focusInput })
   position: relative;
   display: inline-grid;
   place-items: center;
-  width: 40px;
-  height: 40px;
+  width: 42px;
+  height: 42px;
   border-radius: 999px;
   background: rgba(26, 22, 18, 0.4);
   color: rgba(241, 233, 220, 0.85);
@@ -522,6 +586,28 @@ defineExpose({ focusInput })
 .chat-dock-custom-leave-active {
   transition: opacity 0.22s ease-out, transform 0.22s ease-out, max-height 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
   overflow: hidden;
+}
+
+@media (max-width: 390px) {
+  .chat-dock__textarea {
+    padding-right: 2.45rem;
+    padding-left: 0.35rem;
+  }
+
+  .model-chip-wrap :deep(.select-trigger) {
+    max-width: clamp(6rem, 31vw, 8.75rem);
+    padding-left: 0.65rem;
+    padding-right: 1.55rem;
+  }
+
+  .style-chip__label {
+    max-width: 5.75rem;
+  }
+
+  .chat-dock__send {
+    width: 40px;
+    height: 40px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
