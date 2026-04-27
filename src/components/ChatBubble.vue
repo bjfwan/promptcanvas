@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import Icon from './Icon.vue'
 import { resolveImageSource } from '../api'
 import { styleOptions } from '../presets'
 import type { ChatMessage, GeneratedImage } from '../types'
+
+const rewriteOpen = ref(false)
 
 interface Props {
   message: ChatMessage
@@ -71,7 +73,18 @@ const assistantImageGridClass = computed(() => {
       >
         <p class="whitespace-pre-wrap break-words">{{ message.content }}</p>
       </div>
-      <div class="flex items-center gap-2 px-1 font-mono text-[10px] uppercase tracking-[0.18em] text-muted">
+      <div class="flex flex-wrap items-center justify-end gap-2 px-1 font-mono text-[10px] uppercase tracking-[0.18em] text-muted">
+        <button
+          v-if="message.rewrittenPrompt"
+          type="button"
+          class="chat-rewrite-chip"
+          :aria-expanded="rewriteOpen"
+          @click="rewriteOpen = !rewriteOpen"
+        >
+          <Icon name="sparkle" :size="10" />
+          <span>{{ rewriteOpen ? '收起优化' : '已优化' }}</span>
+          <span v-if="message.rewriteModel" class="text-paper/50">· {{ message.rewriteModel }}</span>
+        </button>
         <span>{{ styleLabel }}</span>
         <span class="text-line">·</span>
         <span>{{ message.meta.size }}</span>
@@ -80,6 +93,26 @@ const assistantImageGridClass = computed(() => {
         <span v-if="timeLabel" class="text-line">·</span>
         <span v-if="timeLabel" class="tracking-normal">{{ timeLabel }}</span>
       </div>
+      <Transition name="rewrite-acc">
+        <div
+          v-if="message.rewrittenPrompt && rewriteOpen"
+          class="chat-rewrite-panel max-w-full self-end rounded-2xl rounded-br-[8px] border border-line bg-vellum/95 p-3 text-[12px] leading-[1.7] text-ink shadow-paper-1"
+        >
+          <div class="mb-2 flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.18em] text-muted">
+            <Icon name="sparkle" :size="10" />
+            <span>改写后交给模型的提示词</span>
+            <button
+              type="button"
+              class="ml-auto inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium normal-case tracking-normal text-muted transition hover:bg-paper-soft hover:text-ink"
+              @click="emit('copy', message.rewrittenPrompt ?? '', '已复制优化后提示词')"
+            >
+              <Icon name="copy" :size="10" />
+              复制
+            </button>
+          </div>
+          <p class="whitespace-pre-wrap break-words">{{ message.rewrittenPrompt }}</p>
+        </div>
+      </Transition>
     </div>
 
     <!-- 助手消息 -->
@@ -232,6 +265,54 @@ const assistantImageGridClass = computed(() => {
 <style scoped>
 .chat-bubble-user {
   font-feature-settings: 'ss01', 'cv11';
+}
+
+.chat-rewrite-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.18rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid #1a1612;
+  background: #1a1612;
+  color: #fdf8ed;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  transition: transform 140ms ease, opacity 140ms ease;
+}
+
+.chat-rewrite-chip:hover {
+  transform: translateY(-1px);
+  opacity: 0.92;
+}
+
+.chat-rewrite-panel {
+  width: min(560px, 100%);
+}
+
+.rewrite-acc-enter-from,
+.rewrite-acc-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+  max-height: 0;
+}
+
+.rewrite-acc-enter-to,
+.rewrite-acc-leave-from {
+  opacity: 1;
+  transform: translateY(0);
+  max-height: 600px;
+}
+
+.rewrite-acc-enter-active,
+.rewrite-acc-leave-active {
+  transition:
+    opacity 0.22s ease-out,
+    transform 0.22s ease-out,
+    max-height 0.32s cubic-bezier(0.2, 0.8, 0.2, 1);
+  overflow: hidden;
 }
 
 .chat-action-chip {

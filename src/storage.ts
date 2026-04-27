@@ -1,9 +1,10 @@
 import { decryptString, encryptString, isEncrypted } from './lib/crypto'
-import type { GenerationHistoryItem, ProviderConfig } from './types'
+import type { EnhanceConfig, GenerationHistoryItem, ProviderConfig } from './types'
 
 const historyKey = 'promptcanvas:generation-history'
 const draftKey = 'promptcanvas:draft-v1'
 const providerKey = 'promptcanvas:provider-v1'
+const enhanceKey = 'promptcanvas:enhance-v1'
 const maxHistoryItems = 8
 
 export interface DraftPayload {
@@ -148,6 +149,80 @@ export function isProviderConfigured(config: ProviderConfig): boolean {
 
 export function rawApiKeyIsEncrypted(): boolean {
   const entry = readRawEntry()
+  if (!entry) return true
+  const apiKeyField = typeof entry.apiKey === 'string' ? entry.apiKey : ''
+  if (!apiKeyField) return true
+  return isEncrypted(apiKeyField)
+}
+
+const emptyEnhance: EnhanceConfig = {
+  enabled: true,
+  baseUrl: '',
+  apiKey: '',
+  model: 'gpt-4o-mini',
+}
+
+interface StoredEnhanceEntry {
+  enabled?: unknown
+  baseUrl?: unknown
+  apiKey?: unknown
+  model?: unknown
+}
+
+function readRawEnhanceEntry(): StoredEnhanceEntry | null {
+  try {
+    const raw = localStorage.getItem(enhanceKey)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
+    return parsed as StoredEnhanceEntry
+  } catch {
+    return null
+  }
+}
+
+export async function loadEnhanceConfig(): Promise<EnhanceConfig> {
+  const entry = readRawEnhanceEntry()
+  if (!entry) return { ...emptyEnhance }
+
+  const enabled = typeof entry.enabled === 'boolean' ? entry.enabled : emptyEnhance.enabled
+  const baseUrl = typeof entry.baseUrl === 'string' ? entry.baseUrl : ''
+  const apiKeyField = typeof entry.apiKey === 'string' ? entry.apiKey : ''
+  const model = typeof entry.model === 'string' && entry.model.trim()
+    ? entry.model.trim()
+    : emptyEnhance.model
+
+  if (!apiKeyField) {
+    return { enabled, baseUrl, apiKey: '', model }
+  }
+
+  try {
+    const apiKey = await decryptString(apiKeyField)
+    return { enabled, baseUrl, apiKey, model }
+  } catch {
+    return { enabled, baseUrl, apiKey: '', model }
+  }
+}
+
+export async function saveEnhanceConfig(config: EnhanceConfig) {
+  try {
+    const enabled = Boolean(config.enabled)
+    const baseUrl = (config.baseUrl ?? '').trim()
+    const plaintextKey = (config.apiKey ?? '').trim()
+    const apiKey = plaintextKey ? await encryptString(plaintextKey) : ''
+    const model = (config.model ?? '').trim() || emptyEnhance.model
+    localStorage.setItem(enhanceKey, JSON.stringify({ enabled, baseUrl, apiKey, model }))
+  } catch {}
+}
+
+export function clearEnhanceConfig() {
+  try {
+    localStorage.removeItem(enhanceKey)
+  } catch {}
+}
+
+export function rawEnhanceKeyIsEncrypted(): boolean {
+  const entry = readRawEnhanceEntry()
   if (!entry) return true
   const apiKeyField = typeof entry.apiKey === 'string' ? entry.apiKey : ''
   if (!apiKeyField) return true

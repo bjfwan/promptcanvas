@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { ApiRequestError, PROVIDER_NOT_CONFIGURED, generateImage, resolveImageSource, testProvider } from './api'
+import { rewritePrompt } from './lib/promptRewriter'
 import { customModelSentinel, qualityOptions, sizeOptions, styleOptions, stylePresetById } from './presets'
 import { clearDraft, clearHistory, loadDraft, loadHistory, prependHistory, saveDraft } from './storage'
 import type {
@@ -29,6 +30,7 @@ import { useToast } from './composables/useToast'
 import { useTheme } from './composables/useTheme'
 import { useLightbox } from './composables/useLightbox'
 import { useProviderConfig } from './composables/useProviderConfig'
+import { useEnhanceConfig } from './composables/useEnhanceConfig'
 import { useDiscoveredModels } from './composables/useDiscoveredModels'
 
 const defaultPrompt = '一只穿着复古宇航服的橘猫，站在月球摄影棚里，像 1970 年代科幻电影海报'
@@ -60,6 +62,7 @@ const toast = useToast()
 const { theme, toggle: toggleTheme } = useTheme()
 const lightbox = useLightbox()
 const provider = useProviderConfig()
+const enhance = useEnhanceConfig()
 const discoveredModels = useDiscoveredModels()
 const composerOpen = ref(false)
 const settingsOpen = ref(false)
@@ -189,6 +192,15 @@ function updateAssistantMessage(
   )
 }
 
+function updateUserMessage(
+  id: string,
+  mutator: (message: ChatUserMessage) => ChatUserMessage,
+) {
+  messages.value = messages.value.map((message) =>
+    message.id === id && message.role === 'user' ? mutator(message) : message,
+  )
+}
+
 async function runGeneration(args: {
   payload: GenerateImageRequest
   userMessageId: string
@@ -231,8 +243,51 @@ async function runGeneration(args: {
     updateAssistantMessage(assistantId, (current) => ({ ...current, elapsedSeconds: elapsed }))
   }, 1000)
 
+  let effectivePayload: GenerateImageRequest = args.payload
+
   try {
-    const result = await generateImage(args.payload)
+    const enhanceResolved = enhance.snapshot({
+      baseUrl: provider.state.baseUrl,
+      apiKey: provider.state.apiKey,
+    })
+    const proxyUrl = (provider.state.proxyUrl ?? '').trim()
+
+    if (
+      enhanceResolved.enabled
+      && enhanceResolved.baseUrl
+      && enhanceResolved.apiKey
+      && enhanceResolved.model
+      && args.payload.prompt.trim().length > 0
+    ) {
+      const rewriteResult = await rewritePrompt({
+        prompt: args.payload.prompt,
+        style: args.payload.style,
+        size: args.payload.size,
+        count: args.payload.count,
+        negativePrompt: args.payload.negativePrompt,
+        baseUrl: enhanceResolved.baseUrl,
+        apiKey: enhanceResolved.apiKey,
+        model: enhanceResolved.model,
+        proxyUrl,
+      })
+
+      if (rewriteResult.ok) {
+        effectivePayload = { ...args.payload, prompt: rewriteResult.rewrittenPrompt }
+        updateUserMessage(args.userMessageId, (current) => ({
+          ...current,
+          rewrittenPrompt: rewriteResult.rewrittenPrompt,
+          rewriteModel: rewriteResult.model,
+        }))
+        toast.info(
+          '已优化提示词',
+          `${rewriteResult.model} · ${Math.round(rewriteResult.durationMs)}ms`,
+        )
+      } else {
+        toast.info('改写失败，使用原始提示词', rewriteResult.reason)
+      }
+    }
+
+    const result = await generateImage(effectivePayload)
 
     images.value = result.images
     lastRequestId.value = result.requestId || ''
