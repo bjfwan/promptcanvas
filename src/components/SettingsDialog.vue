@@ -171,7 +171,6 @@ function rollSeed() {
 function handleKey(event: KeyboardEvent) {
   if (event.key === 'Escape') {
     event.preventDefault()
-    close()
   }
 }
 
@@ -180,14 +179,14 @@ watch(
   (open) => {
     if (typeof document === 'undefined') return
     document.body.style.overflow = open ? 'hidden' : ''
-    if (open) window.addEventListener('keydown', handleKey)
-    else window.removeEventListener('keydown', handleKey)
+    if (open) window.addEventListener('keydown', handleKey, { capture: true })
+    else window.removeEventListener('keydown', handleKey, { capture: true })
   },
   { immediate: true },
 )
 
 onBeforeUnmount(() => {
-  window.removeEventListener('keydown', handleKey)
+  window.removeEventListener('keydown', handleKey, { capture: true })
   if (typeof document !== 'undefined') document.body.style.overflow = ''
 })
 </script>
@@ -201,9 +200,8 @@ onBeforeUnmount(() => {
         role="dialog"
         aria-modal="true"
         aria-label="设置"
-        @click.self="close"
       >
-        <div class="scrim" aria-hidden="true" @click="close"></div>
+        <div class="scrim" aria-hidden="true"></div>
 
         <Transition name="dlg-zoom">
           <div
