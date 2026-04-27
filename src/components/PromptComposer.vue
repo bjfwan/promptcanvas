@@ -3,7 +3,8 @@ import { computed, nextTick, ref, watch } from 'vue'
 import Icon from './Icon.vue'
 import StyleSwatch from './StyleSwatch.vue'
 import Select, { type SelectOption } from './Select.vue'
-import { customModelSentinel, modelOptions, sizeOptions, styleOptions } from '../presets'
+import { customModelSentinel, sizeOptions, styleOptions } from '../presets'
+import { useDiscoveredModels } from '../composables/useDiscoveredModels'
 import type { ImageSize, ImageStyle } from '../types'
 
 const sizeSelectOptions = computed<SelectOption<ImageSize>[]>(() =>
@@ -17,8 +18,10 @@ const countSelectOptions: SelectOption<number>[] = [
   { value: 4, label: '4 张', hint: '广泛探索' },
 ]
 
+const discoveredModels = useDiscoveredModels()
+
 const modelChipOptions = computed<SelectOption<string>[]>(() =>
-  modelOptions.map((option) => ({
+  discoveredModels.mergedModelOptions.value.map((option) => ({
     value: option.value,
     label: option.value === customModelSentinel ? '自定义…' : option.label,
     hint: option.hint,
@@ -75,8 +78,8 @@ const modelChipLabel = computed(() => {
     const trimmed = customModel.value.trim()
     return trimmed ? `自定义 · ${trimmed}` : '自定义 · 未填写'
   }
-  const match = modelOptions.find((option) => option.value === modelChoice.value)
-  return match?.label ?? '默认'
+  const match = discoveredModels.mergedModelOptions.value.find((option) => option.value === modelChoice.value)
+  return match?.label ?? (modelChoice.value || '默认')
 })
 
 function focusPrompt() {

@@ -2,8 +2,9 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import Icon from './Icon.vue'
 import Select, { type SelectOption } from './Select.vue'
-import { customModelSentinel, modelOptions, qualityOptions } from '../presets'
+import { customModelSentinel, qualityOptions } from '../presets'
 import { useProviderConfig } from '../composables/useProviderConfig'
+import { useDiscoveredModels } from '../composables/useDiscoveredModels'
 import { ApiRequestError, testProvider } from '../api'
 import type { GenerateImageRequest, ImageQuality } from '../types'
 
@@ -32,6 +33,7 @@ const modelChoice = defineModel<string>('modelChoice', { required: true })
 const customModel = defineModel<string>('customModel', { required: true })
 
 const provider = useProviderConfig()
+const discoveredModels = useDiscoveredModels()
 const showApiKey = ref(false)
 
 type TestStatus = 'idle' | 'testing' | 'success' | 'error'
@@ -68,9 +70,15 @@ async function handleTestProvider() {
 
   try {
     const result = await testProvider({ baseUrl, apiKey })
+    if (result.models?.length) {
+      discoveredModels.setModels(result.models)
+    }
     testStatus.value = 'success'
     testMessage.value = result.message
-    testHint.value = '可以开始生成图片了'
+    const imageCount = discoveredModels.imageOnly.value.length
+    testHint.value = imageCount > 0
+      ? `已从中转站拉取 ${imageCount} 个可能可用的图片模型，已加入下方模型下拉`
+      : '连接成功，但未识别到明显的图片模型名，可选「自定义…」手动填写'
     emit('test-result', { ok: true, message: result.message })
   } catch (error) {
     testStatus.value = 'error'
@@ -128,7 +136,11 @@ const qualitySelectOptions = computed<SelectOption<ImageQuality>[]>(() =>
 )
 
 const modelSelectOptions = computed<SelectOption<string>[]>(() =>
-  modelOptions.map((option) => ({ value: option.value, label: option.label, hint: option.hint })),
+  discoveredModels.mergedModelOptions.value.map((option) => ({
+    value: option.value,
+    label: option.label,
+    hint: option.hint,
+  })),
 )
 
 const isCustomModel = computed(() => modelChoice.value === customModelSentinel)

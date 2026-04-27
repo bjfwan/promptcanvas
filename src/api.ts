@@ -167,6 +167,7 @@ export interface TestProviderResult {
   ok: true
   durationMs: number
   modelCount?: number
+  models: string[]
   message: string
 }
 
@@ -240,13 +241,22 @@ export async function testProvider(override?: {
     )
   }
 
-  const data = await readJson<{ data?: unknown[] }>(response)
-  const modelCount = Array.isArray(data?.data) ? data.data.length : undefined
+  const data = await readJson<{ data?: Array<{ id?: unknown } | string> }>(response)
+  const rawList = Array.isArray(data?.data) ? data.data : []
+  const models = rawList
+    .map((entry) => {
+      if (typeof entry === 'string') return entry
+      const id = (entry as { id?: unknown })?.id
+      return typeof id === 'string' ? id : ''
+    })
+    .filter((id) => id.length > 0)
+  const modelCount = models.length || (Array.isArray(data?.data) ? data.data.length : undefined)
 
   return {
     ok: true,
     durationMs,
     modelCount,
+    models,
     message: modelCount !== undefined
       ? `连接成功 · ${modelCount} 个模型 · ${durationMs}ms`
       : `连接成功 · ${durationMs}ms`,

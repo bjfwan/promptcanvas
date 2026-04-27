@@ -3,7 +3,8 @@ import { computed, nextTick, ref, watch } from 'vue'
 import Icon from './Icon.vue'
 import StyleSwatch from './StyleSwatch.vue'
 import Select, { type SelectOption } from './Select.vue'
-import { customModelSentinel, modelOptions, styleOptions } from '../presets'
+import { customModelSentinel, styleOptions } from '../presets'
+import { useDiscoveredModels } from '../composables/useDiscoveredModels'
 import type { GenerateImageRequest, ImageStyle } from '../types'
 
 interface Props {
@@ -30,8 +31,14 @@ const focused = ref(false)
 const customModelOpen = ref(false)
 const customModelInputRef = ref<HTMLInputElement | null>(null)
 
+const discoveredModels = useDiscoveredModels()
+
 const modelSelectOptions = computed<SelectOption<string>[]>(() =>
-  modelOptions.map((option) => ({ value: option.value, label: option.label, hint: option.hint })),
+  discoveredModels.mergedModelOptions.value.map((option) => ({
+    value: option.value,
+    label: option.label,
+    hint: option.hint,
+  })),
 )
 
 const promptCount = computed(() => prompt.value.length)
@@ -47,8 +54,8 @@ const modelLabel = computed(() => {
   if (isCustomModel.value) {
     return customModel.value.trim() || '自定义模型'
   }
-  const match = modelOptions.find((option) => option.value === modelChoice.value)
-  return match?.label ?? '默认'
+  const match = discoveredModels.mergedModelOptions.value.find((option) => option.value === modelChoice.value)
+  return match?.label ?? (modelChoice.value || '默认')
 })
 
 const sendDisabled = computed(() => !props.canGenerate || props.isGenerating)

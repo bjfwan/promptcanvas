@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { ApiRequestError, PROVIDER_NOT_CONFIGURED, checkHealth, generateImage, resolveImageSource } from './api'
-import { customModelSentinel, modelOptions, qualityOptions, sizeOptions, styleOptions, stylePresetById } from './presets'
+import { ApiRequestError, PROVIDER_NOT_CONFIGURED, generateImage, resolveImageSource, testProvider } from './api'
+import { customModelSentinel, qualityOptions, sizeOptions, styleOptions, stylePresetById } from './presets'
 import { clearDraft, clearHistory, loadDraft, loadHistory, prependHistory, saveDraft } from './storage'
 import type {
   ChatAssistantMessage,
@@ -29,6 +29,7 @@ import { useToast } from './composables/useToast'
 import { useTheme } from './composables/useTheme'
 import { useLightbox } from './composables/useLightbox'
 import { useProviderConfig } from './composables/useProviderConfig'
+import { useDiscoveredModels } from './composables/useDiscoveredModels'
 
 const defaultPrompt = '一只穿着复古宇航服的橘猫，站在月球摄影棚里，像 1970 年代科幻电影海报'
 const defaultNegativePrompt = '低清晰度、模糊、水印、错误文字、畸形手指、画面杂乱'
@@ -59,6 +60,7 @@ const toast = useToast()
 const { theme, toggle: toggleTheme } = useTheme()
 const lightbox = useLightbox()
 const provider = useProviderConfig()
+const discoveredModels = useDiscoveredModels()
 const composerOpen = ref(false)
 const settingsOpen = ref(false)
 const historyOpen = ref(false)
@@ -80,7 +82,7 @@ if (restoredDraft) {
   if (qualityOptions.some((option) => option.value === restoredDraft.quality)) quality.value = restoredDraft.quality as ImageQuality
   if (typeof restoredDraft.creativity === 'number' && restoredDraft.creativity >= 1 && restoredDraft.creativity <= 10) creativity.value = restoredDraft.creativity
   if (typeof restoredDraft.seed === 'string') seed.value = restoredDraft.seed
-  if (typeof restoredDraft.modelChoice === 'string' && (restoredDraft.modelChoice === '' || modelOptions.some((option) => option.value === restoredDraft.modelChoice))) {
+  if (typeof restoredDraft.modelChoice === 'string' && (restoredDraft.modelChoice === '' || discoveredModels.mergedModelOptions.value.some((option) => option.value === restoredDraft.modelChoice))) {
     modelChoice.value = restoredDraft.modelChoice
   }
   if (typeof restoredDraft.customModel === 'string') customModel.value = restoredDraft.customModel
@@ -418,7 +420,7 @@ function restoreHistory(item: GenerationHistoryItem) {
   if (!restoredModel) {
     modelChoice.value = ''
     customModel.value = ''
-  } else if (modelOptions.some((option) => option.value === restoredModel)) {
+  } else if (discoveredModels.mergedModelOptions.value.some((option) => option.value === restoredModel)) {
     modelChoice.value = restoredModel
     customModel.value = ''
   } else {
@@ -496,27 +498,47 @@ function exportCurrentConfig() {
   toast.success('参数已导出', 'JSON')
 }
 
-async function refreshHealth() {
+async function refreshHealth(options?: { silent?: boolean }) {
+  if (!provider.isConfigured.value) {
+    healthStatus.value = 'offline'
+    healthRequestId.value = ''
+    healthMessage.value = '未配置 API 服务商，请打开「设置」填写 baseUrl 与 Key'
+    return
+  }
+
   healthStatus.value = 'checking'
-  healthMessage.value = '正在检查 API 配置'
+  healthMessage.value = '正在测试连接…'
+  healthRequestId.value = ''
 
   try {
-    const health = await checkHealth()
-
+    const result = await testProvider()
     healthStatus.value = 'online'
-    healthRequestId.value = health.requestId || ''
-    healthMessage.value = health.model ? `已连接 · ${health.model}` : '已配置 · 点击「设置」中的「测试连接」验证'
+    healthMessage.value = result.message
+
+    if (result.models?.length) {
+      discoveredModels.setModels(result.models)
+    }
+
+    if (!options?.silent) {
+      toast.success('API 连接正常', result.message)
+    }
   } catch (error) {
     healthStatus.value = 'offline'
 
     if (error instanceof ApiRequestError) {
       healthRequestId.value = error.requestId || ''
       healthMessage.value = error.message
+      if (!options?.silent) {
+        toast.error('API 连接失败', error.message)
+      }
       return
     }
 
-    healthRequestId.value = ''
-    healthMessage.value = '未配置 API 服务商，请打开「设置」填写 baseUrl 与 Key'
+    const message = error instanceof Error ? error.message : '连接测试失败'
+    healthMessage.value = message
+    if (!options?.silent) {
+      toast.error('API 连接失败', message)
+    }
   }
 }
 
@@ -525,14 +547,13 @@ function handleProviderTestResult(payload: { ok: boolean; message: string; code?
     healthStatus.value = 'online'
     healthMessage.value = payload.message
     healthRequestId.value = ''
-    toast.success('API 连接正常', payload.message)
   } else {
     healthStatus.value = 'offline'
     healthMessage.value = payload.message
     healthRequestId.value = ''
-    toast.error('API 连接失败', payload.message)
   }
 }
+
 
 function focusPrompt() {
   // 桌面：focus 左侧 composer；移动：focus 底部 ChatDock 输入
@@ -564,13 +585,13 @@ watch(style, (newValue, oldValue) => {
 })
 
 onMounted(() => {
-  refreshHealth()
+  refreshHealth({ silent: true })
 })
 
 watch(
   () => provider.isConfigured.value,
   () => {
-    refreshHealth()
+    refreshHealth({ silent: true })
   },
 )
 
