@@ -10,12 +10,14 @@ PromptCanvas 是一个**纯前端**的 AI 图片生成工作台。Vue 3 + Vite +
 
 ## 但需要一个最小反代（`proxy/`）
 
-实际跑起来发现绝大多数中转站**不为浏览器配 CORS**（它们的客户都是 Cherry Studio / Codex CLI 类桌面/命令行工具，没人在浏览器里直连）。少数配 CORS 的中转站又踩 60s 网关超时。所以仓库里附带了一个**最小 Node 反代**：
+实际跑起来发现绝大多数中转站**不为浏览器配 CORS**（它们的客户都是 Cherry Studio / Codex CLI 类桌面/命令行工具，没人在浏览器里直连）。少数配 CORS 的中转站又踩 60s 网关超时。所以仓库里附带了一个**最小反代**，**两种运行时同时支持**：
 
-- `@/proxy/proxy.mjs` — 单文件、零依赖、约 150 行
-- 只做两件事：转发上游请求 + 给响应塞 CORS 头
-- **不持久化任何凭据**（`Authorization` 透明转发）
-- 没有任何超时（部署在 Render / Fly / VPS 上能撑 200 秒+ 的图片生成）
+- **`proxy/worker.mjs`** + **`proxy/wrangler.toml`** — Cloudflare Workers，3 行配置 / 5 分钟 / 免费 / 零冷启动
+- **`proxy/proxy.mjs`** + **`proxy/Dockerfile`** + **`proxy/render.yaml`** — Node.js HTTP 服务，部署到 Render Free / Fly / VPS
+
+两种代码逻辑相同：转发上游请求 + 加 CORS 头，**不持久化任何凭据**（`Authorization` 透明转发）。
+
+**推荐顺序**：先试 Cloudflare Workers（你已经在用 CF，零钱零设置）。如果 Workers fetch 子请求被 ~90s 切（社区有此反馈，文档说没限制），换 Render Free 兜底（有 15 分钟冷启动但能撑任意时长）。
 
 部署完拿到代理 URL，去前端「设置」里的「反代 URL」字段填上即可。具体步骤见 [`@/proxy/README.md`](./proxy/README.md)。
 

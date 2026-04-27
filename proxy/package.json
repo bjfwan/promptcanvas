@@ -8,6 +8,12 @@
   },
   "scripts": {
     "start": "node proxy.mjs",
-    "dev": "node --watch proxy.mjs"
+    "dev": "node --watch proxy.mjs",
+    "worker:dev": "wrangler dev",
+    "worker:deploy": "wrangler deploy",
+    "worker:tail": "wrangler tail"
+  },
+  "devDependencies": {
+    "wrangler": "^3.90.0"
   }
 }
