@@ -7,7 +7,7 @@ import {
 } from '../storage'
 import type { ProviderConfig } from '../types'
 
-const state = reactive<ProviderConfig>({ baseUrl: '', apiKey: '' })
+const state = reactive<ProviderConfig>({ baseUrl: '', apiKey: '', proxyUrl: '' })
 
 const ready = { value: false } as { value: boolean }
 let saveTimer: number | undefined
@@ -18,6 +18,7 @@ async function hydrate() {
     const loaded = await loadProviderConfig()
     state.baseUrl = loaded.baseUrl
     state.apiKey = loaded.apiKey
+    state.proxyUrl = loaded.proxyUrl ?? ''
 
     if (loaded.apiKey && !rawApiKeyIsEncrypted()) {
       await saveProviderConfig(loaded)
@@ -32,7 +33,7 @@ async function hydrate() {
 void hydrate()
 
 watch(
-  () => ({ baseUrl: state.baseUrl, apiKey: state.apiKey }),
+  () => ({ baseUrl: state.baseUrl, apiKey: state.apiKey, proxyUrl: state.proxyUrl }),
   (next) => {
     if (typeof window === 'undefined') return
     if (!ready.value) return
@@ -54,6 +55,7 @@ export function snapshotProviderConfig(): ProviderConfig {
   return {
     baseUrl: normalizeBaseUrl(state.baseUrl ?? ''),
     apiKey: (state.apiKey ?? '').trim(),
+    proxyUrl: normalizeBaseUrl(state.proxyUrl ?? ''),
   }
 }
 
@@ -64,11 +66,13 @@ export function useProviderConfig() {
     update(next: Partial<ProviderConfig>) {
       if (typeof next.baseUrl === 'string') state.baseUrl = next.baseUrl
       if (typeof next.apiKey === 'string') state.apiKey = next.apiKey
+      if (typeof next.proxyUrl === 'string') state.proxyUrl = next.proxyUrl
     },
     snapshot: snapshotProviderConfig,
     reset() {
       state.baseUrl = ''
       state.apiKey = ''
+      state.proxyUrl = ''
     },
   }
 }

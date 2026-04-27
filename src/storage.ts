@@ -86,11 +86,12 @@ export function clearHistory() {
   localStorage.removeItem(historyKey)
 }
 
-const emptyProvider: ProviderConfig = { baseUrl: '', apiKey: '' }
+const emptyProvider: ProviderConfig = { baseUrl: '', apiKey: '', proxyUrl: '' }
 
 interface StoredProviderEntry {
   baseUrl?: unknown
   apiKey?: unknown
+  proxyUrl?: unknown
 }
 
 function readRawEntry(): StoredProviderEntry | null {
@@ -111,16 +112,17 @@ export async function loadProviderConfig(): Promise<ProviderConfig> {
 
   const baseUrl = typeof entry.baseUrl === 'string' ? entry.baseUrl : ''
   const apiKeyField = typeof entry.apiKey === 'string' ? entry.apiKey : ''
+  const proxyUrl = typeof entry.proxyUrl === 'string' ? entry.proxyUrl : ''
 
   if (!apiKeyField) {
-    return { baseUrl, apiKey: '' }
+    return { baseUrl, apiKey: '', proxyUrl }
   }
 
   try {
     const apiKey = await decryptString(apiKeyField)
-    return { baseUrl, apiKey }
+    return { baseUrl, apiKey, proxyUrl }
   } catch {
-    return { baseUrl, apiKey: '' }
+    return { baseUrl, apiKey: '', proxyUrl }
   }
 }
 
@@ -129,7 +131,8 @@ export async function saveProviderConfig(config: ProviderConfig) {
     const baseUrl = config.baseUrl ?? ''
     const plaintextKey = (config.apiKey ?? '').trim()
     const apiKey = plaintextKey ? await encryptString(plaintextKey) : ''
-    localStorage.setItem(providerKey, JSON.stringify({ baseUrl, apiKey }))
+    const proxyUrl = (config.proxyUrl ?? '').trim()
+    localStorage.setItem(providerKey, JSON.stringify({ baseUrl, apiKey, proxyUrl }))
   } catch {}
 }
 

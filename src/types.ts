@@ -30,6 +30,7 @@ export interface GenerateImageRequest {
 export interface ProviderConfig {
   baseUrl: string
   apiKey: string
+  proxyUrl?: string
 }
 
 export interface GeneratedImage {

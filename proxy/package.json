@@ -1,0 +1,13 @@
+{
+  "name": "promptcanvas-proxy",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node proxy.mjs",
+    "dev": "node --watch proxy.mjs"
+  }
+}

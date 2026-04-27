@@ -312,7 +312,8 @@ defineExpose({ focusInput })
   /* 从单行高度起步，以让“每多一行输入输入区就变高一行”的视觉反馈明显可见 */
   min-height: 40px;
   max-height: 280px;
-  padding: 0.55rem 0.5rem 0.6rem 0.5rem;
+  /* 右侧预留足够空间给“展开/收起”按钮，避免文本被遮挡 */
+  padding: 0.55rem 2.25rem 0.6rem 0.5rem;
   resize: none;
   background: transparent;
   border: none;
@@ -332,8 +333,10 @@ defineExpose({ focusInput })
     height 140ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
-/* “高输入模式”：使输入框可以伸展到接近整个视口高度 */
+/* “高输入模式”：点击展开按钮后输入框立即伸展至接近整个视口高度，
+   即使当前内容很短，输入框也保持高大状态以方便长篇撰写 */
 .chat-dock__textarea--tall {
+  min-height: 60vh;
   max-height: 72vh;
 }
 

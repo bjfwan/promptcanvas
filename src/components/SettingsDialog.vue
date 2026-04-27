@@ -69,7 +69,11 @@ async function handleTestProvider() {
   testHint.value = ''
 
   try {
-    const result = await testProvider({ baseUrl, apiKey })
+    const result = await testProvider({
+      baseUrl,
+      apiKey,
+      proxyUrl: provider.state.proxyUrl ?? '',
+    })
     if (result.models?.length) {
       discoveredModels.setModels(result.models)
     }
@@ -242,6 +246,27 @@ onBeforeUnmount(() => {
                 </p>
 
                 <div class="space-y-3">
+                  <div>
+                    <label class="label mb-1.5 inline-flex items-center gap-1.5" for="set-proxy-url">
+                      <Icon name="share" :size="12" />
+                      <span>反代 URL</span>
+                      <span class="font-mono text-[9px] uppercase tracking-[0.16em] text-muted">可选</span>
+                    </label>
+                    <input
+                      id="set-proxy-url"
+                      v-model="provider.state.proxyUrl"
+                      type="url"
+                      class="field-input font-mono text-[12px]"
+                      placeholder="https://your-proxy.onrender.com（不填 = 浏览器直连）"
+                      autocomplete="off"
+                      spellcheck="false"
+                      maxlength="200"
+                    />
+                    <p class="mt-1 text-[10px] leading-[1.5] text-muted">
+                      填了代理的话，请求先走代理再走中转站。适用于：中转站不开 CORS、或网关 60s 超时（中转站出图&gt;60s 会被切）。代理代码在仓库 <code class="font-mono">proxy/</code> 目录。
+                    </p>
+                  </div>
+
                   <div>
                     <label class="label mb-1.5 inline-flex items-center gap-1.5" for="set-base-url">
                       <Icon name="link" :size="12" />

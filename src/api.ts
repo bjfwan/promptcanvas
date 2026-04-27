@@ -64,16 +64,58 @@ interface UpstreamErrorBody {
   }
 }
 
+interface BuiltRequest {
+  url: string
+  headers: Record<string, string>
+  via: 'direct' | 'proxy'
+  upstreamBase: string
+  pathOnUpstream: string
+}
+
+function buildRequest(
+  baseUrl: string,
+  proxyUrl: string,
+  path: string,
+  baseHeaders: Record<string, string>,
+): BuiltRequest {
+  const cleanBase = baseUrl.replace(/\/+$/, '')
+  const cleanPath = path.startsWith('/') ? path : `/${path}`
+  const cleanProxy = proxyUrl.trim().replace(/\/+$/, '')
+
+  if (cleanProxy) {
+    return {
+      url: `${cleanProxy}${cleanPath}`,
+      headers: {
+        ...baseHeaders,
+        'X-Upstream-Base': cleanBase,
+      },
+      via: 'proxy',
+      upstreamBase: cleanBase,
+      pathOnUpstream: cleanPath,
+    }
+  }
+
+  return {
+    url: `${cleanBase}${cleanPath}`,
+    headers: { ...baseHeaders },
+    via: 'direct',
+    upstreamBase: cleanBase,
+    pathOnUpstream: cleanPath,
+  }
+}
+
 export async function generateImage(payload: GenerateImageRequest): Promise<GenerateImageResponse> {
   const provider = snapshotProviderConfig()
   const apiKey = (payload.apiKey ?? provider.apiKey ?? '').trim()
   const baseUrl = (payload.baseUrl ?? provider.baseUrl ?? '').trim().replace(/\/+$/, '')
+  const proxyUrl = (provider.proxyUrl ?? '').trim().replace(/\/+$/, '')
   const requestId = generateRequestId()
 
   const group = logGroup(`generateImage → ${safeHostname(baseUrl)} · ${requestId}`)
   group.log('requestId', requestId)
   group.log('baseUrl', baseUrl)
   group.log('apiKey', maskKey(apiKey))
+  group.log('proxyUrl', proxyUrl || '<direct, no proxy>')
   group.log('inbound payload', payload)
 
   try {
@@ -130,12 +172,16 @@ export async function generateImage(payload: GenerateImageRequest): Promise<Gene
       upstreamRequest.model = validated.model
     }
 
-    const targetUrl = `${baseUrl}/images/generations`
-    group.log('upstream targetUrl', targetUrl)
+    const built = buildRequest(baseUrl, proxyUrl, '/images/generations', {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    })
+    group.log(`route via ${built.via}`)
+    group.log('upstream targetUrl', built.url)
     group.log('upstream method', 'POST')
     group.log('upstream headers', {
+      ...built.headers,
       Authorization: `Bearer ${maskKey(apiKey)}`,
-      'Content-Type': 'application/json',
     })
     group.log('upstream body (parsed)', upstreamRequest)
     group.log('upstream body (json)', JSON.stringify(upstreamRequest))
@@ -143,12 +189,9 @@ export async function generateImage(payload: GenerateImageRequest): Promise<Gene
     const t0 = nowMs()
     let upstream: Response
     try {
-      upstream = await fetch(targetUrl, {
+      upstream = await fetch(built.url, {
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-        },
+        headers: built.headers,
         body: JSON.stringify(upstreamRequest),
       })
     } catch (error) {
@@ -286,18 +329,21 @@ interface ProbeOutcome {
   elapsedMs: number
 }
 
-async function probeGenerationsCors(baseUrl: string): Promise<ProbeOutcome> {
-  const targetUrl = `${baseUrl}/images/generations`
+async function probeGenerationsCors(
+  baseUrl: string,
+  proxyUrl: string,
+): Promise<ProbeOutcome> {
+  const built = buildRequest(baseUrl, proxyUrl, '/images/generations', {
+    'Content-Type': 'text/plain',
+  })
   const t0 = nowMs()
   try {
-    const response = await fetch(targetUrl, {
+    const response = await fetch(built.url, {
       method: 'POST',
       mode: 'cors',
       credentials: 'omit',
       cache: 'no-store',
-      headers: {
-        'Content-Type': 'text/plain',
-      },
+      headers: built.headers,
       body: 'cors-probe',
     })
     const elapsedMs = Math.round(nowMs() - t0)
@@ -323,16 +369,19 @@ async function probeGenerationsCors(baseUrl: string): Promise<ProbeOutcome> {
 export async function testProvider(override?: {
   baseUrl?: string
   apiKey?: string
+  proxyUrl?: string
 }): Promise<TestProviderResult> {
   const provider = snapshotProviderConfig()
   const apiKey = (override?.apiKey ?? provider.apiKey ?? '').trim()
   const baseUrl = (override?.baseUrl ?? provider.baseUrl ?? '').trim().replace(/\/+$/, '')
+  const proxyUrl = (override?.proxyUrl ?? provider.proxyUrl ?? '').trim().replace(/\/+$/, '')
   const requestId = generateRequestId()
 
   const group = logGroup(`testProvider → ${safeHostname(baseUrl)} · ${requestId}`)
   group.log('requestId', requestId)
   group.log('baseUrl', baseUrl)
   group.log('apiKey', maskKey(apiKey))
+  group.log('proxyUrl', proxyUrl || '<direct, no proxy>')
 
   try {
     if (!apiKey || !baseUrl) {
@@ -368,18 +417,19 @@ export async function testProvider(override?: {
     const start = nowMs()
 
     group.log('---- step 1: GET /models ----')
-    const modelsUrl = `${baseUrl}/models`
-    group.log('modelsUrl', modelsUrl)
-    group.log('headers', { Authorization: `Bearer ${maskKey(apiKey)}` })
+    const modelsBuilt = buildRequest(baseUrl, proxyUrl, '/models', {
+      Authorization: `Bearer ${apiKey}`,
+    })
+    group.log(`route via ${modelsBuilt.via}`)
+    group.log('modelsUrl', modelsBuilt.url)
+    group.log('headers', { ...modelsBuilt.headers, Authorization: `Bearer ${maskKey(apiKey)}` })
 
     let response: Response
     const stepStart = nowMs()
     try {
-      response = await fetch(modelsUrl, {
+      response = await fetch(modelsBuilt.url, {
         method: 'GET',
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-        },
+        headers: modelsBuilt.headers,
       })
     } catch (error) {
       const err = error as Error
@@ -441,7 +491,7 @@ export async function testProvider(override?: {
       'simple-request POST：Content-Type=text/plain + 无 Authorization → 浏览器不发预检、上游收到无凭证请求会立刻返回 4xx，不会扣费。',
     )
 
-    const probe = await probeGenerationsCors(baseUrl)
+    const probe = await probeGenerationsCors(baseUrl, proxyUrl)
     if (probe.ok) {
       group.log(
         `probe response ${probe.status} (${probe.elapsedMs}ms)`,
