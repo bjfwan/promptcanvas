@@ -339,8 +339,8 @@ function isImageReady(image: GeneratedImage, index: number) {
                 :loading="index < 2 ? 'eager' : 'lazy'"
                 :fetchpriority="index === 0 ? 'high' : 'auto'"
                 decoding="async"
-                class="h-full w-full object-contain transition duration-500 will-change-transform"
-                :class="isImageReady(image, index) ? 'opacity-100 scale-100' : 'opacity-0 scale-[1.015]'"
+                class="chat-image-fade h-full w-full object-contain will-change-[opacity,transform,filter]"
+                :class="isImageReady(image, index) ? 'chat-image-fade--ready' : 'chat-image-fade--loading'"
                 @load="markImageReady(image, index)"
                 @error="markImageReady(image, index)"
               />
@@ -636,10 +636,12 @@ function isImageReady(image: GeneratedImage, index: number) {
 }
 
 .chat-action-chip {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
-  padding: 0.3rem 0.65rem;
+  padding: 0.4rem 0.75rem;
+  min-height: 32px;
   border-radius: 999px;
   border: 1px solid #dfd3bf;
   background: #faf3e6;
@@ -648,6 +650,15 @@ function isImageReady(image: GeneratedImage, index: number) {
   font-weight: 500;
   letter-spacing: 0.01em;
   transition: border-color 140ms ease, background-color 140ms ease, transform 140ms ease;
+  /* 避免双击缩放 + 默认 300ms 点击延迟。 */
+  touch-action: manipulation;
+}
+
+/* 在 32px 高度上补足 12px 热区外拓，使总点击区达到 44px。 */
+.chat-action-chip::before {
+  content: '';
+  position: absolute;
+  inset: -6px -3px;
 }
 
 .chat-action-chip:hover {
@@ -661,10 +672,12 @@ function isImageReady(image: GeneratedImage, index: number) {
 }
 
 .chat-retry-chip {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
-  padding: 0.3rem 0.7rem;
+  padding: 0.4rem 0.8rem;
+  min-height: 32px;
   border-radius: 999px;
   border: 1px solid currentColor;
   background: rgba(154, 58, 28, 0.08);
@@ -673,6 +686,13 @@ function isImageReady(image: GeneratedImage, index: number) {
   font-weight: 600;
   letter-spacing: 0.02em;
   transition: background-color 140ms ease, transform 140ms ease;
+  touch-action: manipulation;
+}
+
+.chat-retry-chip::before {
+  content: '';
+  position: absolute;
+  inset: -6px -3px;
 }
 
 .chat-retry-chip:hover {
@@ -773,6 +793,27 @@ function isImageReady(image: GeneratedImage, index: number) {
   }
 }
 
+/* 渐进式加载：未准备好时隐藏 + 微微放大 + 模糊，准备好后类似 blur-up 动画。
+   使用 transform / filter / opacity 三项叠加增强质感，由 GPU 合成，不会造成 reflow。 */
+.chat-image-fade {
+  transition:
+    opacity 480ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    transform 540ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    filter 540ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.chat-image-fade--loading {
+  opacity: 0;
+  transform: scale(1.02);
+  filter: blur(8px) saturate(1.04);
+}
+
+.chat-image-fade--ready {
+  opacity: 1;
+  transform: scale(1);
+  filter: blur(0) saturate(1);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .chat-action-chip,
   .chat-retry-chip,
@@ -780,9 +821,15 @@ function isImageReady(image: GeneratedImage, index: number) {
   .chat-pending-bars span,
   .chat-pending-orb__ring,
   .chat-image-placeholder__loader span,
-  .chat-bubble-assistant img {
+  .chat-bubble-assistant img,
+  .chat-image-fade {
     transition: none;
     animation: none;
+  }
+
+  .chat-image-fade--loading {
+    filter: none;
+    transform: none;
   }
 }
 </style>

@@ -6,6 +6,8 @@ import Select, { type SelectOption } from './Select.vue'
 import { maxReferenceImages } from '../lib/imagesApi'
 import { customModelSentinel, styleOptions } from '../presets'
 import { useDiscoveredModels } from '../composables/useDiscoveredModels'
+import { useVibration } from '../composables/useVibration'
+import { rafThrottle } from '../lib/rafThrottle'
 import type { ImageStyle, ReferenceImageAttachment } from '../types'
 
 interface Props {
@@ -47,6 +49,7 @@ const customModelInputRef = ref<HTMLInputElement | null>(null)
 let dockResizeObserver: ResizeObserver | null = null
 
 const discoveredModels = useDiscoveredModels()
+const { vibrate } = useVibration()
 
 const modelSelectOptions = computed<SelectOption<string>[]>(() =>
   discoveredModels.mergedModelOptions.value.map((option) => ({
@@ -77,6 +80,7 @@ const modelLabel = computed(() => {
 const sendDisabled = computed(() => !props.canGenerate || props.isGenerating)
 
 function openReferencePicker() {
+  vibrate('tap')
   referenceInputRef.value?.click()
 }
 
@@ -93,6 +97,7 @@ function onReferenceInputChange(event: Event) {
 }
 
 function handleRemoveReferenceImage(id: string) {
+  vibrate('tap')
   emit('remove-reference-image', id)
   syncLayoutSoon()
 }
@@ -145,6 +150,7 @@ function autosize() {
 }
 
 function toggleTall() {
+  vibrate('tap')
   tall.value = !tall.value
   // 展开后顺便聚焦输入区，方便立即输入
   if (tall.value) {
@@ -158,16 +164,42 @@ function toggleTall() {
   }
 }
 
+// 软键盘弹出后保证整个 dock + 输入光标位置都在可视范围内：
+// 1) iOS Safari 在 textarea 获得焦点时通常会自动滚动，但当我们的 dock 是
+//    `position: absolute` 嵌在自定义视口高度容器里时，原生行为常常失效。
+// 2) 这里手动把 dock 滚到视口底部之上 12px 的位置，并轻微让出输入光标空间。
+function ensureDockVisible() {
+  if (typeof window === 'undefined') return
+  const el = dockRef.value
+  if (!el) return
+  // 在键盘弹出过程中，DOM 高度还没稳定，让两帧再测算
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      try {
+        el.scrollIntoView({ block: 'end', behavior: 'smooth' })
+      } catch {
+        el.scrollIntoView(false)
+      }
+    })
+  })
+}
+
 function focusInput() {
   nextTick(() => {
     textareaRef.value?.focus()
     autosize()
     reportLayout()
+    ensureDockVisible()
   })
 }
 
 function send() {
-  if (sendDisabled.value) return
+  if (sendDisabled.value) {
+    if (!props.canGenerate || props.isGenerating) {
+      vibrate('error')
+    }
+    return
+  }
   emit('send')
 }
 
@@ -183,8 +215,10 @@ watch(prompt, () => {
   syncLayoutSoon()
 })
 
-watch(focused, () => {
+watch(focused, (isFocused) => {
   syncLayoutSoon()
+  // 仅在「获得焦点」时主动滚动，避免失焦再滚一次造成抖动
+  if (isFocused) ensureDockVisible()
 })
 
 watch(tall, () => {
@@ -209,6 +243,10 @@ watch(() => props.keyboardInset, syncLayoutSoon)
 
 watch(() => props.viewportHeight, syncLayoutSoon)
 
+// 通过 rAF 节流：visualViewport.scroll/resize 在键盘动画期间会高频触发（一帧多次），
+// 直接逐次调用 nextTick + autosize + reportLayout 会在 iOS Safari 上肉眼可见地抖动。
+const throttledLayoutSync = rafThrottle(syncLayoutSoon)
+
 onMounted(() => {
   syncLayoutSoon()
   if (typeof ResizeObserver !== 'undefined' && dockRef.value) {
@@ -217,19 +255,20 @@ onMounted(() => {
     })
     dockResizeObserver.observe(dockRef.value)
   }
-  window.addEventListener('resize', syncLayoutSoon)
-  window.addEventListener('orientationchange', syncLayoutSoon)
-  window.visualViewport?.addEventListener('resize', syncLayoutSoon)
-  window.visualViewport?.addEventListener('scroll', syncLayoutSoon)
+  window.addEventListener('resize', throttledLayoutSync, { passive: true })
+  window.addEventListener('orientationchange', throttledLayoutSync, { passive: true })
+  window.visualViewport?.addEventListener('resize', throttledLayoutSync, { passive: true })
+  window.visualViewport?.addEventListener('scroll', throttledLayoutSync, { passive: true })
 })
 
 onBeforeUnmount(() => {
   dockResizeObserver?.disconnect()
   dockResizeObserver = null
-  window.removeEventListener('resize', syncLayoutSoon)
-  window.removeEventListener('orientationchange', syncLayoutSoon)
-  window.visualViewport?.removeEventListener('resize', syncLayoutSoon)
-  window.visualViewport?.removeEventListener('scroll', syncLayoutSoon)
+  window.removeEventListener('resize', throttledLayoutSync)
+  window.removeEventListener('orientationchange', throttledLayoutSync)
+  window.visualViewport?.removeEventListener('resize', throttledLayoutSync)
+  window.visualViewport?.removeEventListener('scroll', throttledLayoutSync)
+  throttledLayoutSync.cancel()
 })
 
 defineExpose({ focusInput })
@@ -299,6 +338,12 @@ defineExpose({ focusInput })
           placeholder="今天画点什么…"
           class="chat-dock__textarea"
           :class="{ 'chat-dock__textarea--tall': tall }"
+          autocomplete="off"
+          autocorrect="on"
+          autocapitalize="sentences"
+          spellcheck="true"
+          enterkeyhint="send"
+          inputmode="text"
           @focus="focused = true"
           @blur="focused = false"
           @input="autosize"
@@ -493,7 +538,7 @@ defineExpose({ focusInput })
   max-height: 50dvh;
 }
 
-/* 右上角的 展开 / 收起 切换按钮 */
+/* 右上角的 展开 / 收起 切换按钮：视觉上保持紧凑不占位，但点击热区扩展到 44×44 以满足 iOS HIG 要求。 */
 .chat-dock__expand {
   position: absolute;
   top: 0.55rem;
@@ -509,6 +554,13 @@ defineExpose({ focusInput })
   cursor: pointer;
   transition: background-color 160ms ease, color 160ms ease, border-color 160ms ease,
     transform 160ms ease;
+}
+
+.chat-dock__expand::before {
+  content: '';
+  position: absolute;
+  inset: -7px;
+  border-radius: 999px;
 }
 
 .chat-dock__expand:hover {
@@ -619,6 +671,7 @@ defineExpose({ focusInput })
 }
 
 .asset-chip {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
@@ -632,6 +685,14 @@ defineExpose({ focusInput })
   font-weight: 500;
   letter-spacing: 0.01em;
   transition: background-color 140ms ease, border-color 140ms ease, transform 140ms ease;
+}
+
+/* 「热区扩展」：设计上保持 chip 高度 34px，但透明伪元素把可点击区域扩到 44px 以避免点不动。 */
+.asset-chip::before,
+.style-chip::before {
+  content: '';
+  position: absolute;
+  inset: -5px -3px;
 }
 
 .asset-chip:hover:not(:disabled) {
@@ -683,12 +744,21 @@ defineExpose({ focusInput })
   right: 0.28rem;
   display: inline-grid;
   place-items: center;
-  width: 22px;
-  height: 22px;
+  width: 28px;
+  height: 28px;
   border-radius: 999px;
   background: rgba(26, 22, 18, 0.72);
   color: #faf3e6;
   backdrop-filter: blur(6px);
+}
+
+/* 反复点击体验：22×22 在普通手指下近乎不可点，现提高到 28×28 +
+   透明热区 16px 外拓，总点击区 >= 44px。 */
+.chat-dock__attachment-remove::before {
+  content: '';
+  position: absolute;
+  inset: -8px;
+  border-radius: 999px;
 }
 
 .chat-dock__attachment-name {
@@ -728,14 +798,16 @@ defineExpose({ focusInput })
   position: relative;
   display: inline-grid;
   place-items: center;
-  width: 42px;
-  height: 42px;
+  width: 44px;
+  height: 44px;
   border-radius: 999px;
   background: rgba(26, 22, 18, 0.4);
   color: rgba(241, 233, 220, 0.85);
   overflow: hidden;
   transition: background-color 160ms ease, transform 140ms ease, box-shadow 200ms ease;
   cursor: pointer;
+  /* iOS 在 disabled 状态的点击仍会传到 send()，保证误点震动提示调用。 */
+  touch-action: manipulation;
 }
 
 .chat-dock__send:disabled {
@@ -802,9 +874,23 @@ defineExpose({ focusInput })
     max-width: 5.75rem;
   }
 
+  /* 超窄屏均保持 ≥ 44×44，不再缩小发送键。 */
   .chat-dock__send {
-    width: 40px;
-    height: 40px;
+    width: 44px;
+    height: 44px;
+  }
+}
+
+/* 横屏：输入区高度限位下量，避免输入时还遮住一个屏。 */
+@media (orientation: landscape) and (max-height: 540px) {
+  .chat-dock__textarea {
+    min-height: 36px;
+    max-height: 96px;
+  }
+
+  .chat-dock__textarea--tall {
+    min-height: 44dvh;
+    max-height: 64dvh;
   }
 }
 

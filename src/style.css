@@ -3,6 +3,16 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    /* 动态根字号：在窄视口（~320px）使用 0.9375rem，宽视口（≥1280px）回到 1rem。
+       关键好处：
+       1. 用 rem 而非 px 表达上下限，仍然尊重浏览器 / 系统字号偏好
+          （用户在 iOS/Android 把字号调大时整个 app 会跟着放大，无障碍友好）。
+       2. clamp 让小屏不会被过大的间距 / 字号挤压。
+       范围只压缩 ~6.25%，避免动到现有布局的 rem 间距。 */
+    font-size: clamp(0.9375rem, 0.875rem + 0.4vw, 1rem);
+  }
+
   * {
     box-sizing: border-box;
   }
@@ -29,6 +39,13 @@
 
   #app {
     min-height: 100dvh;
+  }
+
+  /* 横屏 + 矮高度（典型小屏手机横屏）：略缩根字号，让 chat dock 元素不挤压换行。 */
+  @media (orientation: landscape) and (max-height: 540px) {
+    :root {
+      font-size: clamp(0.875rem, 0.8125rem + 0.25vw, 0.9375rem);
+    }
   }
 
   button,

@@ -23,3 +23,4 @@ Thumbs.db
 .playwright-mcp/
 playwright-report/
 test-results/
+proxy/package-lock.json

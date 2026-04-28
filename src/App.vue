@@ -36,6 +36,8 @@ import { useTheme } from './composables/useTheme'
 import { useLightbox } from './composables/useLightbox'
 import { useProviderConfig } from './composables/useProviderConfig'
 import { useDiscoveredModels } from './composables/useDiscoveredModels'
+import { useVibration } from './composables/useVibration'
+import { rafThrottle } from './lib/rafThrottle'
 
 const defaultPrompt = '一只穿着复古宇航服的橘猫，站在月球摄影棚里，像 1970 年代科幻电影海报'
 const defaultNegativePrompt = '低清晰度、模糊、水印、错误文字、畸形手指、画面杂乱'
@@ -68,6 +70,7 @@ const { theme, toggle: toggleTheme } = useTheme()
 const lightbox = useLightbox()
 const provider = useProviderConfig()
 const discoveredModels = useDiscoveredModels()
+const { vibrate } = useVibration()
 const composerOpen = ref(false)
 const settingsOpen = ref(false)
 const historyOpen = ref(false)
@@ -484,6 +487,7 @@ async function runGeneration(args: {
       elapsedSeconds: elapsed,
     }))
 
+    vibrate('success')
     toast.success(
       `已生成 ${result.images.length} 张`,
       result.requestId ? `req ${result.requestId.slice(0, 8)}` : undefined,
@@ -513,6 +517,7 @@ async function runGeneration(args: {
       elapsedSeconds: elapsed,
     }))
 
+    vibrate('error')
     toast.error(message, requestId ? `req ${requestId.slice(0, 8)}` : undefined)
 
     // 凭据未配置：自动打开 Settings，让用户立即修复
@@ -608,6 +613,7 @@ async function regenerateFromMessage(userMessageId: string) {
 }
 
 function sendFromChat() {
+  vibrate('tap')
   void handleGenerate({ clearAfter: true })
 }
 
@@ -975,13 +981,17 @@ watch(style, (newValue, oldValue) => {
   toast.info('已切换提示词模板', `${preset.label} · 输入框已更新`)
 })
 
+// 高频 viewport 事件（特别是软键盘弹出 / 工具栏滑动隐藏会导致 visualViewport 连续触发）
+// 通过 rAF 节流合并到每帧一次，避免无谓的布局测算与多余的 setTimeout/nextTick 链式调用。
+const throttledViewportSync = rafThrottle(syncMobileViewport)
+
 onMounted(() => {
   refreshHealth({ silent: true })
   syncMobileViewport()
-  window.addEventListener('resize', syncMobileViewport)
-  window.addEventListener('orientationchange', syncMobileViewport)
-  window.visualViewport?.addEventListener('resize', syncMobileViewport)
-  window.visualViewport?.addEventListener('scroll', syncMobileViewport)
+  window.addEventListener('resize', throttledViewportSync, { passive: true })
+  window.addEventListener('orientationchange', throttledViewportSync, { passive: true })
+  window.visualViewport?.addEventListener('resize', throttledViewportSync, { passive: true })
+  window.visualViewport?.addEventListener('scroll', throttledViewportSync, { passive: true })
 })
 
 watch(
@@ -1002,10 +1012,11 @@ onUnmounted(() => {
     draftSaveTimer = undefined
   }
 
-  window.removeEventListener('resize', syncMobileViewport)
-  window.removeEventListener('orientationchange', syncMobileViewport)
-  window.visualViewport?.removeEventListener('resize', syncMobileViewport)
-  window.visualViewport?.removeEventListener('scroll', syncMobileViewport)
+  window.removeEventListener('resize', throttledViewportSync)
+  window.removeEventListener('orientationchange', throttledViewportSync)
+  window.visualViewport?.removeEventListener('resize', throttledViewportSync)
+  window.visualViewport?.removeEventListener('scroll', throttledViewportSync)
+  throttledViewportSync.cancel()
 
   ownedReferencePreviewUrls.forEach((url) => {
     URL.revokeObjectURL(url)
