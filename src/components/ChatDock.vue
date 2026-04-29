@@ -325,82 +325,7 @@ defineExpose({ focusInput })
         </div>
       </Transition>
 
-      <div
-        class="chat-dock__input relative px-2.5 pt-2.5 sm:px-3"
-        :class="{ 'magic-pulse': isMagicPulsing }"
-      >
-        <textarea
-          ref="textareaRef"
-          v-model="prompt"
-          rows="1"
-          maxlength="1200"
-          placeholder="今天画点什么…"
-          class="chat-dock__textarea"
-          :class="{ 'chat-dock__textarea--tall': tall }"
-          autocomplete="off"
-          autocorrect="on"
-          autocapitalize="sentences"
-          spellcheck="true"
-          enterkeyhint="send"
-          inputmode="text"
-          @focus="focused = true"
-          @blur="focused = false"
-          @input="autosize"
-          @keydown="onKeydown"
-        ></textarea>
-      </div>
-
-      <Transition name="chat-dock-attachments">
-        <div
-          v-if="hasReferenceImages"
-          class="chat-dock__attachments border-t border-line/70 px-2.5 pb-2 pt-1.5 sm:px-3"
-        >
-          <div class="mb-1.5 flex items-center justify-between gap-2 px-0.5">
-            <span class="inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.2em] text-muted">
-              <Icon name="image" :size="11" />
-              <span>参考图 {{ props.referenceImages.length }} / {{ maxReferenceImages }}</span>
-            </span>
-            <button
-              type="button"
-              class="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium text-muted transition-all hover:bg-paper-soft hover:text-ink active:scale-95"
-              :disabled="props.referenceImages.length >= maxReferenceImages"
-              @click.stop="openReferencePicker"
-            >
-              <Icon name="upload" :size="11" />
-              <span>继续添加</span>
-            </button>
-          </div>
-
-          <div class="chat-dock__attachment-strip">
-            <TransitionGroup name="list">
-              <div
-                v-for="image in props.referenceImages"
-                :key="image.id"
-                class="chat-dock__attachment-card"
-              >
-                <img
-                  :src="image.previewUrl"
-                  :alt="image.name"
-                  loading="lazy"
-                  decoding="async"
-                  class="h-full w-full object-cover"
-                />
-                <button
-                  type="button"
-                  class="chat-dock__attachment-remove"
-                  :aria-label="`移除参考图 ${image.name}`"
-                  @click.stop="handleRemoveReferenceImage(image.id)"
-                >
-                  <Icon name="close" :size="11" />
-                </button>
-                <span class="chat-dock__attachment-name">{{ image.name }}</span>
-              </div>
-            </TransitionGroup>
-          </div>
-        </div>
-      </Transition>
-
-      <div class="flex items-center gap-1 px-2 pb-2 pt-1.5 sm:gap-1.5 sm:px-2.5 sm:pt-1 relative z-20">
+      <div class="flex items-center gap-1 px-2 pb-1.5 pt-2 sm:gap-1.5 sm:px-2.5 relative z-20">
         <button
           type="button"
           class="chat-dock__action-btn shrink-0"
@@ -498,6 +423,81 @@ defineExpose({ focusInput })
           </button>
         </div>
       </div>
+
+      <div
+        class="chat-dock__input relative px-2.5 pb-2.5 sm:px-3"
+        :class="{ 'magic-pulse': isMagicPulsing }"
+      >
+        <textarea
+          ref="textareaRef"
+          v-model="prompt"
+          rows="1"
+          maxlength="1200"
+          placeholder="今天画点什么…"
+          class="chat-dock__textarea"
+          :class="{ 'chat-dock__textarea--tall': tall }"
+          autocomplete="off"
+          autocorrect="on"
+          autocapitalize="sentences"
+          spellcheck="true"
+          enterkeyhint="send"
+          inputmode="text"
+          @focus="focused = true"
+          @blur="focused = false"
+          @input="autosize"
+          @keydown="onKeydown"
+        ></textarea>
+      </div>
+
+      <Transition name="chat-dock-attachments">
+        <div
+          v-if="hasReferenceImages"
+          class="chat-dock__attachments border-t border-line/70 px-2.5 pb-2 pt-1.5 sm:px-3"
+        >
+          <div class="mb-1.5 flex items-center justify-between gap-2 px-0.5">
+            <span class="inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.2em] text-muted">
+              <Icon name="image" :size="11" />
+              <span>参考图 {{ props.referenceImages.length }} / {{ maxReferenceImages }}</span>
+            </span>
+            <button
+              type="button"
+              class="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium text-muted transition-all hover:bg-paper-soft hover:text-ink active:scale-95"
+              :disabled="props.referenceImages.length >= maxReferenceImages"
+              @click.stop="openReferencePicker"
+            >
+              <Icon name="upload" :size="11" />
+              <span>继续添加</span>
+            </button>
+          </div>
+
+          <div class="chat-dock__attachment-strip">
+            <TransitionGroup name="list">
+              <div
+                v-for="image in props.referenceImages"
+                :key="image.id"
+                class="chat-dock__attachment-card"
+              >
+                <img
+                  :src="image.previewUrl"
+                  :alt="image.name"
+                  loading="lazy"
+                  decoding="async"
+                  class="h-full w-full object-cover"
+                />
+                <button
+                  type="button"
+                  class="chat-dock__attachment-remove"
+                  :aria-label="`移除参考图 ${image.name}`"
+                  @click.stop="handleRemoveReferenceImage(image.id)"
+                >
+                  <Icon name="close" :size="11" />
+                </button>
+                <span class="chat-dock__attachment-name">{{ image.name }}</span>
+              </div>
+            </TransitionGroup>
+          </div>
+        </div>
+      </Transition>
     </div>
   </div>
 </template>
