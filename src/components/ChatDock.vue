@@ -347,19 +347,7 @@ defineExpose({ focusInput })
           @blur="focused = false"
           @input="autosize"
           @keydown="onKeydown"
-          @click.stop="textareaRef?.focus()"
-          @touchstart.stop.passive="textareaRef?.focus()"
         ></textarea>
-        <button
-          type="button"
-          class="chat-dock__expand"
-          :class="{ 'chat-dock__expand--active': tall }"
-          :aria-pressed="tall"
-          :aria-label="tall ? '收起输入框' : '展开输入框'"
-          @click.stop="toggleTall"
-        >
-          <Icon :name="tall ? 'shrink' : 'expand'" :size="14" />
-        </button>
       </div>
 
       <Transition name="chat-dock-attachments">
@@ -412,7 +400,17 @@ defineExpose({ focusInput })
         </div>
       </Transition>
 
-      <div class="flex items-center gap-1 px-2 pb-2 pt-1.5 sm:gap-1.5 sm:px-2.5 sm:pt-1">
+      <div class="flex items-center gap-1 px-2 pb-2 pt-1.5 sm:gap-1.5 sm:px-2.5 sm:pt-1 relative z-20">
+        <button
+          type="button"
+          class="chat-dock__action-btn shrink-0"
+          :class="{ 'chat-dock__action-btn--active': tall }"
+          :aria-label="tall ? '收起输入框' : '展开输入框'"
+          @click.stop="toggleTall"
+        >
+          <Icon :name="tall ? 'shrink' : 'expand'" :size="15" />
+        </button>
+
         <button
           type="button"
           class="asset-chip shrink-0"
@@ -523,7 +521,7 @@ defineExpose({ focusInput })
   width: 100%;
   min-height: 42px;
   max-height: 280px;
-  padding: 0.6rem 2.6rem 0.65rem 0.5rem;
+  padding: 0.65rem 0.6rem;
   resize: none;
   background: transparent;
   border: none;
@@ -578,50 +576,37 @@ defineExpose({ focusInput })
   z-index: 0;
 }
 
-.chat-dock__expand {
-  position: absolute;
-  top: 0.55rem;
-  right: 0.55rem;
-  z-index: 10;
+.chat-dock__action-btn {
   display: inline-grid;
   place-items: center;
-  width: 30px;
-  height: 30px;
+  width: 34px;
+  height: 34px;
   border-radius: 999px;
-  border: 1px solid transparent;
-  background: rgb(var(--color-paper) / 0.6);
-  color: rgb(var(--color-muted));
-  cursor: pointer;
-  transition: background-color 160ms ease, color 160ms ease, border-color 160ms ease,
-    transform 160ms ease;
-}
-
-.chat-dock__expand::before {
-  content: '';
-  position: absolute;
-  inset: -7px;
-  border-radius: 999px;
-}
-
-.chat-dock__expand:hover {
   background: rgb(var(--color-cream));
+  border: 1px solid rgb(var(--color-line-strong));
+  color: rgb(var(--color-muted));
+  transition: all 160ms ease;
+  cursor: pointer;
+}
+
+.chat-dock__action-btn:hover {
+  background: rgb(var(--color-vellum));
   color: rgb(var(--color-ink));
   border-color: rgb(var(--color-ink) / 0.18);
 }
 
-.chat-dock__expand:active {
+.chat-dock__action-btn:active {
   transform: translateY(1px);
 }
 
-.chat-dock__expand--active {
+.chat-dock__action-btn--active {
   background: rgb(var(--color-ink));
   color: rgb(var(--color-paper));
   border-color: rgb(var(--color-ink));
 }
 
-.chat-dock__expand--active:hover {
+.chat-dock__action-btn--active:hover {
   background: rgb(var(--color-ink) / 0.9);
-  color: rgb(var(--color-paper));
 }
 
 .chat-dock__magic {
