@@ -121,6 +121,7 @@ export interface ChatAssistantMessage {
   id: string
   role: 'assistant'
   status: 'pending' | 'success' | 'error'
+  content?: string
   createdAt: string
   replyTo: string
   meta: ChatMessageMeta

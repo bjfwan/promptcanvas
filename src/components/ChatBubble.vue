@@ -358,7 +358,7 @@ function isImageReady(image: GeneratedImage, index: number) {
             type="button"
             class="chat-action-chip chat-action-chip--primary"
             aria-label="重混：以此图为参考并复用提示词"
-            @click="message.images && message.images[0] && emit('remix', message.images[0], message.content)"
+            @click="message.images && message.images[0] && emit('remix', message.images[0], message.content || '')"
           >
             <Icon name="sparkle" :size="12" />
             <span>重混</span>

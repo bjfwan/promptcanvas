@@ -409,6 +409,7 @@ async function runGeneration(args: {
       id: assistantId,
       role: 'assistant',
       status: 'pending',
+      content: args.payload.prompt,
       createdAt: new Date().toISOString(),
       replyTo: args.userMessageId,
       meta,
