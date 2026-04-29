@@ -107,8 +107,11 @@ async function buildEditFormData(payload: {
   formData.set('prompt', payload.prompt)
   formData.set('size', payload.size)
   formData.set('n', String(payload.count))
-  formData.set('response_format', payload.outputFormat)
   formData.set('user', requestId)
+
+  // 移除非标准的 quality 和 outputFormat (response_format)
+  // OpenAI 官方编辑接口不支持 quality，response_format 只支持 url/b64_json
+  // 我们默认使用 url (即不传该参数)
 
   if (payload.model) {
     formData.set('model', payload.model)
@@ -117,16 +120,15 @@ async function buildEditFormData(payload: {
   if (payload.referenceImages.length > 0) {
     const firstImage = payload.referenceImages[0]
     if (firstImage.file) {
-      // 确保是 PNG
       const pngBlob = await ensurePngBlob(firstImage.file)
-      formData.append('image', pngBlob, firstImage.name.replace(/\.[^.]+$/, '') + '.png')
+      formData.append('image', pngBlob, 'image.png')
     }
 
     if (payload.referenceImages.length > 1) {
       for (const image of payload.referenceImages.slice(1)) {
         if (image.file) {
           const pngBlob = await ensurePngBlob(image.file)
-          formData.append('image[]', pngBlob, image.name.replace(/\.[^.]+$/, '') + '.png')
+          formData.append('image[]', pngBlob, 'image.png')
         }
       }
     }
