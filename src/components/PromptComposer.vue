@@ -57,6 +57,7 @@ const emit = defineEmits<{
   (e: 'open-settings'): void
   (e: 'select-reference-images', files: File[]): void
   (e: 'remove-reference-image', id: string): void
+  (e: 'magic-enhance'): void
 }>()
 
 const promptRef = ref<HTMLTextAreaElement | null>(null)
@@ -191,6 +192,17 @@ watch(
             <span>{{ hasReferenceImages ? `参考图 ${props.referenceImages.length}` : '参考图' }}</span>
           </button>
           <button
+            v-if="prompt.length"
+            type="button"
+            class="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium text-forest/80 transition hover:bg-forest/10 hover:text-forest"
+            aria-label="魔法增强提示词"
+            @click="emit('magic-enhance')"
+          >
+            <Icon name="sparkle" :size="11" />
+            <span>魔法</span>
+          </button>
+          <button
+            v-if="prompt.length"
             type="button"
             class="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium text-muted transition hover:bg-paper-soft hover:text-ink"
             @click="emit('copy', prompt, '已复制提示词')"

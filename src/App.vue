@@ -1108,6 +1108,7 @@ onUnmounted(() => {
           @open-settings="settingsOpen = true"
           @select-reference-images="addReferenceImages"
           @remove-reference-image="removeReferenceImage"
+          @magic-enhance="handleMagicEnhance"
         />
       </section>
 
