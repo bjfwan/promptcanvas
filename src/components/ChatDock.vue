@@ -325,7 +325,7 @@ defineExpose({ focusInput })
         </div>
       </Transition>
 
-      <div class="flex items-center gap-1 px-2 pb-1.5 pt-2 sm:gap-1.5 sm:px-2.5 relative z-20">
+      <div class="flex items-center gap-1.5 px-3 pb-1.5 pt-2.5 relative z-20">
         <button
           type="button"
           class="chat-dock__action-btn shrink-0"
@@ -368,64 +368,10 @@ defineExpose({ focusInput })
           <span class="style-chip__label">{{ currentStyleMeta.label }}</span>
           <Icon name="chevronDown" :size="11" class="text-muted" />
         </button>
-
-        <div class="chat-dock__tail ml-auto flex items-center gap-1 sm:gap-1.5">
-          <span
-            v-if="isGenerating"
-            class="inline-flex items-center gap-1 whitespace-nowrap px-1 font-mono text-[10px] uppercase tracking-[0.2em] text-muted"
-          >
-            <Icon name="sparkle" :size="11" class="animate-breathe" />
-            <span>{{ elapsedSeconds }}s</span>
-          </span>
-          <span
-            v-else-if="promptCount > 0"
-            class="whitespace-nowrap px-1 font-mono text-[10px] tabular-nums text-muted"
-          >
-            {{ promptCount }}/1200
-          </span>
-          <span
-            v-else
-            class="hidden whitespace-nowrap px-1 font-mono text-[10px] uppercase tracking-[0.2em] text-muted/70 sm:inline"
-          >
-            ⌘ ↵ 发送
-          </span>
-
-          <button
-            v-if="promptCount > 0"
-            type="button"
-            class="chat-dock__magic"
-            aria-label="魔法增强提示词"
-            @click.stop="magicEnhance"
-          >
-            <Icon name="sparkle" :size="14" />
-          </button>
-          <button
-            type="button"
-            class="chat-dock__send"
-            :class="{
-              'chat-dock__send--ready': promptHasContent && !sendDisabled,
-              'chat-dock__send--busy': isGenerating,
-            }"
-            :disabled="sendDisabled"
-            aria-label="发送提示词生成图片"
-            @click.stop="send"
-          >
-            <Icon
-              :name="isGenerating ? 'sparkle' : 'send'"
-              :size="16"
-              :class="isGenerating ? 'animate-breathe' : ''"
-            />
-            <span
-              v-if="isGenerating"
-              class="pointer-events-none absolute inset-y-0 -inset-x-1/2 bg-gradient-to-r from-transparent via-paper/15 to-transparent animate-progress-sweep"
-              aria-hidden="true"
-            ></span>
-          </button>
-        </div>
       </div>
 
       <div
-        class="chat-dock__input relative px-2.5 pb-2.5 sm:px-3"
+        class="chat-dock__input relative mx-2.5 mb-2 rounded-[22px] bg-paper-soft border border-line transition-all focus-within:border-ink/30 focus-within:bg-paper sm:mx-3"
         :class="{ 'magic-pulse': isMagicPulsing }"
       >
         <textarea
@@ -434,7 +380,7 @@ defineExpose({ focusInput })
           rows="1"
           maxlength="1200"
           placeholder="今天画点什么…"
-          class="chat-dock__textarea"
+          class="chat-dock__textarea w-full"
           :class="{ 'chat-dock__textarea--tall': tall }"
           autocomplete="off"
           autocorrect="on"
@@ -447,6 +393,52 @@ defineExpose({ focusInput })
           @input="autosize"
           @keydown="onKeydown"
         ></textarea>
+
+        <div class="absolute bottom-1.5 right-1.5 flex items-center gap-1.5 z-10">
+          <div class="chat-dock__indicators mr-1 hidden sm:flex items-center">
+            <span
+              v-if="isGenerating"
+              class="inline-flex items-center gap-1 whitespace-nowrap px-1 font-mono text-[9px] uppercase tracking-[0.15em] text-muted"
+            >
+              <Icon name="sparkle" :size="10" class="animate-breathe" />
+              <span>{{ elapsedSeconds }}s</span>
+            </span>
+            <span
+              v-else-if="promptCount > 0"
+              class="whitespace-nowrap px-1 font-mono text-[9px] tabular-nums text-muted/60"
+            >
+              {{ promptCount }}/1200
+            </span>
+          </div>
+
+          <button
+            v-if="promptCount > 0"
+            type="button"
+            class="chat-dock__magic-inner"
+            aria-label="魔法增强提示词"
+            @click.stop="magicEnhance"
+          >
+            <Icon name="sparkle" :size="14" />
+          </button>
+          
+          <button
+            type="button"
+            class="chat-dock__send-inner"
+            :class="{
+              'chat-dock__send-inner--ready': promptHasContent && !sendDisabled,
+              'chat-dock__send-inner--busy': isGenerating,
+            }"
+            :disabled="sendDisabled"
+            aria-label="发送提示词生成图片"
+            @click.stop="send"
+          >
+            <Icon
+              :name="isGenerating ? 'sparkle' : 'send'"
+              :size="16"
+              :class="isGenerating ? 'animate-breathe' : ''"
+            />
+          </button>
+        </div>
       </div>
 
       <Transition name="chat-dock-attachments">
@@ -519,9 +511,9 @@ defineExpose({ focusInput })
   position: relative;
   z-index: 1;
   width: 100%;
-  min-height: 42px;
+  min-height: 46px;
   max-height: 280px;
-  padding: 0.65rem 0.6rem;
+  padding: 0.75rem 1rem 3.25rem 1rem;
   resize: none;
   background: transparent;
   border: none;
@@ -529,39 +521,105 @@ defineExpose({ focusInput })
   color: rgb(var(--color-ink));
   font-family: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
   font-size: 16px;
-  line-height: 1.55;
-  letter-spacing: 0;
+  line-height: 1.5;
+  letter-spacing: -0.01em;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  scrollbar-width: thin;
-  scrollbar-color: rgb(var(--color-ink) / 0.1) transparent;
+  scrollbar-width: none;
   overscroll-behavior: contain;
   touch-action: manipulation;
   user-select: text;
   -webkit-user-select: text;
   -webkit-tap-highlight-color: transparent;
   cursor: text;
-  box-shadow: inset 0 1px 2px rgb(var(--color-ink) / 0.03);
   transition: max-height 220ms cubic-bezier(0.2, 0.8, 0.2, 1),
     height 140ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.chat-dock__textarea::-webkit-scrollbar {
+  display: none;
 }
 
 .chat-dock__input {
   cursor: text;
   -webkit-tap-highlight-color: transparent;
-  background: rgb(var(--color-vellum) / 0.7);
-  box-shadow: inset 0 0 0 1px rgb(var(--color-line) / 0.5);
-  transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+  transition: all 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
+  box-shadow: 0 1px 2px rgb(var(--color-ink) / 0.05);
 }
 
-.chat-dock__input:has(.chat-dock__textarea:focus) {
+.chat-dock__magic-inner {
+  display: inline-grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  background: rgb(var(--color-cream));
+  border: 1px solid rgb(var(--color-line-strong) / 0.5);
+  color: rgb(var(--color-ink) / 0.7);
+  transition: all 160ms ease;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.chat-dock__magic-inner:active {
+  transform: scale(0.9) rotate(-8deg);
+  background: rgb(var(--color-vellum));
+}
+
+.chat-dock__send-inner {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  background: rgb(var(--color-ink) / 0.04);
+  color: rgb(var(--color-ink) / 0.2);
+  border: 1px solid transparent;
+  transition: all 0.24s cubic-bezier(0.2, 0.8, 0.2, 1);
+  cursor: not-allowed;
+}
+
+.chat-dock__send-inner--ready {
+  background: rgb(var(--color-ink));
+  color: rgb(var(--color-paper));
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgb(var(--color-ink) / 0.2);
+}
+
+.chat-dock__send-inner--ready:active {
+  transform: scale(0.92);
+}
+
+.chat-dock__send-inner--busy {
+  background: rgb(var(--color-ink));
+  color: rgb(var(--color-paper));
+}
+
+.chat-dock__send-inner--busy::after {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  border-top-color: rgb(var(--color-paper));
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.chat-dock__input:focus-within {
   background: rgb(var(--color-paper));
-  box-shadow: inset 0 0 0 1px rgb(var(--color-ink) / 0.8), var(--focus-ring);
+  border-color: rgb(var(--color-ink) / 0.4);
+  box-shadow: 0 8px 24px -12px rgb(var(--color-ink) / 0.15), var(--focus-ring);
 }
 
 .chat-dock__textarea--tall {
-  min-height: 32dvh;
-  max-height: 50dvh;
+  min-height: 28dvh;
+  max-height: 52dvh;
 }
 
 .magic-pulse::after {
@@ -579,11 +637,11 @@ defineExpose({ focusInput })
 .chat-dock__action-btn {
   display: inline-grid;
   place-items: center;
-  width: 34px;
-  height: 34px;
+  width: 32px;
+  height: 32px;
   border-radius: 999px;
   background: rgb(var(--color-cream));
-  border: 1px solid rgb(var(--color-line-strong));
+  border: 1px solid rgb(var(--color-line-strong) / 0.6);
   color: rgb(var(--color-muted));
   transition: all 160ms ease;
   cursor: pointer;
@@ -592,7 +650,7 @@ defineExpose({ focusInput })
 .chat-dock__action-btn:hover {
   background: rgb(var(--color-vellum));
   color: rgb(var(--color-ink));
-  border-color: rgb(var(--color-ink) / 0.18);
+  border-color: rgb(var(--color-ink) / 0.3);
 }
 
 .chat-dock__action-btn:active {
@@ -607,31 +665,6 @@ defineExpose({ focusInput })
 
 .chat-dock__action-btn--active:hover {
   background: rgb(var(--color-ink) / 0.9);
-}
-
-.chat-dock__magic {
-  position: relative;
-  z-index: 10;
-  display: inline-grid;
-  place-items: center;
-  width: 44px;
-  height: 44px;
-  border-radius: 999px;
-  background: rgb(var(--color-cream));
-  border: 1px solid rgb(var(--color-line-strong));
-  color: rgb(var(--color-ink));
-  transition: all 160ms ease;
-  cursor: pointer;
-}
-
-.chat-dock__magic:hover {
-  background: rgb(var(--color-vellum));
-  border-color: rgb(var(--color-ink));
-  transform: rotate(12deg) scale(1.05);
-}
-
-.chat-dock__magic:active {
-  transform: scale(0.95);
 }
 
 .chat-dock__textarea::-webkit-scrollbar {
@@ -856,41 +889,6 @@ defineExpose({ focusInput })
   transform: scale(0.8) translateY(10px);
 }
 
-.chat-dock__send {
-  position: relative;
-  z-index: 10;
-  display: inline-grid;
-  place-items: center;
-  width: 44px;
-  height: 44px;
-  border-radius: 999px;
-  background: rgb(var(--color-ink) / 0.05);
-  color: rgb(var(--color-ink) / 0.3);
-  border: 1px solid transparent;
-  transition: all 0.24s cubic-bezier(0.2, 0.8, 0.2, 1);
-  cursor: not-allowed;
-}
-
-.chat-dock__send--ready {
-  background: rgb(var(--color-ink));
-  color: rgb(var(--color-paper));
-  cursor: pointer;
-  box-shadow: var(--shadow-paper-2);
-}
-
-.chat-dock__send--ready:hover {
-  background: rgb(var(--color-ink) / 0.92);
-  transform: translateY(-1px);
-}
-
-.chat-dock__send--ready:active {
-  transform: translateY(0);
-}
-
-.chat-dock__send--busy {
-  background: rgb(var(--color-ink));
-  color: rgb(var(--color-paper));
-}
 
 .chat-dock-custom-enter-from,
 .chat-dock-custom-leave-to {
@@ -914,14 +912,13 @@ defineExpose({ focusInput })
 
 @media (max-width: 390px) {
   .chat-dock__textarea {
-    padding-right: 2.45rem;
-    padding-left: 0.35rem;
+    padding-bottom: 3.5rem;
   }
 
   .model-chip-wrap :deep(.select-trigger) {
-    max-width: clamp(6rem, 31vw, 8.75rem);
-    padding-left: 0.65rem;
-    padding-right: 1.55rem;
+    max-width: clamp(5.5rem, 30vw, 8.5rem);
+    padding-left: 0.6rem;
+    padding-right: 1.4rem;
   }
 
   .asset-chip__label {
@@ -929,12 +926,7 @@ defineExpose({ focusInput })
   }
 
   .style-chip__label {
-    max-width: 5.75rem;
-  }
-
-  .chat-dock__send {
-    width: 44px;
-    height: 44px;
+    max-width: 5.5rem;
   }
 }
 
@@ -951,7 +943,7 @@ defineExpose({ focusInput })
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .chat-dock__send,
+  .chat-dock__send-inner,
   .asset-chip,
   .style-chip,
   .chat-dock-attachments-enter-active,
