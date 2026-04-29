@@ -106,57 +106,59 @@ function isImageReady(image: GeneratedImage, index: number) {
 
     <div
       v-if="isGenerating"
-      class="canvas-frame canvas-scan canvas-grid surface-2 bg-paper-soft"
+      class="canvas-frame canvas-manifest surface-2"
       :data-orient="orient"
       role="status"
       aria-live="polite"
     >
-      <div class="absolute inset-0 grid grid-rows-[auto_1fr_auto] p-5 sm:p-6">
-        <div class="flex items-center justify-between font-mono text-[10px] uppercase tracking-[0.22em] text-muted">
-          <span class="inline-flex items-center gap-1.5">
-            <Icon name="sparkle" :size="11" class="animate-breathe" />
-            {{ canvasStageLabel }}
-          </span>
+      <div class="chat-pending-bg absolute inset-0"></div>
+      <div class="chat-pending-grain absolute inset-0"></div>
+
+      <div class="absolute inset-0 flex items-center justify-center overflow-hidden">
+        <svg class="chat-pending-weave w-full h-full opacity-60" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <filter id="canvas-glow">
+              <feGaussianBlur stdDeviation="3" result="blur"/>
+              <feMerge>
+                <feMergeNode in="blur"/>
+                <feMergeNode in="SourceGraphic"/>
+              </feMerge>
+            </filter>
+          </defs>
+          <g filter="url(#canvas-glow)">
+            <path class="weave-path" d="M20,100 Q60,20 100,100 T180,100" fill="none" stroke="currentColor" stroke-width="0.3" />
+            <path class="weave-path delay-1" d="M20,100 Q60,180 100,100 T180,100" fill="none" stroke="currentColor" stroke-width="0.3" />
+            <circle class="weave-dot" cx="100" cy="100" r="1" fill="currentColor" />
+          </g>
+        </svg>
+      </div>
+
+      <div class="absolute inset-0 grid grid-rows-[auto_1fr_auto] p-6 sm:p-8">
+        <div class="flex items-center justify-between font-mono text-[10px] uppercase tracking-[0.25em] text-muted/60">
+          <div class="flex items-center gap-2.5">
+            <span class="flex h-1.5 w-1.5 rounded-full bg-ink/20 animate-pulse"></span>
+            <span>{{ canvasStageLabel }}</span>
+          </div>
           <span class="tabular-nums">{{ elapsedLabel }}</span>
         </div>
 
         <div class="grid place-items-center">
-          <div class="relative grid h-24 w-24 place-items-center sm:h-28 sm:w-28">
-            <span class="halo-pulse absolute inset-0 rounded-full border border-line-strong/35" aria-hidden="true"></span>
-            <span
-              class="halo-pulse absolute inset-3 rounded-full border border-line/60"
-              style="animation-delay: 0.6s"
-              aria-hidden="true"
-            ></span>
-            <span
-              class="halo-pulse absolute inset-6 rounded-full border border-line/40"
-              style="animation-delay: 1.2s"
-              aria-hidden="true"
-            ></span>
-            <Icon name="sparkle" :size="18" class="text-ink/65" />
-          </div>
-          <div class="mt-5 flex items-center gap-1.5" aria-hidden="true">
-            <span class="ink-dot"></span>
-            <span class="ink-dot"></span>
-            <span class="ink-dot"></span>
+          <div class="chat-pending-manifest">
+            <span class="chat-pending-manifest__value text-4xl sm:text-5xl">{{ canvasProgress }}%</span>
+            <span class="chat-pending-manifest__label mt-1 text-[11px]">{{ canvasStageLabel }}</span>
           </div>
         </div>
 
-        <div class="space-y-2.5">
-          <div class="canvas-progress" :style="canvasProgressStyle" aria-hidden="true">
-            <span></span>
-          </div>
-          <p class="font-display text-[15px] italic leading-snug tracking-tightish text-ink/85 truncate-2 sm:text-base">
-            {{ promptPreview || 'untitled draft' }}
-          </p>
-          <div class="flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[10px] uppercase tracking-[0.2em] text-muted">
-            <span>{{ size }}</span>
-            <span class="text-line">·</span>
-            <span>{{ styleLabel }}</span>
-            <template v-if="modelLabel">
-              <span class="text-line">·</span>
-              <span class="truncate normal-case tracking-normal">{{ modelLabel }}</span>
-            </template>
+        <div class="space-y-4">
+          <div class="chat-pending-bar" :style="canvasProgressStyle"></div>
+          <div class="flex items-end justify-between gap-6">
+            <p class="font-display text-lg italic leading-snug tracking-tight text-ink/80 truncate-2 max-w-[70%]">
+              {{ promptPreview || 'untitled draft' }}
+            </p>
+            <div class="flex flex-col items-end gap-1 font-mono text-[9px] uppercase tracking-[0.2em] text-muted/50">
+              <span>{{ size }}</span>
+              <span>{{ styleLabel }}</span>
+            </div>
           </div>
         </div>
       </div>

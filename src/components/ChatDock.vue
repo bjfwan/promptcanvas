@@ -36,6 +36,7 @@ const emit = defineEmits<{
   (e: 'layout-change', height: number): void
   (e: 'select-reference-images', files: File[]): void
   (e: 'remove-reference-image', id: string): void
+  (e: 'magic-enhance'): void
 }>()
 
 const dockRef = ref<HTMLDivElement | null>(null)
@@ -45,6 +46,7 @@ const focused = ref(false)
 const tall = ref(false)
 const customModelOpen = ref(false)
 const customModelInputRef = ref<HTMLInputElement | null>(null)
+const isMagicPulsing = ref(false)
 let dockResizeObserver: ResizeObserver | null = null
 
 const discoveredModels = useDiscoveredModels()
@@ -192,6 +194,15 @@ function send() {
   emit('send')
 }
 
+function magicEnhance() {
+  vibrate('tap')
+  isMagicPulsing.value = true
+  setTimeout(() => {
+    isMagicPulsing.value = false
+  }, 1000)
+  emit('magic-enhance')
+}
+
 function onKeydown(event: KeyboardEvent) {
   if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
     event.preventDefault()
@@ -314,7 +325,12 @@ defineExpose({ focusInput })
         </div>
       </Transition>
 
-      <div class="chat-dock__input relative px-2.5 pt-2.5 sm:px-3">
+      <div
+        class="chat-dock__input relative px-2.5 pt-2.5 sm:px-3"
+        :class="{ 'magic-pulse': isMagicPulsing }"
+        @click="textareaRef?.focus()"
+        @touchstart.passive="textareaRef?.focus()"
+      >
         <textarea
           ref="textareaRef"
           v-model="prompt"
@@ -333,6 +349,8 @@ defineExpose({ focusInput })
           @blur="focused = false"
           @input="autosize"
           @keydown="onKeydown"
+          @click.stop="textareaRef?.focus()"
+          @touchstart.stop.passive="textareaRef?.focus()"
         ></textarea>
         <button
           type="button"
@@ -358,7 +376,7 @@ defineExpose({ focusInput })
             </span>
             <button
               type="button"
-              class="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium text-muted transition hover:bg-paper-soft hover:text-ink"
+              class="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium text-muted transition-all hover:bg-paper-soft hover:text-ink active:scale-95"
               :disabled="props.referenceImages.length >= maxReferenceImages"
               @click="openReferencePicker"
             >
@@ -368,28 +386,30 @@ defineExpose({ focusInput })
           </div>
 
           <div class="chat-dock__attachment-strip">
-            <div
-              v-for="image in props.referenceImages"
-              :key="image.id"
-              class="chat-dock__attachment-card"
-            >
-              <img
-                :src="image.previewUrl"
-                :alt="image.name"
-                loading="lazy"
-                decoding="async"
-                class="h-full w-full object-cover"
-              />
-              <button
-                type="button"
-                class="chat-dock__attachment-remove"
-                :aria-label="`移除参考图 ${image.name}`"
-                @click="handleRemoveReferenceImage(image.id)"
+            <TransitionGroup name="list">
+              <div
+                v-for="image in props.referenceImages"
+                :key="image.id"
+                class="chat-dock__attachment-card"
               >
-                <Icon name="close" :size="11" />
-              </button>
-              <span class="chat-dock__attachment-name">{{ image.name }}</span>
-            </div>
+                <img
+                  :src="image.previewUrl"
+                  :alt="image.name"
+                  loading="lazy"
+                  decoding="async"
+                  class="h-full w-full object-cover"
+                />
+                <button
+                  type="button"
+                  class="chat-dock__attachment-remove"
+                  :aria-label="`移除参考图 ${image.name}`"
+                  @click="handleRemoveReferenceImage(image.id)"
+                >
+                  <Icon name="close" :size="11" />
+                </button>
+                <span class="chat-dock__attachment-name">{{ image.name }}</span>
+              </div>
+            </TransitionGroup>
           </div>
         </div>
       </Transition>
@@ -450,6 +470,15 @@ defineExpose({ focusInput })
           </span>
 
           <button
+            v-if="promptCount > 0"
+            type="button"
+            class="chat-dock__magic"
+            aria-label="魔法增强提示词"
+            @click="magicEnhance"
+          >
+            <Icon name="sparkle" :size="14" />
+          </button>
+          <button
             type="button"
             class="chat-dock__send"
             :class="{
@@ -509,13 +538,35 @@ defineExpose({ focusInput })
   scrollbar-width: thin;
   scrollbar-color: rgb(var(--color-ink) / 0.18) transparent;
   overscroll-behavior: contain;
+  touch-action: manipulation;
+  user-select: text;
+  -webkit-user-select: text;
+  -webkit-tap-highlight-color: transparent;
+  cursor: text;
   transition: max-height 220ms cubic-bezier(0.2, 0.8, 0.2, 1),
     height 140ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.chat-dock__input {
+  cursor: text;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .chat-dock__textarea--tall {
   min-height: 32dvh;
   max-height: 50dvh;
+}
+
+.magic-pulse::after {
+  content: '';
+  position: absolute;
+  inset: 8px;
+  border-radius: 20px;
+  background: linear-gradient(90deg, transparent, rgb(var(--color-forest) / 0.1), rgb(var(--color-accent) / 0.1), transparent);
+  background-size: 200% 100%;
+  animation: progress-sweep 1s ease-out forwards;
+  pointer-events: none;
+  z-index: 0;
 }
 
 .chat-dock__expand {
@@ -561,6 +612,29 @@ defineExpose({ focusInput })
 .chat-dock__expand--active:hover {
   background: rgb(var(--color-ink) / 0.9);
   color: rgb(var(--color-paper));
+}
+
+.chat-dock__magic {
+  display: inline-grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  background: rgb(var(--color-cream));
+  border: 1px solid rgb(var(--color-line-strong));
+  color: rgb(var(--color-ink));
+  transition: all 160ms ease;
+  cursor: pointer;
+}
+
+.chat-dock__magic:hover {
+  background: rgb(var(--color-vellum));
+  border-color: rgb(var(--color-ink));
+  transform: rotate(12deg) scale(1.05);
+}
+
+.chat-dock__magic:active {
+  transform: scale(0.95);
 }
 
 .chat-dock__textarea::-webkit-scrollbar {
@@ -764,7 +838,17 @@ defineExpose({ focusInput })
 
 .chat-dock-attachments-enter-active,
 .chat-dock-attachments-leave-active {
-  transition: opacity 0.2s ease-out, transform 0.2s ease-out, max-height 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
+  transition: opacity 0.3s ease, transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), max-height 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.list-enter-active,
+.list-leave-active {
+  transition: all 0.3s ease;
+}
+.list-enter-from,
+.list-leave-to {
+  opacity: 0;
+  transform: scale(0.8) translateY(10px);
 }
 
 .chat-dock__send {

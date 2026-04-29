@@ -525,6 +525,71 @@ async function runGeneration(args: {
   }
 }
 
+async function handleRemix(image: GeneratedImage, content: string) {
+  vibrate('tap')
+  
+  // 1. 设置提示词
+  prompt.value = content
+  
+  // 2. 将图片转化为 File 对象并添加到参考图
+  const source = resolveImageSource(image)
+  if (!source) {
+    toast.error('无法重混：找不到图片源')
+    return
+  }
+
+  try {
+    toast.info('正在提取图片进行重混…')
+    let blob: Blob
+    if (source.startsWith('data:')) {
+      const res = await fetch(source)
+      blob = await res.blob()
+    } else {
+      // 远程 URL 可能需要通过代理
+      const res = await fetch(source)
+      if (!res.ok) throw new Error('远程图片下载失败')
+      blob = await res.blob()
+    }
+
+    const file = new File([blob], `remix-${Date.now()}.png`, { type: 'image/png' })
+    addReferenceImages([file])
+    
+    // 3. 聚焦并提示
+    focusPrompt()
+    toast.success('已准备好重混', '图片已加入参考，提示词已回填')
+  } catch (err) {
+    console.error('Remix failed:', err)
+    toast.error('重混失败，图片可能存在跨域限制')
+  }
+}
+
+function handleMagicEnhance() {
+  const current = prompt.value.trim()
+  if (!current) {
+    toast.info('请先输入一点内容，我再帮你变魔法')
+    return
+  }
+
+  const magicSuffixes = [
+    'highly detailed, sharp focus, 8k resolution, cinematic lighting, masterpiece',
+    'ultra-realistic, intricate textures, dramatic atmosphere, professional photography',
+    'ethereal glow, soft bokeh, vibrant colors, stunning composition',
+    'digital art style, Unreal Engine 5 render, ray tracing, concept art'
+  ]
+
+  // 随机选一个还没加过的
+  const randomSuffix = magicSuffixes[Math.floor(Math.random() * magicSuffixes.length)]
+  
+  if (current.includes(randomSuffix)) {
+    toast.info('魔法已经施展过啦')
+    return
+  }
+
+  prompt.value = `${current}, ${randomSuffix}`
+  vibrate('success')
+  toast.success('魔法已施展', '已追加艺术修饰词')
+}
+
 async function handleGenerate(options?: { clearAfter?: boolean }) {
   if (!canGenerate.value) {
     if (!provider.isConfigured.value) {
@@ -1084,36 +1149,34 @@ onUnmounted(() => {
     <div class="flex min-h-0 flex-1 flex-col overflow-hidden lg:hidden">
       <ChatStream
         :messages="messages"
-        :bottom-padding="mobileChatBottomPadding"
-        :jump-bottom="mobileJumpButtonBottom"
-        class="flex-1 min-h-0"
+        :mobile-bottom-padding="mobileChatBottomPadding"
         @retry="regenerateFromMessage"
-        @open-image="(imgs, index) => lightbox.open(imgs, index)"
+        @open-image="lightbox.open"
         @download="downloadImage"
         @copy="copyToClipboard"
-        @pick-suggestion="pickStyleFromChat"
+        @remix="handleRemix"
       />
     </div>
 
     <ChatDock
       ref="chatDockRef"
-      class="lg:hidden"
       v-model:prompt="prompt"
       v-model:model-choice="modelChoice"
       v-model:custom-model="customModel"
-      :reference-images="referenceImages"
       :is-generating="isGenerating"
       :can-generate="canGenerate"
       :elapsed-seconds="elapsedSeconds"
       :health-offline="healthStatus === 'offline'"
       :current-style="style"
+      :reference-images="referenceImages"
       :keyboard-inset="mobileKeyboardInset"
-      :viewport-height="mobileViewportHeight ?? 0"
+      :viewport-height="mobileViewportHeight ?? undefined"
       @send="sendFromChat"
-      @layout-change="handleChatDockLayoutChange"
       @open-style-sheet="styleSheetOpen = true"
+      @layout-change="handleChatDockLayoutChange"
       @select-reference-images="addReferenceImages"
       @remove-reference-image="removeReferenceImage"
+      @magic-enhance="handleMagicEnhance"
     />
 
     <StyleSheet

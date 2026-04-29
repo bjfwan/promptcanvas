@@ -209,7 +209,7 @@ watch(
           </button>
         </div>
       </div>
-      <div class="relative">
+      <div class="relative" @click="promptRef?.focus()">
         <textarea
           id="prompt-input"
           ref="promptRef"
@@ -220,6 +220,7 @@ watch(
           placeholder="一张极简咖啡品牌海报，暖色调，自然光，留白充足"
           autocomplete="off"
           spellcheck="false"
+          @click.stop="promptRef?.focus()"
         ></textarea>
         <div class="pointer-events-none absolute inset-x-2 bottom-2 flex items-end justify-between gap-2">
           <span class="pointer-events-auto inline-flex items-center gap-1 rounded-full bg-paper/85 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em] text-muted backdrop-blur">

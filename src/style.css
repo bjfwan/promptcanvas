@@ -18,10 +18,10 @@
     --color-forest: 77 116 98;
     --color-ochre: 168 114 43;
     --shadow-paper-1: 0 1px 0 rgb(var(--color-ink) / 0.04), 0 4px 12px -8px rgb(var(--color-ink) / 0.16);
-    --shadow-paper-2: 0 1px 0 rgb(var(--color-ink) / 0.06), 0 12px 24px -16px rgb(var(--color-ink) / 0.2);
-    --shadow-paper-3: 0 1px 0 rgb(var(--color-ink) / 0.06), 0 28px 56px -20px rgb(var(--color-ink) / 0.32), 0 12px 24px -16px rgb(var(--color-ink) / 0.18);
+    --shadow-paper-2: 0 12px 32px -8px rgb(var(--color-ink) / 0.12), 0 4px 12px -4px rgb(var(--color-ink) / 0.08);
+    --shadow-paper-3: 0 24px 48px -12px rgb(var(--color-ink) / 0.18), 0 8px 16px -6px rgb(var(--color-ink) / 0.12);
     --shadow-inner-paper: inset 0 1px 0 rgb(255 255 255 / 0.62), inset 0 -1px 0 rgb(var(--color-ink) / 0.04);
-    --focus-ring: 0 0 0 3px rgb(var(--color-ink) / 0.11);
+    --focus-ring: 0 0 0 2px rgb(var(--color-paper)), 0 0 0 4px rgb(var(--color-ink) / 0.08);
   }
 
   :root.theme-night {

@@ -16,6 +16,7 @@ const emit = defineEmits<{
   (e: 'open-image', images: GeneratedImage[], index: number): void
   (e: 'download', image: GeneratedImage, index: number): void
   (e: 'copy', text: string, message: string): void
+  (e: 'remix', image: GeneratedImage, prompt: string): void
 }>()
 
 function openImage(index: number) {
@@ -211,52 +212,50 @@ function isImageReady(image: GeneratedImage, index: number) {
         role="status"
         aria-live="polite"
       >
-        <div class="chat-pending-frame relative w-full overflow-hidden rounded-2xl" :class="previewFrameClass">
-          <div class="chat-pending-frame__grain absolute inset-0" aria-hidden="true"></div>
-          <div class="chat-pending-frame__scan absolute inset-0" aria-hidden="true"></div>
+          <div class="chat-pending-frame relative w-full overflow-hidden rounded-2xl" :class="previewFrameClass">
+            <div class="chat-pending-bg absolute inset-0"></div>
+            <div class="chat-pending-grain absolute inset-0"></div>
+            
+            <div class="absolute inset-0 flex items-center justify-center overflow-hidden">
+              <svg class="chat-pending-weave w-full h-full" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+                <defs>
+                  <filter id="glow">
+                    <feGaussianBlur stdDeviation="2.5" result="coloredBlur"/>
+                    <feMerge>
+                      <feMergeNode in="coloredBlur"/>
+                      <feMergeNode in="SourceGraphic"/>
+                    </feMerge>
+                  </filter>
+                </defs>
+                <g filter="url(#glow)">
+                  <path class="weave-path" d="M30,100 Q65,40 100,100 T170,100" fill="none" stroke="currentColor" stroke-width="0.5" stroke-opacity="0.3" />
+                  <path class="weave-path delay-1" d="M30,100 Q65,160 100,100 T170,100" fill="none" stroke="currentColor" stroke-width="0.5" stroke-opacity="0.2" />
+                  <circle class="weave-dot" cx="100" cy="100" r="1.5" fill="currentColor" fill-opacity="0.6" />
+                </g>
+              </svg>
+            </div>
 
-          <div
-            class="pointer-events-none absolute inset-x-3 top-3 z-10 flex items-center justify-between text-[10px] uppercase tracking-[0.22em] text-muted"
-          >
-            <span class="inline-flex items-center gap-2 font-mono">
-              <span class="chat-pending-bars" aria-hidden="true">
-                <span></span>
-                <span></span>
-                <span></span>
-              </span>
-              <span>{{ pendingStageLabel }}</span>
-            </span>
-            <span class="font-mono tabular-nums">
-              {{ typeof message.elapsedSeconds === 'number' ? String(message.elapsedSeconds).padStart(2, '0') + 's' : '' }}
-            </span>
-          </div>
+            <div
+              class="pointer-events-none absolute inset-x-3 top-3 z-10 flex items-center justify-between text-[10px] font-mono uppercase tracking-[0.22em] text-muted/60"
+            >
+              <div class="flex items-center gap-2">
+                <span class="flex h-1.5 w-1.5 rounded-full bg-ink/20 animate-pulse"></span>
+                <span>{{ pendingStageLabel }}</span>
+              </div>
+              <span class="tabular-nums">{{ typeof message.elapsedSeconds === 'number' ? String(message.elapsedSeconds).padStart(2, '0') + 's' : '' }}</span>
+            </div>
 
-          <div class="pointer-events-none absolute inset-0 z-10 grid place-items-center px-4" aria-hidden="true">
-            <div class="chat-pending-orb">
-              <span class="chat-pending-orb__ring"></span>
-              <span class="chat-pending-orb__ring" style="animation-delay: 0.9s"></span>
-              <span class="chat-pending-orb__halo"></span>
-              <span class="chat-pending-orb__center">
-                <span class="chat-pending-orb__percent">{{ pendingPercentLabel }}</span>
-                <span class="chat-pending-orb__hint">{{ pendingStageLabel }}</span>
-              </span>
+            <div class="pointer-events-none absolute inset-0 z-10 grid place-items-center px-4" aria-hidden="true">
+              <div class="chat-pending-manifest">
+                <span class="chat-pending-manifest__value">{{ pendingPercentLabel }}</span>
+                <span class="chat-pending-manifest__label">{{ pendingStageLabel }}</span>
+              </div>
+            </div>
+
+            <div class="pointer-events-none absolute inset-x-4 bottom-4 z-10" aria-hidden="true">
+              <div class="chat-pending-bar" :style="{ '--progress': pendingProgress + '%' }"></div>
             </div>
           </div>
-
-          <div
-            class="pointer-events-none absolute inset-x-3 bottom-3 z-10 space-y-2"
-            aria-hidden="true"
-          >
-            <div class="chat-pending-progress" :style="{ '--progress': pendingProgress + '%' }">
-              <div class="chat-pending-progress__bar"></div>
-              <div class="chat-pending-progress__glow"></div>
-            </div>
-            <div class="flex items-center justify-between text-[10px] font-mono uppercase tracking-[0.22em] text-muted/80">
-              <span>{{ pendingMetaLabel }}</span>
-              <span class="tabular-nums">{{ pendingPercentLabel }}</span>
-            </div>
-          </div>
-        </div>
       </div>
 
       <div
@@ -357,6 +356,15 @@ function isImageReady(image: GeneratedImage, index: number) {
         <div class="mt-3 flex flex-wrap items-center gap-1.5 px-1">
           <button
             type="button"
+            class="chat-action-chip chat-action-chip--primary"
+            aria-label="重混：以此图为参考并复用提示词"
+            @click="message.images && message.images[0] && emit('remix', message.images[0], message.content)"
+          >
+            <Icon name="sparkle" :size="12" />
+            <span>重混</span>
+          </button>
+          <button
+            type="button"
             class="chat-action-chip"
             aria-label="下载第一张"
             @click="message.images && message.images[0] && emit('download', message.images[0], 0)"
@@ -425,151 +433,101 @@ function isImageReady(image: GeneratedImage, index: number) {
   text-overflow: ellipsis;
 }
 
-.chat-pending-frame {
-  background:
-    radial-gradient(circle at 50% 32%, rgb(var(--color-cream) / 0.98), rgb(var(--color-cream) / 0.72) 38%, rgb(var(--color-paper) / 0.34) 100%),
-    linear-gradient(180deg, rgb(var(--color-vellum) / 0.96), rgb(var(--color-paper) / 0.7));
+.chat-pending-bg {
+  background: 
+    radial-gradient(circle at 30% 20%, rgb(var(--color-vellum) / 0.8) 0%, transparent 50%),
+    radial-gradient(circle at 70% 80%, rgb(var(--color-cream) / 0.6) 0%, transparent 50%),
+    rgb(var(--color-paper-soft));
+  animation: pending-bg-shift 8s ease-in-out infinite alternate;
 }
 
-.chat-pending-frame__scan::before {
+.chat-pending-grain {
+  opacity: 0.08;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+.chat-pending-weave {
+  transform: scale(1.4);
+  color: rgb(var(--color-ink));
+}
+
+.weave-path {
+  stroke-dasharray: 200;
+  stroke-dashoffset: 200;
+  animation: weave-flow 4s linear infinite;
+}
+
+.weave-path.delay-1 {
+  animation-delay: -2s;
+}
+
+.weave-dot {
+  animation: weave-dot-pulse 2s ease-in-out infinite;
+}
+
+.chat-pending-manifest {
+  text-align: center;
+  animation: manifest-float 5s ease-in-out infinite;
+}
+
+.chat-pending-manifest__value {
+  display: block;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 28px;
+  font-weight: 200;
+  letter-spacing: -0.05em;
+  color: rgb(var(--color-ink));
+  font-feature-settings: 'tnum';
+}
+
+.chat-pending-manifest__label {
+  display: block;
+  margin-top: -2px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.3em;
+  color: rgb(var(--color-muted));
+  opacity: 0.6;
+}
+
+.chat-pending-bar {
+  height: 1px;
+  background: rgb(var(--color-line-strong) / 0.2);
+  width: 100%;
+  position: relative;
+  overflow: hidden;
+}
+
+.chat-pending-bar::after {
   content: '';
   position: absolute;
-  inset: -20% 18% auto;
-  height: 46%;
-  border-radius: 999px;
-  background: radial-gradient(circle, rgb(255 255 255 / 0.5), rgb(255 255 255 / 0));
-  filter: blur(8px);
-  animation: chat-pending-scan 3.2s cubic-bezier(0.22, 0.7, 0.2, 1) infinite;
-}
-
-.chat-pending-bars {
-  display: inline-flex;
-  align-items: flex-end;
-  gap: 3px;
-  height: 10px;
-}
-
-.chat-pending-bars span {
-  width: 3px;
-  height: 100%;
-  border-radius: 999px;
-  background: rgb(var(--color-ink) / 0.46);
-  transform-origin: center bottom;
-  animation: chat-pending-bars 1.05s ease-in-out infinite;
-}
-
-.chat-pending-bars span:nth-child(2) {
-  animation-delay: 0.14s;
-}
-
-.chat-pending-bars span:nth-child(3) {
-  animation-delay: 0.28s;
-}
-
-.chat-pending-orb {
-  position: relative;
-  display: grid;
-  place-items: center;
-  width: 78px;
-  height: 78px;
-  animation: chat-pending-orb-float 4.8s ease-in-out infinite;
-}
-
-.chat-pending-orb__ring {
-  position: absolute;
-  inset: 0;
-  border-radius: 999px;
-  border: 1px solid rgb(var(--color-ink) / 0.16);
-  animation: chat-pending-ring 2.4s cubic-bezier(0.34, 1.56, 0.64, 1) infinite;
-}
-
-.chat-pending-orb__center {
-  position: relative;
-  display: grid;
-  place-items: center;
-  width: 48px;
-  height: 48px;
-  border-radius: 999px;
-  background: rgb(var(--color-vellum) / 0.98);
-  color: rgb(var(--color-ink));
-  box-shadow:
-    0 0 0 1px rgb(var(--color-ink) / 0.08),
-    0 18px 32px -24px rgb(var(--color-ink) / 0.38);
-  text-align: center;
-}
-
-.chat-pending-orb__halo {
-  position: absolute;
-  inset: -10%;
-  border-radius: 999px;
-  background: conic-gradient(
-    from 0deg,
-    rgb(var(--color-line-strong) / 0) 0deg,
-    rgb(var(--color-line-strong) / 0.25) 120deg,
-    rgb(var(--color-ink) / 0.18) 240deg,
-    rgb(var(--color-line-strong) / 0) 360deg
-  );
-  animation: chat-pending-halo 2.8s linear infinite;
-  opacity: 0.55;
-}
-
-.chat-pending-orb__percent {
-  display: block;
-  font-size: 12px;
-  font-weight: 700;
-  line-height: 1;
-  letter-spacing: -0.01em;
-}
-
-.chat-pending-orb__hint {
-  display: block;
-  margin-top: 2px;
-  font-size: 8px;
-  font-weight: 500;
-  line-height: 1;
-  opacity: 0.62;
-  letter-spacing: 0.02em;
-}
-
-.chat-pending-progress {
-  position: relative;
-  height: 3px;
-  border-radius: 999px;
-  overflow: hidden;
-  background: rgb(var(--color-ink) / 0.06);
-}
-
-.chat-pending-progress__bar {
-  position: absolute;
-  inset: 0;
+  inset: 0 auto 0 0;
   width: var(--progress, 0%);
-  height: 100%;
-  border-radius: 999px;
-  background: rgb(var(--color-ink) / 0.55);
-  transition: width 0.7s cubic-bezier(0.34, 1.56, 0.64, 1);
+  background: rgb(var(--color-ink));
+  transition: width 0.8s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
-.chat-pending-progress__glow {
-  position: absolute;
-  inset: 0;
-  width: var(--progress, 0%);
-  height: 100%;
-  border-radius: 999px;
-  background: linear-gradient(
-    90deg,
-    rgb(var(--color-ink) / 0) 0%,
-    rgb(var(--color-ink) / 0.18) 40%,
-    rgb(var(--color-ink) / 0) 100%
-  );
-  transition: width 0.7s cubic-bezier(0.34, 1.56, 0.64, 1);
-  filter: blur(2px);
+@keyframes pending-bg-shift {
+  0% { transform: scale(1) rotate(0deg); }
+  100% { transform: scale(1.1) rotate(2deg); }
 }
 
-.chat-pending-frame__grain {
-  pointer-events: none;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
-  opacity: 0.06;
-  mix-blend-mode: multiply;
+@keyframes weave-flow {
+  0% { stroke-dashoffset: 200; opacity: 0; }
+  10% { opacity: 0.3; }
+  90% { opacity: 0.3; }
+  100% { stroke-dashoffset: 0; opacity: 0; }
+}
+
+@keyframes weave-dot-pulse {
+  0%, 100% { transform: scale(1); opacity: 0.4; }
+  50% { transform: scale(1.5); opacity: 0.8; }
+}
+
+@keyframes manifest-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -667,6 +625,17 @@ function isImageReady(image: GeneratedImage, index: number) {
 
 .chat-action-chip:active {
   transform: translateY(0);
+}
+
+.chat-action-chip--primary {
+  background: rgb(var(--color-ink));
+  color: rgb(var(--color-paper));
+  border-color: rgb(var(--color-ink));
+}
+
+.chat-action-chip--primary:hover {
+  background: rgb(var(--color-ink) / 0.9);
+  border-color: rgb(var(--color-ink));
 }
 
 .chat-retry-chip {
@@ -793,15 +762,15 @@ function isImageReady(image: GeneratedImage, index: number) {
 
 .chat-image-fade {
   transition:
-    opacity 480ms cubic-bezier(0.2, 0.8, 0.2, 1),
-    transform 540ms cubic-bezier(0.2, 0.8, 0.2, 1),
-    filter 540ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    opacity 800ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    transform 1000ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    filter 900ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .chat-image-fade--loading {
   opacity: 0;
-  transform: scale(1.02);
-  filter: blur(8px) saturate(1.04);
+  transform: scale(0.96);
+  filter: blur(12px) saturate(0.5);
 }
 
 .chat-image-fade--ready {
