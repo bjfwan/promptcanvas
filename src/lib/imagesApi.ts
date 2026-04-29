@@ -286,6 +286,40 @@ export function resolveCreativityInstruction(creativity: number | null): string 
   return `创意强度：${creativity}/10 · 可大胆扩展构图、光线与细节，强化视觉戏剧性`
 }
 
+/**
+ * 确保图片文件是 PNG 格式。如果不是，则通过 Canvas 转换为 PNG。
+ * OpenAI 的 /v1/images/edits 接口强制要求 PNG。
+ */
+export async function ensurePngBlob(file: File): Promise<Blob> {
+  if (file.type === 'image/png') {
+    return file
+  }
+
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => {
+      const canvas = document.createElement('canvas')
+      canvas.width = img.width
+      canvas.height = img.height
+      const ctx = canvas.getContext('2d')
+      if (!ctx) {
+        reject(new Error('无法创建 Canvas 上下文'))
+        return
+      }
+      ctx.drawImage(img, 0, 0)
+      canvas.toBlob((blob) => {
+        if (blob) {
+          resolve(blob)
+        } else {
+          reject(new Error('Canvas 转换 PNG 失败'))
+        }
+      }, 'image/png')
+    }
+    img.onerror = () => reject(new Error('图片加载失败，无法转换为 PNG'))
+    img.src = URL.createObjectURL(file)
+  })
+}
+
 export function buildPrompt(payload: {
   prompt: string
   style: string

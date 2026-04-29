@@ -1,6 +1,7 @@
 import { snapshotProviderConfig } from './composables/useProviderConfig'
 import {
   buildPrompt,
+  ensurePngBlob,
   normalizeImages,
   payloadToValidated,
   resolveOpenAIError,
@@ -89,7 +90,7 @@ function summarizeReferenceImages(
   }))
 }
 
-function buildEditFormData(payload: {
+async function buildEditFormData(payload: {
   prompt: string
   size: string
   count: number
@@ -106,21 +107,49 @@ function buildEditFormData(payload: {
   formData.set('prompt', payload.prompt)
   formData.set('size', payload.size)
   formData.set('n', String(payload.count))
-  formData.set('output_format', payload.outputFormat)
-  formData.set('quality', payload.quality)
+  formData.set('response_format', payload.outputFormat)
   formData.set('user', requestId)
 
   if (payload.model) {
     formData.set('model', payload.model)
   }
 
-  payload.referenceImages.forEach((image) => {
-    if (image.file) {
-      formData.append('image[]', image.file, image.name)
+  if (payload.referenceImages.length > 0) {
+    const firstImage = payload.referenceImages[0]
+    if (firstImage.file) {
+      // 确保是 PNG
+      const pngBlob = await ensurePngBlob(firstImage.file)
+      formData.append('image', pngBlob, firstImage.name.replace(/\.[^.]+$/, '') + '.png')
     }
-  })
+
+    if (payload.referenceImages.length > 1) {
+      for (const image of payload.referenceImages.slice(1)) {
+        if (image.file) {
+          const pngBlob = await ensurePngBlob(image.file)
+          formData.append('image[]', pngBlob, image.name.replace(/\.[^.]+$/, '') + '.png')
+        }
+      }
+    }
+  }
 
   return formData
+}
+
+async function getHtmlErrorMessage(response: Response): Promise<string | null> {
+  try {
+    const text = await response.text()
+    if (!/<html[\s>]/i.test(text)) return null
+    
+    const titleMatch = text.match(/<title[^>]*>([\s\S]*?)<\/title>/i)
+    if (titleMatch && titleMatch[1].trim()) return titleMatch[1].trim()
+    
+    const h1Match = text.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i)
+    if (h1Match && h1Match[1].trim()) return h1Match[1].trim()
+    
+    return `HTTP ${response.status} (HTML Response)`
+  } catch {
+    return null
+  }
 }
 
 function buildRequest(
@@ -234,7 +263,7 @@ export async function generateImage(payload: GenerateImageRequest): Promise<Gene
           'Content-Type': 'application/json',
         })
     const requestBody = hasReferenceImages
-      ? buildEditFormData(
+      ? await buildEditFormData(
           {
             prompt: promptText,
             size: validated.size,
@@ -312,15 +341,16 @@ export async function generateImage(payload: GenerateImageRequest): Promise<Gene
     )
 
     if (!upstream.ok) {
-      const errorBody = await readJson<UpstreamErrorBody>(upstream)
+      const htmlError = await getHtmlErrorMessage(upstream.clone())
+      const errorBody = htmlError ? null : await readJson<UpstreamErrorBody>(upstream)
       group.error('upstream returned non-ok', {
         status: upstream.status,
-        body: errorBody,
+        body: errorBody || htmlError,
       })
       const mapped = resolveOpenAIError({
         status: upstream.status,
         code: errorBody?.error?.code,
-        message: errorBody?.error?.message,
+        message: htmlError || errorBody?.error?.message,
       })
       throw new ApiRequestError(mapped.message, mapped.code, requestId)
     }
