@@ -401,8 +401,8 @@ function isImageReady(image: GeneratedImage, index: number) {
   position: relative;
   overflow: hidden;
   border-radius: 18px;
-  border: 1px solid rgba(200, 184, 154, 0.7);
-  background: #f6efe3;
+  border: 1px solid rgb(var(--color-line-strong) / 0.7);
+  background: rgb(var(--color-paper-soft));
   min-height: 84px;
   aspect-ratio: 1;
 }
@@ -415,8 +415,8 @@ function isImageReady(image: GeneratedImage, index: number) {
   position: absolute;
   inset: auto 0 0 0;
   padding: 0.35rem 0.5rem;
-  background: linear-gradient(180deg, transparent, rgba(26, 22, 18, 0.78));
-  color: #faf3e6;
+  background: linear-gradient(180deg, transparent, rgb(var(--color-ink) / 0.78));
+  color: rgb(var(--color-paper));
   font-size: 10px;
   font-weight: 500;
   line-height: 1.2;
@@ -427,8 +427,8 @@ function isImageReady(image: GeneratedImage, index: number) {
 
 .chat-pending-frame {
   background:
-    radial-gradient(circle at 50% 32%, rgba(250, 243, 230, 0.98), rgba(250, 243, 230, 0.72) 38%, rgba(241, 233, 220, 0.34) 100%),
-    linear-gradient(180deg, rgba(253, 248, 237, 0.96), rgba(241, 233, 220, 0.7));
+    radial-gradient(circle at 50% 32%, rgb(var(--color-cream) / 0.98), rgb(var(--color-cream) / 0.72) 38%, rgb(var(--color-paper) / 0.34) 100%),
+    linear-gradient(180deg, rgb(var(--color-vellum) / 0.96), rgb(var(--color-paper) / 0.7));
 }
 
 .chat-pending-frame__scan::before {
@@ -437,7 +437,7 @@ function isImageReady(image: GeneratedImage, index: number) {
   inset: -20% 18% auto;
   height: 46%;
   border-radius: 999px;
-  background: radial-gradient(circle, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0));
+  background: radial-gradient(circle, rgb(255 255 255 / 0.5), rgb(255 255 255 / 0));
   filter: blur(8px);
   animation: chat-pending-scan 3.2s cubic-bezier(0.22, 0.7, 0.2, 1) infinite;
 }
@@ -453,7 +453,7 @@ function isImageReady(image: GeneratedImage, index: number) {
   width: 3px;
   height: 100%;
   border-radius: 999px;
-  background: rgba(26, 22, 18, 0.46);
+  background: rgb(var(--color-ink) / 0.46);
   transform-origin: center bottom;
   animation: chat-pending-bars 1.05s ease-in-out infinite;
 }
@@ -479,7 +479,7 @@ function isImageReady(image: GeneratedImage, index: number) {
   position: absolute;
   inset: 0;
   border-radius: 999px;
-  border: 1px solid rgba(26, 22, 18, 0.16);
+  border: 1px solid rgb(var(--color-ink) / 0.16);
   animation: chat-pending-ring 2.4s cubic-bezier(0.34, 1.56, 0.64, 1) infinite;
 }
 
@@ -490,11 +490,11 @@ function isImageReady(image: GeneratedImage, index: number) {
   width: 48px;
   height: 48px;
   border-radius: 999px;
-  background: rgba(253, 248, 237, 0.98);
-  color: #1a1612;
+  background: rgb(var(--color-vellum) / 0.98);
+  color: rgb(var(--color-ink));
   box-shadow:
-    0 0 0 1px rgba(26, 22, 18, 0.08),
-    0 18px 32px -24px rgba(26, 22, 18, 0.38);
+    0 0 0 1px rgb(var(--color-ink) / 0.08),
+    0 18px 32px -24px rgb(var(--color-ink) / 0.38);
   text-align: center;
 }
 
@@ -504,10 +504,10 @@ function isImageReady(image: GeneratedImage, index: number) {
   border-radius: 999px;
   background: conic-gradient(
     from 0deg,
-    rgba(200, 184, 154, 0.0) 0deg,
-    rgba(200, 184, 154, 0.25) 120deg,
-    rgba(26, 22, 18, 0.18) 240deg,
-    rgba(200, 184, 154, 0.0) 360deg
+    rgb(var(--color-line-strong) / 0) 0deg,
+    rgb(var(--color-line-strong) / 0.25) 120deg,
+    rgb(var(--color-ink) / 0.18) 240deg,
+    rgb(var(--color-line-strong) / 0) 360deg
   );
   animation: chat-pending-halo 2.8s linear infinite;
   opacity: 0.55;
@@ -536,7 +536,7 @@ function isImageReady(image: GeneratedImage, index: number) {
   height: 3px;
   border-radius: 999px;
   overflow: hidden;
-  background: rgba(26, 22, 18, 0.06);
+  background: rgb(var(--color-ink) / 0.06);
 }
 
 .chat-pending-progress__bar {
@@ -545,7 +545,7 @@ function isImageReady(image: GeneratedImage, index: number) {
   width: var(--progress, 0%);
   height: 100%;
   border-radius: 999px;
-  background: rgba(26, 22, 18, 0.55);
+  background: rgb(var(--color-ink) / 0.55);
   transition: width 0.7s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
@@ -557,9 +557,9 @@ function isImageReady(image: GeneratedImage, index: number) {
   border-radius: 999px;
   background: linear-gradient(
     90deg,
-    rgba(26, 22, 18, 0.0) 0%,
-    rgba(26, 22, 18, 0.18) 40%,
-    rgba(26, 22, 18, 0.0) 100%
+    rgb(var(--color-ink) / 0) 0%,
+    rgb(var(--color-ink) / 0.18) 40%,
+    rgb(var(--color-ink) / 0) 100%
   );
   transition: width 0.7s cubic-bezier(0.34, 1.56, 0.64, 1);
   filter: blur(2px);
@@ -590,7 +590,7 @@ function isImageReady(image: GeneratedImage, index: number) {
   justify-content: space-between;
   padding: 0.75rem;
   pointer-events: none;
-  background: linear-gradient(180deg, rgba(253, 248, 237, 0.9), rgba(241, 233, 220, 0.58));
+  background: linear-gradient(180deg, rgb(var(--color-vellum) / 0.9), rgb(var(--color-paper) / 0.58));
 }
 
 .chat-image-placeholder__glow {
@@ -598,7 +598,7 @@ function isImageReady(image: GeneratedImage, index: number) {
   width: min(56%, 168px);
   height: min(56%, 168px);
   border-radius: 999px;
-  background: radial-gradient(circle, rgba(253, 248, 237, 0.95), rgba(253, 248, 237, 0) 68%);
+  background: radial-gradient(circle, rgb(var(--color-vellum) / 0.95), rgb(var(--color-vellum) / 0) 68%);
   filter: blur(6px);
 }
 
@@ -609,15 +609,15 @@ function isImageReady(image: GeneratedImage, index: number) {
   gap: 6px;
   padding: 0.55rem 0.8rem;
   border-radius: 999px;
-  background: rgba(253, 248, 237, 0.84);
-  box-shadow: 0 18px 34px -26px rgba(26, 22, 18, 0.45);
+  background: rgb(var(--color-vellum) / 0.84);
+  box-shadow: 0 18px 34px -26px rgb(var(--color-ink) / 0.45);
 }
 
 .chat-image-placeholder__loader span {
   width: 6px;
   height: 6px;
   border-radius: 999px;
-  background: rgba(26, 22, 18, 0.55);
+  background: rgb(var(--color-ink) / 0.55);
   animation: chat-image-loader 1.15s ease-in-out infinite;
 }
 
@@ -643,18 +643,16 @@ function isImageReady(image: GeneratedImage, index: number) {
   padding: 0.4rem 0.75rem;
   min-height: 32px;
   border-radius: 999px;
-  border: 1px solid #dfd3bf;
-  background: #faf3e6;
-  color: #1a1612;
+  border: 1px solid rgb(var(--color-line));
+  background: rgb(var(--color-cream));
+  color: rgb(var(--color-ink));
   font-size: 11px;
   font-weight: 500;
   letter-spacing: 0.01em;
   transition: border-color 140ms ease, background-color 140ms ease, transform 140ms ease;
-  /* 避免双击缩放 + 默认 300ms 点击延迟。 */
   touch-action: manipulation;
 }
 
-/* 在 32px 高度上补足 12px 热区外拓，使总点击区达到 44px。 */
 .chat-action-chip::before {
   content: '';
   position: absolute;
@@ -662,8 +660,8 @@ function isImageReady(image: GeneratedImage, index: number) {
 }
 
 .chat-action-chip:hover {
-  border-color: #c8b89a;
-  background: #fdf8ed;
+  border-color: rgb(var(--color-line-strong));
+  background: rgb(var(--color-vellum));
   transform: translateY(-1px);
 }
 
@@ -680,8 +678,8 @@ function isImageReady(image: GeneratedImage, index: number) {
   min-height: 32px;
   border-radius: 999px;
   border: 1px solid currentColor;
-  background: rgba(154, 58, 28, 0.08);
-  color: #9a3a1c;
+  background: rgb(var(--color-accent) / 0.08);
+  color: rgb(var(--color-accent));
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.02em;
@@ -696,7 +694,7 @@ function isImageReady(image: GeneratedImage, index: number) {
 }
 
 .chat-retry-chip:hover {
-  background: rgba(154, 58, 28, 0.16);
+  background: rgb(var(--color-accent) / 0.16);
   transform: translateY(-1px);
 }
 
@@ -705,7 +703,7 @@ function isImageReady(image: GeneratedImage, index: number) {
 }
 
 .chat-retry-chip--quiet {
-  border-color: rgba(154, 58, 28, 0.4);
+  border-color: rgb(var(--color-accent) / 0.4);
   background: transparent;
   font-weight: 500;
 }
@@ -793,8 +791,6 @@ function isImageReady(image: GeneratedImage, index: number) {
   }
 }
 
-/* 渐进式加载：未准备好时隐藏 + 微微放大 + 模糊，准备好后类似 blur-up 动画。
-   使用 transform / filter / opacity 三项叠加增强质感，由 GPU 合成，不会造成 reflow。 */
 .chat-image-fade {
   transition:
     opacity 480ms cubic-bezier(0.2, 0.8, 0.2, 1),

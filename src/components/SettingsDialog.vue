@@ -196,7 +196,7 @@ onBeforeUnmount(() => {
     <Transition name="dlg-fade">
       <div
         v-if="open"
-        class="fixed inset-0 z-sheet flex items-center justify-center px-4 py-6"
+        class="fixed inset-0 z-sheet flex items-end justify-center px-0 py-0 sm:items-center sm:px-4 sm:py-6"
         role="dialog"
         aria-modal="true"
         aria-label="设置"
@@ -206,9 +206,9 @@ onBeforeUnmount(() => {
         <Transition name="dlg-zoom">
           <div
             v-if="open"
-            class="relative flex w-full max-w-xl flex-col overflow-hidden rounded-3xl border border-line-strong bg-vellum text-ink shadow-paper-3"
+            class="relative flex max-h-[92dvh] w-full max-w-xl flex-col overflow-hidden rounded-t-[28px] border border-line-strong bg-vellum text-ink shadow-paper-3 sm:max-h-none sm:rounded-3xl"
           >
-            <header class="flex items-start justify-between gap-3 border-b border-line px-6 py-5">
+            <header class="flex items-start justify-between gap-3 border-b border-line px-5 py-4 sm:px-6 sm:py-5">
               <div>
                 <p class="display-eyebrow">Settings · 设置</p>
                 <h2 class="mt-1.5 font-display text-2xl tracking-tightish">生成偏好</h2>
@@ -218,7 +218,7 @@ onBeforeUnmount(() => {
               </button>
             </header>
 
-            <div class="touch-scroll-y max-h-[70dvh] space-y-5 overflow-y-auto px-6 py-5">
+            <div class="touch-scroll-y max-h-[calc(92dvh-8.5rem)] space-y-5 overflow-y-auto px-5 py-5 sm:max-h-[70dvh] sm:px-6">
               <section
                 class="rounded-2xl border border-line bg-paper-soft/60 p-4"
                 :class="!provider.isConfigured.value && 'ring-1 ring-amber-400/40'"
@@ -487,7 +487,7 @@ onBeforeUnmount(() => {
             </div>
 
             <footer
-              class="flex flex-col-reverse items-stretch gap-2 border-t border-line bg-vellum/80 px-6 py-4 sm:flex-row sm:items-center sm:justify-between"
+              class="flex flex-col-reverse items-stretch gap-2 border-t border-line bg-vellum/80 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6"
             >
               <button
                 type="button"

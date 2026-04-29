@@ -1,8 +1,5 @@
 import type { IconSet } from './types'
 
-/**
- * 状态/反馈/标记类图标：成功、警告、信息、闪光、闪电、星标等
- */
 export const statusIcons = {
   check: {
     paths: ['M5 12.5l4.5 4.5L19 7'],
@@ -11,7 +8,6 @@ export const statusIcons = {
     paths: ['M12 4l9 16H3l9-16z', 'M12 10v4', 'M12 17.5h.01'],
   },
   info: {
-    // 圆里 i：圆 + i 顶点 + i 主干
     paths: [
       'M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16z',
       'M12 8h.01',
@@ -19,7 +15,6 @@ export const statusIcons = {
     ],
   },
   sparkle: {
-    // 主四角星 + 一颗小亮点，更克制
     paths: [
       'M12 4l1.4 5.1L18.5 11l-5.1 1.5L12 18l-1.4-5.5L5.5 11l5.1-1.4z',
       'M19 4.5l.45 1.55L21 6.5l-1.55.45L19 8.5l-.45-1.55L17 6.5l1.55-.45z',
@@ -34,11 +29,9 @@ export const statusIcons = {
     ],
   },
   signal: {
-    // 渐高的信号柱
     paths: ['M4 18h2', 'M9 18v-5', 'M14 18v-9', 'M19 18v-14'],
   },
   off: {
-    // 电源符号
     paths: ['M12 4v8', 'M5.6 7.4a8 8 0 1 0 12.8 0'],
   },
   eye: {
@@ -57,7 +50,6 @@ export const statusIcons = {
     ],
   },
   pulse: {
-    // 心电图：脉搏
     paths: ['M3 12h4l2-5 3 10 2-5h7'],
   },
 } satisfies IconSet

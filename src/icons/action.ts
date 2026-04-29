@@ -1,8 +1,5 @@
 import type { IconSet } from './types'
 
-/**
- * 用户主动触发的动作类图标：下载/复制/发送/分享/外链等
- */
 export const actionIcons = {
   download: {
     paths: ['M12 4v12', 'M6 12l6 6 6-6', 'M5 20h14'],
@@ -25,11 +22,9 @@ export const actionIcons = {
     paths: ['M4 4v5h5', 'M5 9a8 8 0 1 1 1.5 8'],
   },
   send: {
-    // 纸飞机
     paths: ['M5 12L20 4l-7 16-2-7-6-1z'],
   },
   share: {
-    // 上箭头 + 入口的分享框
     paths: [
       'M12 4v12',
       'M7 9l5-5 5 5',
@@ -43,7 +38,6 @@ export const actionIcons = {
     ],
   },
   external: {
-    // 外链：右上箭头 + 容器框
     paths: [
       'M14 4h6v6',
       'M11 13l9-9',

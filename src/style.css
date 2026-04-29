@@ -4,13 +4,44 @@
 
 @layer base {
   :root {
-    /* 动态根字号：在窄视口（~320px）使用 0.9375rem，宽视口（≥1280px）回到 1rem。
-       关键好处：
-       1. 用 rem 而非 px 表达上下限，仍然尊重浏览器 / 系统字号偏好
-          （用户在 iOS/Android 把字号调大时整个 app 会跟着放大，无障碍友好）。
-       2. clamp 让小屏不会被过大的间距 / 字号挤压。
-       范围只压缩 ~6.25%，避免动到现有布局的 rem 间距。 */
     font-size: clamp(0.9375rem, 0.875rem + 0.4vw, 1rem);
+    color-scheme: light;
+    --color-ink: 25 27 24;
+    --color-paper: 244 240 231;
+    --color-paper-soft: 232 229 216;
+    --color-cream: 249 246 237;
+    --color-vellum: 253 251 244;
+    --color-muted: 100 105 95;
+    --color-line: 214 208 191;
+    --color-line-strong: 166 157 133;
+    --color-accent: 162 74 43;
+    --color-forest: 77 116 98;
+    --color-ochre: 168 114 43;
+    --shadow-paper-1: 0 1px 0 rgb(var(--color-ink) / 0.04), 0 4px 12px -8px rgb(var(--color-ink) / 0.16);
+    --shadow-paper-2: 0 1px 0 rgb(var(--color-ink) / 0.06), 0 12px 24px -16px rgb(var(--color-ink) / 0.2);
+    --shadow-paper-3: 0 1px 0 rgb(var(--color-ink) / 0.06), 0 28px 56px -20px rgb(var(--color-ink) / 0.32), 0 12px 24px -16px rgb(var(--color-ink) / 0.18);
+    --shadow-inner-paper: inset 0 1px 0 rgb(255 255 255 / 0.62), inset 0 -1px 0 rgb(var(--color-ink) / 0.04);
+    --focus-ring: 0 0 0 3px rgb(var(--color-ink) / 0.11);
+  }
+
+  :root.theme-night {
+    color-scheme: dark;
+    --color-ink: 246 241 232;
+    --color-paper: 18 20 19;
+    --color-paper-soft: 29 32 30;
+    --color-cream: 36 39 36;
+    --color-vellum: 43 45 41;
+    --color-muted: 178 170 154;
+    --color-line: 73 75 68;
+    --color-line-strong: 114 108 92;
+    --color-accent: 238 126 82;
+    --color-forest: 140 181 151;
+    --color-ochre: 224 170 88;
+    --shadow-paper-1: 0 1px 0 rgb(255 255 255 / 0.04), 0 10px 24px -18px rgb(0 0 0 / 0.74);
+    --shadow-paper-2: 0 1px 0 rgb(255 255 255 / 0.05), 0 18px 36px -22px rgb(0 0 0 / 0.82);
+    --shadow-paper-3: 0 1px 0 rgb(255 255 255 / 0.06), 0 34px 68px -26px rgb(0 0 0 / 0.9), 0 14px 28px -18px rgb(0 0 0 / 0.78);
+    --shadow-inner-paper: inset 0 1px 0 rgb(255 255 255 / 0.08), inset 0 -1px 0 rgb(0 0 0 / 0.26);
+    --focus-ring: 0 0 0 3px rgb(var(--color-accent) / 0.22);
   }
 
   * {
@@ -30,18 +61,18 @@
     margin: 0;
     min-width: 320px;
     min-height: 100dvh;
-    background: #f1e9dc;
-    color: #1a1612;
-    font-family: 'Inter Tight', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    background: rgb(var(--color-paper));
+    color: rgb(var(--color-ink));
+    font-family: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
     font-feature-settings: 'ss01', 'cv11';
     overflow-x: hidden;
+    overscroll-behavior: none;
   }
 
   #app {
     min-height: 100dvh;
   }
 
-  /* 横屏 + 矮高度（典型小屏手机横屏）：略缩根字号，让 chat dock 元素不挤压换行。 */
   @media (orientation: landscape) and (max-height: 540px) {
     :root {
       font-size: clamp(0.875rem, 0.8125rem + 0.25vw, 0.9375rem);
@@ -62,8 +93,8 @@
   }
 
   ::selection {
-    background: #1a1612;
-    color: #faf3e6;
+    background: rgb(var(--color-ink));
+    color: rgb(var(--color-paper));
   }
 
   details > summary {
@@ -105,11 +136,21 @@
 
   .field-select,
   .field-input {
-    @apply w-full rounded-[0.625rem] border border-line bg-cream/70 px-3.5 py-2.5 text-base font-medium text-ink outline-none transition placeholder:text-muted/60 hover:border-line-strong focus:border-ink focus:bg-paper focus:shadow-[0_0_0_3px_rgba(26,22,18,0.10)] sm:text-sm;
+    @apply w-full rounded-[0.625rem] border border-line bg-cream/70 px-3.5 py-2.5 text-base font-medium text-ink outline-none transition placeholder:text-muted/60 hover:border-line-strong focus:border-ink focus:bg-paper sm:text-sm;
+    box-shadow: none;
+  }
+
+  .field-select:focus,
+  .field-input:focus {
+    box-shadow: var(--focus-ring);
   }
 
   .field-textarea {
-    @apply w-full resize-none rounded-2xl border border-line bg-cream/70 px-4 py-3 text-base leading-relaxed text-ink outline-none transition placeholder:text-muted/60 hover:border-line-strong focus:border-ink focus:bg-paper focus:shadow-[0_0_0_3px_rgba(26,22,18,0.10)] sm:text-[15px];
+    @apply w-full resize-none rounded-2xl border border-line bg-cream/70 px-4 py-3 text-base leading-relaxed text-ink outline-none transition placeholder:text-muted/60 hover:border-line-strong focus:border-ink focus:bg-paper sm:text-[15px];
+  }
+
+  .field-textarea:focus {
+    box-shadow: var(--focus-ring);
   }
 
   .result-button {
@@ -142,7 +183,7 @@
 
   .icon-btn,
   .icon-btn-sm {
-    @apply inline-grid place-items-center rounded-full border border-line bg-vellum text-ink transition hover:border-line-strong hover:bg-cream focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/15;
+    @apply inline-grid place-items-center rounded-full border border-line bg-vellum text-ink transition hover:-translate-y-px hover:border-line-strong hover:bg-cream active:translate-y-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/15;
   }
 
   .icon-btn {
@@ -182,7 +223,7 @@
   }
 
   .paper-bg {
-    background-color: #f1e9dc;
+    background-color: rgb(var(--color-paper));
     background-image: url("data:image/svg+xml;utf8,%3Csvg viewBox='0 0 280 280' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch' seed='4'/%3E%3CfeColorMatrix values='0 0 0 0 0.09 0 0 0 0 0.075 0 0 0 0 0.06 0 0 0 0.07 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   }
 
@@ -252,9 +293,9 @@
     background: linear-gradient(
       to bottom,
       transparent 0%,
-      rgba(26, 22, 18, 0.025) 45%,
-      rgba(26, 22, 18, 0.07) 60%,
-      rgba(26, 22, 18, 0.025) 75%,
+      rgb(var(--color-ink) / 0.025) 45%,
+      rgb(var(--color-ink) / 0.07) 60%,
+      rgb(var(--color-ink) / 0.025) 75%,
       transparent 100%
     );
     animation: canvas-scan 3.6s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite;
@@ -263,8 +304,8 @@
 
   .canvas-grid {
     background-image:
-      linear-gradient(to right, rgba(26, 22, 18, 0.04) 1px, transparent 1px),
-      linear-gradient(to bottom, rgba(26, 22, 18, 0.04) 1px, transparent 1px);
+      linear-gradient(to right, rgb(var(--color-ink) / 0.04) 1px, transparent 1px),
+      linear-gradient(to bottom, rgb(var(--color-ink) / 0.04) 1px, transparent 1px);
     background-size: 32px 32px;
   }
 
@@ -272,7 +313,7 @@
     width: 4px;
     height: 4px;
     border-radius: 9999px;
-    background: rgb(26 22 18 / 0.55);
+    background: rgb(var(--color-ink) / 0.55);
     animation: ink-blink 1.4s ease-in-out infinite;
   }
   .ink-dot:nth-child(2) { animation-delay: 0.18s; }

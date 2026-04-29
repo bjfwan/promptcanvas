@@ -1,8 +1,5 @@
 import type { IconSet } from './types'
 
-/**
- * 与图像/画布/缩放相关的图标
- */
 export const mediaIcons = {
   image: {
     paths: [
@@ -40,7 +37,6 @@ export const mediaIcons = {
     ],
   },
   ratio: {
-    // 长方形画框 + 中分线，传达比例
     paths: [
       'M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z',
       'M4 9h16',
@@ -48,11 +44,9 @@ export const mediaIcons = {
     ],
   },
   frame: {
-    // 空白画框：两层，象征「画布等待」
     paths: ['M4 4h16v16H4z', 'M8 8h8v8H8z'],
   },
   focus: {
-    // 取景框：四个 L 角 + 中心点
     paths: [
       'M4 8V5a1 1 0 0 1 1-1h3',
       'M16 4h3a1 1 0 0 1 1 1v3',
@@ -62,7 +56,6 @@ export const mediaIcons = {
     ],
   },
   camera: {
-    // 相机：机身 + 镜头
     paths: [
       'M4 8h3l1.5-2h7L17 8h3v11H4z',
       'M12 16.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z',

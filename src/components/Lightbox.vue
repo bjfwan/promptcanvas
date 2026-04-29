@@ -8,8 +8,6 @@ import Icon from './Icon.vue'
 const lightbox = useLightbox()
 const { vibrate } = useVibration()
 
-// 双手指任意缩放 + 单手拖动 + 双击在 1×与 2× 之间切换。
-// 未缩放时，水平滑动则触发上一张 / 下一张。
 const MIN_SCALE = 1
 const MAX_SCALE = 4
 const DOUBLE_TAP_SCALE = 2
@@ -22,7 +20,6 @@ const gestureActive = ref(false)
 const imageWrapRef = ref<HTMLDivElement | null>(null)
 const imageRef = ref<HTMLImageElement | null>(null)
 
-// 手势临时状态（不需要响应性，避免多余重渲染）
 let pinchStartDistance = 0
 let pinchStartScale = 1
 let pinchCenter: { x: number, y: number } | null = null
@@ -57,8 +54,6 @@ function clampPan() {
   if (!wrap || !img) return
   const wrapRect = wrap.getBoundingClientRect()
   const imgRect = img.getBoundingClientRect()
-  // 缩放后的内容尺寸 = 未变形尺寸 × scale，但这里 imgRect 已是变形后的，
-  // 可以直接使用。
   const overflowX = Math.max(0, (imgRect.width - wrapRect.width) / 2)
   const overflowY = Math.max(0, (imgRect.height - wrapRect.height) / 2)
   translateX.value = Math.max(-overflowX, Math.min(overflowX, translateX.value))
@@ -73,7 +68,6 @@ function setScale(next: number, anchor?: { x: number, y: number }) {
   }
   const clamped = Math.max(MIN_SCALE, Math.min(MAX_SCALE, next))
   if (anchor) {
-    // 以 anchor 为中心：令该点在缩放前后位置保持不变
     const rect = wrap.getBoundingClientRect()
     const cx = anchor.x - rect.left - rect.width / 2
     const cy = anchor.y - rect.top - rect.height / 2
@@ -145,7 +139,6 @@ onBeforeUnmount(() => {
 
 function onTouchStart(event: TouchEvent) {
   if (event.touches.length === 2) {
-    // 双指 pinch。同时取消其他全部手势状态。
     const t1 = event.touches[0]
     const t2 = event.touches[1]
     pinchStartDistance = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY)
@@ -162,12 +155,10 @@ function onTouchStart(event: TouchEvent) {
   } else if (event.touches.length === 1) {
     const t = event.touches[0]
     if (isZoomed.value) {
-      // 单指拖动平移
       panStart = { x: t.clientX, y: t.clientY, tx: translateX.value, ty: translateY.value }
       swipeStart = null
       gestureActive.value = true
     } else {
-      // 单指记录「起点」，进一步在 touchend 里决定是双击还是左右滑动切换
       swipeStart = { x: t.clientX, y: t.clientY, time: Date.now() }
       panStart = null
     }
@@ -182,7 +173,6 @@ function onTouchMove(event: TouchEvent) {
     const distance = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY)
     const ratio = distance / pinchStartDistance
     const nextScale = Math.max(MIN_SCALE * 0.85, Math.min(MAX_SCALE * 1.05, pinchStartScale * ratio))
-    // 以 pinch 中心为焦点进行缩放：从 pinchStart 状态重新计算 translate
     if (pinchCenter && imageWrapRef.value) {
       const rect = imageWrapRef.value.getBoundingClientRect()
       const cx = pinchCenter.x - rect.left - rect.width / 2
@@ -206,7 +196,6 @@ function onTouchEnd(event: TouchEvent) {
     gestureActive.value = false
   }
 
-  // 低于 MIN_SCALE 则弹回
   if (scale.value < MIN_SCALE) {
     setScale(MIN_SCALE)
   } else if (scale.value > MAX_SCALE) {
@@ -215,7 +204,6 @@ function onTouchEnd(event: TouchEvent) {
     clampPan()
   }
 
-  // 双指手势结束，不走双击 / 滑动分支
   if (event.touches.length >= 1 && pinchStartDistance > 0) {
     pinchStartDistance = 0
     pinchCenter = null
@@ -228,14 +216,12 @@ function onTouchEnd(event: TouchEvent) {
     return
   }
 
-  // 拖动结束
   if (panStart && event.touches.length === 0) {
     panStart = null
     suppressNextClick = true
     return
   }
 
-  // 单指点击 / 左右滑动分叉
   if (swipeStart && event.changedTouches.length === 1 && event.touches.length === 0) {
     const t = event.changedTouches[0]
     const dx = t.clientX - swipeStart.x
@@ -244,10 +230,8 @@ function onTouchEnd(event: TouchEvent) {
     const dt = Date.now() - swipeStart.time
 
     if (dist < 12 && dt < 280) {
-      // 点击 —— 检测到双击则切换缩放
       const now = Date.now()
       if (lastTapPos && now - lastTapTime < 320 && Math.hypot(t.clientX - lastTapPos.x, t.clientY - lastTapPos.y) < 32) {
-        // 双击
         if (isZoomed.value) {
           resetTransform()
         } else {
@@ -262,7 +246,6 @@ function onTouchEnd(event: TouchEvent) {
         lastTapPos = { x: t.clientX, y: t.clientY }
       }
     } else if (!isZoomed.value && Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy)) {
-      // 未缩放状态下的左右滑动切换
       if (dx < 0) lightbox.next()
       else lightbox.prev()
       suppressNextClick = true
@@ -272,13 +255,10 @@ function onTouchEnd(event: TouchEvent) {
 }
 
 function onImageClick(event: MouseEvent) {
-  // 触摸路径已接管缩放逻辑，此处成为桌面单击入口；
-  // 如果紧接着 touchend 推导出已为双击 / 滑动，则忽略这一次点击
   if (suppressNextClick) {
     suppressNextClick = false
     return
   }
-  // 判定为鼠标点击（触摸设备 click 由顶部接管）
   if (event.detail > 0) {
     if (isZoomed.value) {
       resetTransform()
@@ -289,7 +269,6 @@ function onImageClick(event: MouseEvent) {
 }
 
 function onWheel(event: WheelEvent) {
-  // 桌面滑轮缩放：以鼠标为焦点
   if (!event.ctrlKey && !event.metaKey && !isZoomed.value) return
   event.preventDefault()
   const delta = -event.deltaY * 0.0025
@@ -301,7 +280,6 @@ async function copyPrompt() {
   try {
     await navigator.clipboard.writeText(activeImage.value.revisedPrompt)
   } catch {
-    /* swallow */
   }
 }
 
@@ -478,13 +456,10 @@ async function downloadCurrent() {
   transition: opacity 0.32s ease-out;
 }
 
-/* 禁止浏览器在 stage 上的默认 pinch-zoom（iOS Safari）以使用我们的手势逻辑。
-   touch-action: none 会拦住所有原生手势，双指 / 平移 / 双击全部交给 onTouch* 处理。 */
 .lb-stage {
   touch-action: none;
   -webkit-user-select: none;
   user-select: none;
-  /* 避免 iOS 长按调起「保存图片」默认菜单（下载按钮已提供）。 */
   -webkit-touch-callout: none;
 }
 </style>

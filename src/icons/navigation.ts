@@ -1,8 +1,5 @@
 import type { IconSet } from './types'
 
-/**
- * 方向、跳转、关闭一类的图标
- */
 export const navigationIcons = {
   arrowRight: {
     paths: ['M5 12h14', 'M13 6l6 6-6 6'],

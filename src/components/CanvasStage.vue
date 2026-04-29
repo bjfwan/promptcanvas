@@ -42,6 +42,20 @@ const orient = computed<'portrait' | 'landscape' | 'square'>(() => {
 })
 
 const elapsedLabel = computed(() => `${props.elapsedSeconds.toString().padStart(2, '0')}s`)
+const canvasProgress = computed(() => {
+  const elapsed = Math.max(0, props.elapsedSeconds)
+  if (elapsed <= 0) return 6
+  if (elapsed < 8) return Math.round(6 + elapsed * 6.5)
+  if (elapsed < 22) return Math.round(58 + (elapsed - 8) * 2.1)
+  return Math.min(96, Math.round(88 + (1 - Math.exp(-(elapsed - 22) / 14)) * 8))
+})
+const canvasStageLabel = computed(() => {
+  if (canvasProgress.value < 26) return '拆解提示词'
+  if (canvasProgress.value < 58) return '组织构图'
+  if (canvasProgress.value < 84) return '生成细节'
+  return '等待返回'
+})
+const canvasProgressStyle = computed(() => ({ '--progress': `${canvasProgress.value}%` }))
 
 function imageSource(image: GeneratedImage) {
   return resolveImageSource(image)
@@ -101,7 +115,7 @@ function isImageReady(image: GeneratedImage, index: number) {
         <div class="flex items-center justify-between font-mono text-[10px] uppercase tracking-[0.22em] text-muted">
           <span class="inline-flex items-center gap-1.5">
             <Icon name="sparkle" :size="11" class="animate-breathe" />
-            composing
+            {{ canvasStageLabel }}
           </span>
           <span class="tabular-nums">{{ elapsedLabel }}</span>
         </div>
@@ -129,6 +143,9 @@ function isImageReady(image: GeneratedImage, index: number) {
         </div>
 
         <div class="space-y-2.5">
+          <div class="canvas-progress" :style="canvasProgressStyle" aria-hidden="true">
+            <span></span>
+          </div>
           <p class="font-display text-[15px] italic leading-snug tracking-tightish text-ink/85 truncate-2 sm:text-base">
             {{ promptPreview || 'untitled draft' }}
           </p>
@@ -295,9 +312,9 @@ function isImageReady(image: GeneratedImage, index: number) {
           >
             <Icon name="frame" :size="20" />
           </div>
-          <p class="font-display text-2xl italic tracking-tightish text-ink/85 sm:text-3xl">an empty canvas</p>
+          <p class="font-display text-2xl italic tracking-tightish text-ink/85 sm:text-3xl">空白画布</p>
           <p class="mt-3 text-[13px] leading-6 text-muted">
-            写下提示词，或者从右侧"模板"里选一个起点，然后点击 Generate。
+            写下提示词，或先选一种模板气质，再生成第一张画面。
           </p>
 
           <div class="mt-6 flex flex-col items-center gap-2.5 sm:flex-row sm:justify-center">
@@ -332,7 +349,7 @@ function isImageReady(image: GeneratedImage, index: number) {
   display: grid;
   place-items: center;
   pointer-events: none;
-  background: linear-gradient(180deg, rgba(253, 248, 237, 0.94), rgba(241, 233, 220, 0.62));
+  background: linear-gradient(180deg, rgb(var(--color-vellum) / 0.94), rgb(var(--color-paper) / 0.62));
 }
 
 .canvas-image-placeholder__glow {
@@ -340,7 +357,7 @@ function isImageReady(image: GeneratedImage, index: number) {
   width: min(44%, 220px);
   height: min(44%, 220px);
   border-radius: 999px;
-  background: radial-gradient(circle, rgba(253, 248, 237, 0.96), rgba(253, 248, 237, 0) 70%);
+  background: radial-gradient(circle, rgb(var(--color-vellum) / 0.96), rgb(var(--color-vellum) / 0) 70%);
   filter: blur(8px);
 }
 
@@ -351,16 +368,34 @@ function isImageReady(image: GeneratedImage, index: number) {
   gap: 7px;
   padding: 0.7rem 0.95rem;
   border-radius: 999px;
-  background: rgba(253, 248, 237, 0.88);
-  box-shadow: 0 24px 40px -30px rgba(26, 22, 18, 0.5);
+  background: rgb(var(--color-vellum) / 0.88);
+  box-shadow: 0 24px 40px -30px rgb(var(--color-ink) / 0.5);
 }
 
 .canvas-image-placeholder__loader span {
   width: 6px;
   height: 6px;
   border-radius: 999px;
-  background: rgba(26, 22, 18, 0.58);
+  background: rgb(var(--color-ink) / 0.58);
   animation: canvas-image-loader 1.15s ease-in-out infinite;
+}
+
+.canvas-progress {
+  position: relative;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgb(var(--color-ink) / 0.08);
+}
+
+.canvas-progress span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--progress, 0%);
+  border-radius: inherit;
+  background: linear-gradient(90deg, rgb(var(--color-forest) / 0.72), rgb(var(--color-accent) / 0.82));
+  box-shadow: 0 0 18px rgb(var(--color-accent) / 0.18);
+  transition: width 0.7s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .canvas-image-placeholder__loader span:nth-child(2) {
@@ -386,7 +421,8 @@ function isImageReady(image: GeneratedImage, index: number) {
 
 @media (prefers-reduced-motion: reduce) {
   .canvas-image-placeholder__loader span,
-  .canvas-frame img {
+  .canvas-frame img,
+  .canvas-progress span {
     animation: none;
     transition: none;
   }

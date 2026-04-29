@@ -103,7 +103,7 @@ onBeforeUnmount(() => {
         </header>
 
         <div class="touch-scroll-y flex-1 overflow-y-auto px-5 pb-[max(env(safe-area-inset-bottom,0px),1.25rem)] pt-4">
-          <ul class="grid grid-cols-2 gap-2.5">
+          <ul class="grid grid-cols-1 gap-2.5 min-[420px]:grid-cols-2">
             <li v-for="item in styleOptions" :key="item.value">
               <button
                 type="button"
@@ -163,7 +163,7 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .style-sheet {
-  max-height: 80dvh;
+  max-height: min(84dvh, 720px);
 }
 
 .sheet-style-preview {

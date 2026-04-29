@@ -96,12 +96,7 @@ const mobileJumpButtonBottom = computed(() => {
     : desired
   return Math.max(18, Math.min(desired, limit))
 })
-// 记录「最近一次由系统/模板写入输入框的 prompt 文本」，供调试与可能的恢复逻辑使用。
-// 当前实现：切提示词模板时始终覆盖输入框，使用户「选模板 → 改 → 选另一个模板」这类场景下
-// 输入框总能同步到最新模板示例；anchor 同步跟进。
 let templateAnchorPrompt: string = defaultPrompt
-// 一次性跳过下一次 watch(style) 的自动同步。用于「手动同步」场景（恢复历史 / 重置草稿 /
-// 空状态点选建议）：调用者已同步设置了 prompt + anchor + style，不应被 watch 再次覆写。
 let skipNextStyleSync = false
 
 const restoredDraft = loadDraft()
@@ -109,8 +104,6 @@ const restoredDraft = loadDraft()
 if (restoredDraft) {
   if (typeof restoredDraft.prompt === 'string') {
     prompt.value = restoredDraft.prompt
-    // 还原草稿时，将 anchor 设为草稿中保存的 prompt：
-    // 这样首次切模板时，如果当前内容（= 草稿）等于 anchor，会自然被识别为可覆盖。
     templateAnchorPrompt = restoredDraft.prompt
   }
   if (typeof restoredDraft.negativePrompt === 'string') negativePrompt.value = restoredDraft.negativePrompt
@@ -430,7 +423,6 @@ async function runGeneration(args: {
   lastRequestId.value = ''
   elapsedSeconds.value = 0
 
-  // 关闭可能打开的输入抽屉，让用户立刻看到画布
   composerOpen.value = false
   settingsOpen.value = false
   styleSheetOpen.value = false
@@ -520,7 +512,6 @@ async function runGeneration(args: {
     vibrate('error')
     toast.error(message, requestId ? `req ${requestId.slice(0, 8)}` : undefined)
 
-    // 凭据未配置：自动打开 Settings，让用户立即修复
     if (code === PROVIDER_NOT_CONFIGURED) {
       settingsOpen.value = true
     }
@@ -552,7 +543,6 @@ async function handleGenerate(options?: { clearAfter?: boolean }) {
     ? payload.referenceImages.map(cloneReferenceImageAttachment)
     : undefined
 
-  // 写入用户消息（chat 视图立刻看到）
   messages.value = [
     ...messages.value,
     {
@@ -618,7 +608,6 @@ function sendFromChat() {
 }
 
 function pickStyleFromChat(value: ImageStyle) {
-  // 在空对话流中点击风格建议：手动同步 style + prompt，跳过 watch(style) 的自动逻辑以避免重复 toast。
   const preset = stylePresetById.get(value)
   if (!preset) return
   if (style.value !== value) {
@@ -713,9 +702,7 @@ async function downloadImage(image: GeneratedImage, index: number) {
 
 function restoreHistory(item: GenerationHistoryItem) {
   prompt.value = item.prompt
-  // 恢复历史时把 anchor 同步成 item.prompt：用户接下来手动切模板才会覆盖。
   templateAnchorPrompt = item.prompt
-  // 同时设置 style 与 prompt，避免 watch(style) 把刚恢复的 prompt 覆写为模板示例。
   if (style.value !== item.style) {
     skipNextStyleSync = true
   }
@@ -917,7 +904,6 @@ function handleProviderTestResult(payload: { ok: boolean; message: string; code?
 
 
 function focusPrompt() {
-  // 桌面：focus 左侧 composer；移动：focus 底部 ChatDock 输入
   if (typeof window !== 'undefined' && window.innerWidth >= 1024) {
     composerRef.value?.focusPrompt()
   } else {
@@ -950,14 +936,6 @@ function syncMobileViewport() {
   mobileKeyboardInset.value = nextKeyboardInset > 88 ? Math.round(nextKeyboardInset) : 0
 }
 
-// 切换提示词模板（风格）时的同步逻辑：
-//   - skipNextStyleSync 为 true：调用者（历史恢复 / 重置 / 空状态点选建议）已手动同步 prompt + anchor，跳过
-//   - 目标为 raw：不动 prompt，仅提示已切为「不套模板」
-//   - 目标有 examplePrompt：始终用新模板示例覆盖输入框（即使用户之前在旧模板上做过修改），
-//     这样「选模板 A → 改 → 选模板 B」之类的场景下输入框总是跟进到当前模板。
-//   - 同时同步 anchor，便于下一次切换仍能识别「模板派生」状态。
-// 注：此 watch 在 <script setup> 末尾注册，restoredDraft 阶段对 style 的赋值发生在注册之前，
-// 不会触发本 watch；因此无需类似旧版 skipFirstStyleSync 的「首次跳过」标志（旧版会误吃用户首次点击）。
 watch(style, (newValue, oldValue) => {
   if (newValue === oldValue) return
   if (skipNextStyleSync) {
@@ -974,15 +952,12 @@ watch(style, (newValue, oldValue) => {
     toast.info('已切换提示词模板', `${preset.label} · ${preset.accent}`)
     return
   }
-  // 始终用新模板的示例覆盖输入框，使「选模板 → 改 → 另选模板」场景中输入框总是同步到当前模板。
   prompt.value = preset.examplePrompt
   templateAnchorPrompt = preset.examplePrompt
   if (preset.defaultSize) size.value = preset.defaultSize
   toast.info('已切换提示词模板', `${preset.label} · 输入框已更新`)
 })
 
-// 高频 viewport 事件（特别是软键盘弹出 / 工具栏滑动隐藏会导致 visualViewport 连续触发）
-// 通过 rAF 节流合并到每帧一次，避免无谓的布局测算与多余的 setTimeout/nextTick 链式调用。
 const throttledViewportSync = rafThrottle(syncMobileViewport)
 
 onMounted(() => {
@@ -1026,7 +1001,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="relative flex min-h-dvh flex-col bg-paper text-ink" :style="mobileRootStyle">
+  <div class="paper-bg relative flex min-h-dvh flex-col overflow-x-hidden bg-paper text-ink" :style="mobileRootStyle">
     <a
       href="#canvas"
       class="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[80] focus:rounded-md focus:bg-ink focus:px-3 focus:py-2 focus:text-paper"
@@ -1046,7 +1021,7 @@ onUnmounted(() => {
     />
 
     <main
-      class="relative z-[2] mx-auto hidden w-full max-w-[1480px] flex-1 lg:grid lg:grid-cols-[minmax(360px,440px)_minmax(0,1fr)] lg:gap-10 lg:px-10 lg:pb-12 lg:pt-10"
+      class="relative z-[2] mx-auto hidden w-full max-w-[1560px] flex-1 lg:grid lg:grid-cols-[minmax(340px,420px)_minmax(0,1fr)] lg:gap-8 lg:px-10 lg:pb-12 lg:pt-8 xl:gap-10 xl:pt-10"
     >
       <section class="hidden reveal lg:block" style="--reveal-delay: 40ms;">
         <PromptComposer

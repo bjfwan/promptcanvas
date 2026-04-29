@@ -13,7 +13,6 @@ function detectInitial(): ThemeMode {
     const stored = window.localStorage.getItem(storageKey)
     if (stored === 'paper' || stored === 'night') return stored
   } catch {
-    /* ignore */
   }
 
   if (window.matchMedia?.('(prefers-color-scheme: dark)').matches) {
@@ -32,7 +31,7 @@ function applyTheme(value: ThemeMode) {
 
   const meta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')
   if (meta) {
-    meta.content = value === 'night' ? '#100e0b' : '#f1e9dc'
+    meta.content = value === 'night' ? '#121413' : '#f4f0e7'
   }
 }
 
@@ -52,7 +51,6 @@ export function useTheme() {
     try {
       window.localStorage.setItem(storageKey, next)
     } catch {
-      /* ignore */
     }
   })
 

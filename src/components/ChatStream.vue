@@ -17,14 +17,9 @@ const props = withDefaults(defineProps<Props>(), {
   jumpBottom: 14,
 })
 
-// 「轻量虚拟滚动」阈值：超过该数量后才对「靠顶」的老消息启用 content-visibility:auto。
-// 1. 低于阈值时不带来收益，不值得索要 intrinsic-size 估算误差。
-// 2. 靠近底部的消息始终保留，避免 scrollHeight 抖动影响 auto-scroll-to-bottom。
 const VIRTUALIZE_THRESHOLD = 24
 const KEEP_LIVE_TAIL = 8
 
-// 不同消息类型的预估高度（浏览器会以此预留空间，实际进入视口后会被实测值覆盖）。
-// 这些数值只要「差不多」即可：吃了估算交互后，滚动条会随顶部进出视口逐步修正。
 function estimateMessageHeight(message: ChatMessage): number {
   if (message.role === 'user') {
     const text = message.content || ''
@@ -33,14 +28,12 @@ function estimateMessageHeight(message: ChatMessage): number {
     return Math.min(360, 60 + lines * 22) + (refs > 0 ? (refs > 1 ? 200 : 110) : 0)
   }
 
-  // assistant
   const size = message.meta.size
   const portraitH = size === '1024x1536' ? 460 : size === '1536x1024' ? 300 : 380
   if (message.status === 'pending') return portraitH + 24
   if (message.status === 'error') return 140
   const count = message.images?.length ?? 0
   if (count <= 1) return portraitH + 80
-  // 2x2 网格。
   return Math.round(portraitH * 1.05) + 80
 }
 
@@ -55,16 +48,11 @@ const emit = defineEmits<{
 const scrollerRef = ref<HTMLDivElement | null>(null)
 const stuckToBottom = ref(true)
 
-// 判断某个索引是否该启用 content-visibility 虚拟化：
-// - 总量低于阈值：全部保留实体
-// - 在尾部保留区间的：保留实体
-// - 其他（靠顶部的较老消息）：启用虚拟化
 function shouldVirtualize(index: number, total: number): boolean {
   if (total < VIRTUALIZE_THRESHOLD) return false
   return index < total - KEEP_LIVE_TAIL
 }
 
-// 空状态展示前 4 个风格作为快速起点
 const suggestionStyles = computed(() => styleOptions.slice(0, 4))
 
 function isNearBottom(el: HTMLElement, threshold = 120) {
@@ -94,7 +82,6 @@ watch(
   },
 )
 
-// 同一条 assistant 消息从 pending → success/error 也应触发滚动
 watch(
   () =>
     props.messages.map((message) =>
@@ -129,17 +116,17 @@ defineExpose({ scrollToBottom })
         class="flex min-h-full flex-col items-center justify-center px-5 pb-8 pt-10 text-center"
       >
         <div
-          class="mb-5 grid h-12 w-12 place-items-center rounded-full border border-line-strong/60 bg-vellum text-ink shadow-inner-paper"
+          class="empty-studio-mark mb-5 grid h-14 w-14 place-items-center rounded-[1.35rem] border border-line-strong/60 bg-vellum text-ink shadow-inner-paper"
           aria-hidden="true"
         >
           <Icon name="sparkle" :size="20" />
         </div>
         <p class="font-display text-2xl italic tracking-tightish text-ink/85">画点什么呢？</p>
-        <p class="mt-2 max-w-[24ch] text-[13px] leading-6 text-muted">
-          写一段画面描述，或者从下面挑一种风格作为起点。
+        <p class="mt-2 max-w-[26ch] text-[13px] leading-6 text-muted">
+          写一段画面描述，或先挑一种风格作为起点。
         </p>
 
-        <ul class="mt-6 grid w-full max-w-sm grid-cols-2 gap-2">
+        <ul class="mt-6 grid w-full max-w-sm grid-cols-1 gap-2 min-[380px]:grid-cols-2">
           <li v-for="item in suggestionStyles" :key="item.value">
             <button
               type="button"
@@ -202,10 +189,9 @@ defineExpose({ scrollToBottom })
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
   scroll-behavior: smooth;
-  /* 顶部留出 header 高度的呼吸空间，底部由 prop 控制以避开 dock */
   padding-top: 0.25rem;
   scrollbar-width: thin;
-  scrollbar-color: rgba(26, 22, 18, 0.18) transparent;
+  scrollbar-color: rgb(var(--color-ink) / 0.18) transparent;
 }
 
 .chat-stream__scroller::-webkit-scrollbar {
@@ -213,7 +199,7 @@ defineExpose({ scrollToBottom })
 }
 
 .chat-stream__scroller::-webkit-scrollbar-thumb {
-  background: rgba(26, 22, 18, 0.18);
+  background: rgb(var(--color-ink) / 0.18);
   border-radius: 999px;
 }
 
@@ -221,13 +207,16 @@ defineExpose({ scrollToBottom })
   --reveal-delay: 0ms;
 }
 
-/* 轻量虚拟化：
-   对靠顶部、超出临近视口的历史消息，让浏览器跳过布局 + 绘制 + 样式上下文，
-   仅预留一个估计高度。一旦滚入 viewport 会自动被实测值接管。
-   在页面包含 ~50 条起的历史时会产生肉眼可见的滚动提升。 */
 .chat-stream__item--virtual {
   content-visibility: auto;
   contain-intrinsic-size: 0 var(--cv-size, 360px);
+}
+
+.empty-studio-mark {
+  background:
+    linear-gradient(135deg, rgb(var(--color-vellum) / 0.96), rgb(var(--color-paper-soft) / 0.72)),
+    radial-gradient(circle at 30% 20%, rgb(var(--color-accent) / 0.16), transparent 55%);
+  box-shadow: var(--shadow-inner-paper), var(--shadow-paper-2);
 }
 
 .chat-stream__jump {
@@ -238,10 +227,10 @@ defineExpose({ scrollToBottom })
   width: 44px;
   height: 44px;
   border-radius: 999px;
-  border: 1px solid #c8b89a;
-  background: rgba(253, 248, 237, 0.95);
-  color: #1a1612;
-  box-shadow: 0 1px 0 rgba(26, 22, 18, 0.06), 0 12px 24px -16px rgba(26, 22, 18, 0.32);
+  border: 1px solid rgb(var(--color-line-strong));
+  background: rgb(var(--color-vellum) / 0.95);
+  color: rgb(var(--color-ink));
+  box-shadow: var(--shadow-paper-2);
   backdrop-filter: blur(8px);
   transition: transform 160ms ease, background-color 160ms ease;
   touch-action: manipulation;
@@ -249,7 +238,7 @@ defineExpose({ scrollToBottom })
 
 .chat-stream__jump:hover {
   transform: translateY(-1px);
-  background: #fdf8ed;
+  background: rgb(var(--color-vellum));
 }
 
 @media (prefers-reduced-motion: reduce) {
