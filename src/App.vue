@@ -1161,6 +1161,7 @@ onUnmounted(() => {
 
     <ChatDock
       ref="chatDockRef"
+      class="lg:hidden"
       v-model:prompt="prompt"
       v-model:model-choice="modelChoice"
       v-model:custom-model="customModel"
