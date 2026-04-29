@@ -328,8 +328,6 @@ defineExpose({ focusInput })
       <div
         class="chat-dock__input relative px-2.5 pt-2.5 sm:px-3"
         :class="{ 'magic-pulse': isMagicPulsing }"
-        @click="textareaRef?.focus()"
-        @touchstart.passive="textareaRef?.focus()"
       >
         <textarea
           ref="textareaRef"
@@ -358,7 +356,7 @@ defineExpose({ focusInput })
           :class="{ 'chat-dock__expand--active': tall }"
           :aria-pressed="tall"
           :aria-label="tall ? '收起输入框' : '展开输入框'"
-          @click="toggleTall"
+          @click.stop="toggleTall"
         >
           <Icon :name="tall ? 'shrink' : 'expand'" :size="14" />
         </button>
@@ -378,7 +376,7 @@ defineExpose({ focusInput })
               type="button"
               class="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium text-muted transition-all hover:bg-paper-soft hover:text-ink active:scale-95"
               :disabled="props.referenceImages.length >= maxReferenceImages"
-              @click="openReferencePicker"
+              @click.stop="openReferencePicker"
             >
               <Icon name="upload" :size="11" />
               <span>继续添加</span>
@@ -403,7 +401,7 @@ defineExpose({ focusInput })
                   type="button"
                   class="chat-dock__attachment-remove"
                   :aria-label="`移除参考图 ${image.name}`"
-                  @click="handleRemoveReferenceImage(image.id)"
+                  @click.stop="handleRemoveReferenceImage(image.id)"
                 >
                   <Icon name="close" :size="11" />
                 </button>
@@ -420,7 +418,7 @@ defineExpose({ focusInput })
           class="asset-chip shrink-0"
           :disabled="props.referenceImages.length >= maxReferenceImages"
           :aria-label="hasReferenceImages ? `已添加 ${props.referenceImages.length} 张参考图，继续添加` : '添加参考图'"
-          @click="openReferencePicker"
+          @click.stop="openReferencePicker"
         >
           <Icon :name="hasReferenceImages ? 'image' : 'upload'" :size="13" />
           <span class="asset-chip__label">{{ hasReferenceImages ? `参考 ${props.referenceImages.length}` : '参考图' }}</span>
@@ -441,7 +439,7 @@ defineExpose({ focusInput })
           type="button"
           class="style-chip"
           :aria-label="`当前风格：${currentStyleMeta.label}，点击更换`"
-          @click="emit('open-style-sheet')"
+          @click.stop="emit('open-style-sheet')"
         >
           <StyleSwatch :variant="currentStyleMeta.value" :size="20" />
           <span class="style-chip__label">{{ currentStyleMeta.label }}</span>
@@ -474,7 +472,7 @@ defineExpose({ focusInput })
             type="button"
             class="chat-dock__magic"
             aria-label="魔法增强提示词"
-            @click="magicEnhance"
+            @click.stop="magicEnhance"
           >
             <Icon name="sparkle" :size="14" />
           </button>
@@ -487,7 +485,7 @@ defineExpose({ focusInput })
             }"
             :disabled="sendDisabled"
             aria-label="发送提示词生成图片"
-            @click="send"
+            @click.stop="send"
           >
             <Icon
               :name="isGenerating ? 'sparkle' : 'send'"
@@ -520,6 +518,8 @@ defineExpose({ focusInput })
 }
 
 .chat-dock__textarea {
+  position: relative;
+  z-index: 1;
   width: 100%;
   min-height: 42px;
   max-height: 280px;
@@ -536,13 +536,14 @@ defineExpose({ focusInput })
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: thin;
-  scrollbar-color: rgb(var(--color-ink) / 0.18) transparent;
+  scrollbar-color: rgb(var(--color-ink) / 0.1) transparent;
   overscroll-behavior: contain;
   touch-action: manipulation;
   user-select: text;
   -webkit-user-select: text;
   -webkit-tap-highlight-color: transparent;
   cursor: text;
+  box-shadow: inset 0 1px 2px rgb(var(--color-ink) / 0.03);
   transition: max-height 220ms cubic-bezier(0.2, 0.8, 0.2, 1),
     height 140ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
@@ -550,6 +551,14 @@ defineExpose({ focusInput })
 .chat-dock__input {
   cursor: text;
   -webkit-tap-highlight-color: transparent;
+  background: rgb(var(--color-vellum) / 0.7);
+  box-shadow: inset 0 0 0 1px rgb(var(--color-line) / 0.5);
+  transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.chat-dock__input:has(.chat-dock__textarea:focus) {
+  background: rgb(var(--color-paper));
+  box-shadow: inset 0 0 0 1px rgb(var(--color-ink) / 0.8), var(--focus-ring);
 }
 
 .chat-dock__textarea--tall {
@@ -573,6 +582,7 @@ defineExpose({ focusInput })
   position: absolute;
   top: 0.55rem;
   right: 0.55rem;
+  z-index: 10;
   display: inline-grid;
   place-items: center;
   width: 30px;
@@ -615,6 +625,8 @@ defineExpose({ focusInput })
 }
 
 .chat-dock__magic {
+  position: relative;
+  z-index: 10;
   display: inline-grid;
   place-items: center;
   width: 44px;
@@ -654,6 +666,11 @@ defineExpose({ focusInput })
   outline: none;
 }
 
+.model-chip-wrap {
+  position: relative;
+  z-index: 10;
+}
+
 .model-chip-wrap :deep(.select-trigger) {
   height: 34px;
   max-width: clamp(6.75rem, 33vw, 10.5rem);
@@ -688,6 +705,8 @@ defineExpose({ focusInput })
 }
 
 .style-chip {
+  position: relative;
+  z-index: 10;
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
@@ -722,6 +741,7 @@ defineExpose({ focusInput })
 
 .asset-chip {
   position: relative;
+  z-index: 10;
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
@@ -853,27 +873,24 @@ defineExpose({ focusInput })
 
 .chat-dock__send {
   position: relative;
+  z-index: 10;
   display: inline-grid;
   place-items: center;
   width: 44px;
   height: 44px;
   border-radius: 999px;
-  background: rgb(var(--color-ink) / 0.4);
-  color: rgb(var(--color-paper) / 0.85);
-  overflow: hidden;
-  transition: background-color 160ms ease, transform 140ms ease, box-shadow 200ms ease;
-  cursor: pointer;
-  touch-action: manipulation;
-}
-
-.chat-dock__send:disabled {
+  background: rgb(var(--color-ink) / 0.05);
+  color: rgb(var(--color-ink) / 0.3);
+  border: 1px solid transparent;
+  transition: all 0.24s cubic-bezier(0.2, 0.8, 0.2, 1);
   cursor: not-allowed;
 }
 
 .chat-dock__send--ready {
   background: rgb(var(--color-ink));
   color: rgb(var(--color-paper));
-  box-shadow: 0 1px 0 rgb(var(--color-ink) / 0.06), 0 12px 24px -16px rgb(var(--color-ink) / 0.4);
+  cursor: pointer;
+  box-shadow: var(--shadow-paper-2);
 }
 
 .chat-dock__send--ready:hover {
