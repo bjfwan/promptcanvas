@@ -3,12 +3,14 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import Icon from './Icon.vue'
 import StyleSwatch from './StyleSwatch.vue'
 import Select, { type SelectOption } from './Select.vue'
+import MagicEnhanceMenu from './MagicEnhanceMenu.vue'
 import { maxReferenceImages } from '../lib/imagesApi'
 import { customModelSentinel, styleOptions } from '../presets'
 import { useDiscoveredModels } from '../composables/useDiscoveredModels'
 import { useVibration } from '../composables/useVibration'
 import { rafThrottle } from '../lib/rafThrottle'
 import type { ContinuationContext, ImageStyle, ReferenceImageAttachment } from '../types'
+import type { EnhanceResult } from '../lib/magicEnhance'
 
 interface Props {
   isGenerating: boolean
@@ -20,12 +22,14 @@ interface Props {
   keyboardInset?: number
   viewportHeight?: number
   continuation?: ContinuationContext | null
+  canUndoEnhance?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
   keyboardInset: 0,
   viewportHeight: 0,
   continuation: null,
+  canUndoEnhance: false,
 })
 
 const prompt = defineModel<string>('prompt', { required: true })
@@ -39,7 +43,8 @@ const emit = defineEmits<{
   (e: 'layout-change', height: number): void
   (e: 'select-reference-images', files: File[]): void
   (e: 'remove-reference-image', id: string): void
-  (e: 'magic-enhance'): void
+  (e: 'magic-enhance', result: EnhanceResult): void
+  (e: 'undo-enhance'): void
   (e: 'cancel-continuation'): void
   (e: 'jump-to-continuation', id: string): void
 }>()
@@ -52,7 +57,18 @@ const tall = ref(false)
 const customModelOpen = ref(false)
 const customModelInputRef = ref<HTMLInputElement | null>(null)
 const isMagicPulsing = ref(false)
+const magicMenuOpen = ref(false)
+const magicMenuRef = ref<HTMLElement | null>(null)
 let dockResizeObserver: ResizeObserver | null = null
+
+function onDocClick(e: MouseEvent) {
+  if (!magicMenuOpen.value) return
+  const target = e.target as Node
+  if (magicMenuRef.value?.contains(target)) return
+  magicMenuOpen.value = false
+}
+onMounted(() => document.addEventListener('click', onDocClick, true))
+onBeforeUnmount(() => document.removeEventListener('click', onDocClick, true))
 
 const discoveredModels = useDiscoveredModels()
 const { vibrate } = useVibration()
@@ -231,11 +247,14 @@ function send() {
 
 function magicEnhance() {
   vibrate('tap')
+  magicMenuOpen.value = !magicMenuOpen.value
+}
+
+function handleEnhanceResult(result: EnhanceResult) {
   isMagicPulsing.value = true
-  setTimeout(() => {
-    isMagicPulsing.value = false
-  }, 1000)
-  emit('magic-enhance')
+  setTimeout(() => { isMagicPulsing.value = false }, 1000)
+  emit('magic-enhance', result)
+  magicMenuOpen.value = false
 }
 
 function onKeydown(event: KeyboardEvent) {
@@ -490,16 +509,39 @@ defineExpose({ focusInput })
             </span>
           </div>
 
+          <div ref="magicMenuRef" class="relative">
+            <button
+              v-if="promptCount > 0"
+              type="button"
+              class="chat-dock__magic-inner"
+              aria-label="魔法增强提示词"
+              @click.stop="magicEnhance"
+            >
+              <Icon name="sparkle" :size="14" />
+            </button>
+            <Transition name="acc">
+              <MagicEnhanceMenu
+                v-if="magicMenuOpen"
+                :prompt="prompt"
+                :style="currentStyle"
+                compact
+                class="absolute right-0 bottom-full mb-2"
+                @enhance="handleEnhanceResult"
+                @close="magicMenuOpen = false"
+              />
+            </Transition>
+          </div>
+
           <button
-            v-if="promptCount > 0"
+            v-if="props.canUndoEnhance"
             type="button"
-            class="chat-dock__magic-inner"
-            aria-label="魔法增强提示词"
-            @click.stop="magicEnhance"
+            class="chat-dock__undo-inner"
+            aria-label="撤销魔法增强"
+            @click.stop="emit('undo-enhance')"
           >
-            <Icon name="sparkle" :size="14" />
+            <Icon name="reset" :size="14" />
           </button>
-          
+
           <button
             type="button"
             class="chat-dock__send-inner"
@@ -658,6 +700,25 @@ defineExpose({ focusInput })
 .chat-dock__magic-inner:active {
   transform: scale(0.9) rotate(-8deg);
   background: rgb(var(--color-vellum));
+}
+
+.chat-dock__undo-inner {
+  display: inline-grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  background: rgb(var(--color-accent) / 0.08);
+  color: rgb(var(--color-accent));
+  border: 1px solid rgb(var(--color-accent) / 0.2);
+  cursor: pointer;
+  transition: all 140ms ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.chat-dock__undo-inner:active {
+  transform: scale(0.9);
+  background: rgb(var(--color-accent) / 0.15);
 }
 
 .chat-dock__send-inner {

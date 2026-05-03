@@ -39,6 +39,7 @@ import { useDraftAutoSave } from './composables/useDraftAutoSave'
 import { useMobileViewport } from './composables/useMobileViewport'
 import { useHealthCheck } from './composables/useHealthCheck'
 import { useGenerationFlow } from './composables/useGenerationFlow'
+import { enhancePrompt, undoEnhance, enhanceDimensions, type EnhanceResult } from './lib/magicEnhance'
 
 const defaultPrompt = '一只穿着复古宇航服的橘猫，站在月球摄影棚里，像 1970 年代科幻电影海报'
 const defaultNegativePrompt = '低清晰度、模糊、水印、错误文字、畸形手指、画面杂乱'
@@ -110,17 +111,7 @@ const mobileJumpButtonBottom = computed(() => {
 let templateAnchorPrompt: string = defaultPrompt
 let skipNextStyleSync = false
 
-const magicSuffixByStyle: Record<ImageStyle, string> = {
-  natural: 'natural ambient light, honest textures, documentary realism, subtle color grading',
-  poster: 'strong poster composition, cinematic hierarchy, elegant negative space, premium editorial typography area',
-  product: 'studio-grade lighting, clean reflections, crisp material detail, premium commercial photography',
-  portrait: 'expressive eyes, refined skin texture, editorial portrait lighting, shallow depth of field',
-  anime: 'clean cel shading, expressive character design, crisp linework, vibrant yet controlled palette',
-  cinematic: 'anamorphic framing, dramatic practical lighting, atmospheric depth, film still composition',
-  logo: 'minimal vector geometry, scalable silhouette, balanced negative space, no text',
-  interior: 'architectural composition, layered natural light, warm material palette, lived-in spatial detail',
-  raw: 'sharp focus, coherent composition, refined lighting, high detail',
-}
+const lastEnhanceResult = ref<EnhanceResult | null>(null)
 
 const quickPromptCards = [
   {
@@ -282,22 +273,31 @@ function handleCancelContinuation() {
   toast.info('已取消接着画', '回到自由创作模式')
 }
 
-function handleMagicEnhance() {
-  const current = prompt.value.trim()
-  if (!current) {
-    toast.info('请先输入一点内容，我再帮你变魔法')
+function handleMagicEnhance(result: EnhanceResult) {
+  if (!result.enhanced || result.enhanced === result.original) {
+    toast.info('提示词已很完整，无需增强')
     return
   }
 
-  const suffix = magicSuffixByStyle[style.value]
-  if (current.includes(suffix)) {
-    toast.info('魔法已经施展过啦')
-    return
-  }
-
-  prompt.value = `${current}, ${suffix}`
+  lastEnhanceResult.value = result
+  prompt.value = result.enhanced
   vibrate('success')
-  toast.success('魔法已施展', `已按「${selectedStyleLabel.value}」追加修饰词`)
+
+  const dimLabels = result.dimensions
+    .map((d) => {
+      const meta = enhanceDimensions.find((m) => m.id === d)
+      return meta?.label ?? d
+    })
+    .join('、')
+  toast.success('魔法已施展', dimLabels ? `补充了「${dimLabels}」` : '已追加修饰词')
+}
+
+function handleUndoEnhance() {
+  if (!lastEnhanceResult.value) return
+  prompt.value = undoEnhance(lastEnhanceResult.value)
+  lastEnhanceResult.value = null
+  vibrate('tap')
+  toast.info('已撤销魔法增强')
 }
 
 function handlePickQuickPrompt(value: string) {
@@ -308,6 +308,7 @@ function handlePickQuickPrompt(value: string) {
 }
 
 async function handleGenerate(options?: { clearAfter?: boolean }) {
+  lastEnhanceResult.value = null
   if (!canGenerate.value) {
     if (!provider.isConfigured.value) {
       toast.error('请先配置 API 服务', '右上角「设置」→ 服务商')
@@ -621,6 +622,7 @@ onMounted(() => {
           :can-generate="canGenerate"
           :health-offline="healthStatus === 'offline'"
           :continuation="pendingContinuation"
+          :can-undo-enhance="!!lastEnhanceResult"
           @generate="handleGenerate"
           @abort="handleAbortGeneration"
           @copy="copyToClipboard"
@@ -628,6 +630,7 @@ onMounted(() => {
           @select-reference-images="addReferenceImages"
           @remove-reference-image="removeReferenceImage"
           @magic-enhance="handleMagicEnhance"
+          @undo-enhance="handleUndoEnhance"
           @cancel-continuation="handleCancelContinuation"
         />
       </section>
@@ -703,6 +706,7 @@ onMounted(() => {
       :keyboard-inset="mobileKeyboardInset"
       :viewport-height="mobileViewportHeight ?? undefined"
       :continuation="pendingContinuation"
+      :can-undo-enhance="!!lastEnhanceResult"
       @send="sendFromChat"
       @abort="handleAbortGeneration"
       @open-style-sheet="styleSheetOpen = true"
@@ -710,6 +714,7 @@ onMounted(() => {
       @select-reference-images="addReferenceImages"
       @remove-reference-image="removeReferenceImage"
       @magic-enhance="handleMagicEnhance"
+      @undo-enhance="handleUndoEnhance"
       @cancel-continuation="handleCancelContinuation"
       @jump-to-continuation="handleScrollToMessage"
     />

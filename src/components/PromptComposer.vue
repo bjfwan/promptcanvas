@@ -1,13 +1,15 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import Icon from './Icon.vue'
 import StyleSwatch from './StyleSwatch.vue'
 import Select, { type SelectOption } from './Select.vue'
+import MagicEnhanceMenu from './MagicEnhanceMenu.vue'
 import { maxReferenceImages } from '../lib/imagesApi'
 import { customModelSentinel, sizeOptions, styleOptions } from '../presets'
 import { stylePrompts } from '../lib/imagesApi'
 import { useDiscoveredModels } from '../composables/useDiscoveredModels'
 import type { ContinuationContext, ImageSize, ImageStyle, ReferenceImageAttachment } from '../types'
+import type { EnhanceResult } from '../lib/magicEnhance'
 
 const sizeSelectOptions = computed<SelectOption<ImageSize>[]>(() =>
   sizeOptions.map((option) => ({ value: option.value, label: option.label, hint: option.hint })),
@@ -38,11 +40,13 @@ interface Props {
   referenceImages: ReferenceImageAttachment[]
   layout?: 'panel' | 'sheet'
   continuation?: ContinuationContext | null
+  canUndoEnhance?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
   layout: 'panel',
   continuation: null,
+  canUndoEnhance: false,
 })
 
 const prompt = defineModel<string>('prompt', { required: true })
@@ -60,7 +64,8 @@ const emit = defineEmits<{
   (e: 'open-settings'): void
   (e: 'select-reference-images', files: File[]): void
   (e: 'remove-reference-image', id: string): void
-  (e: 'magic-enhance'): void
+  (e: 'magic-enhance', result: EnhanceResult): void
+  (e: 'undo-enhance'): void
   (e: 'cancel-continuation'): void
 }>()
 
@@ -68,7 +73,18 @@ const promptRef = ref<HTMLTextAreaElement | null>(null)
 const referenceInputRef = ref<HTMLInputElement | null>(null)
 const previewOpen = ref(false)
 const dragActive = ref(false)
+const magicMenuOpen = ref(false)
+const magicMenuRef = ref<HTMLElement | null>(null)
 let dragDepth = 0
+
+function onDocClick(e: MouseEvent) {
+  if (!magicMenuOpen.value) return
+  const target = e.target as Node
+  if (magicMenuRef.value?.contains(target)) return
+  magicMenuOpen.value = false
+}
+onMounted(() => document.addEventListener('click', onDocClick, true))
+onBeforeUnmount(() => document.removeEventListener('click', onDocClick, true))
 
 const activeStylePrompt = computed(() => stylePrompts[stl.value] ?? '')
 const isRawStyle = computed(() => stl.value === 'raw')
@@ -302,15 +318,36 @@ watch(
             <Icon :name="hasReferenceImages ? 'image' : 'upload'" :size="11" />
             <span>{{ hasReferenceImages ? `参考图 ${props.referenceImages.length}` : '参考图' }}</span>
           </button>
+          <div ref="magicMenuRef" class="relative">
+            <button
+              v-if="prompt.length"
+              type="button"
+              class="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium text-forest/80 transition hover:bg-forest/10 hover:text-forest"
+              aria-label="魔法增强提示词"
+              @click.stop="magicMenuOpen = !magicMenuOpen"
+            >
+              <Icon name="sparkle" :size="11" />
+              <span>魔法</span>
+            </button>
+            <Transition name="acc">
+              <MagicEnhanceMenu
+                v-if="magicMenuOpen"
+                :prompt="prompt"
+                :style="stl"
+                class="absolute right-0 top-full mt-2"
+                @enhance="(result: EnhanceResult) => { emit('magic-enhance', result); magicMenuOpen = false }"
+                @close="magicMenuOpen = false"
+              />
+            </Transition>
+          </div>
           <button
-            v-if="prompt.length"
+            v-if="props.canUndoEnhance"
             type="button"
-            class="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium text-forest/80 transition hover:bg-forest/10 hover:text-forest"
-            aria-label="魔法增强提示词"
-            @click="emit('magic-enhance')"
+            class="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium text-accent/70 transition hover:bg-accent/10 hover:text-accent"
+            @click="emit('undo-enhance')"
           >
-            <Icon name="sparkle" :size="11" />
-            <span>魔法</span>
+            <Icon name="reset" :size="11" />
+            <span>撤销魔法</span>
           </button>
           <button
             v-if="prompt.length"
