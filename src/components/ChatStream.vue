@@ -8,12 +8,12 @@ import type { ChatMessage, GeneratedImage, ImageStyle } from '../types'
 
 interface Props {
   messages: ChatMessage[]
-  bottomPadding?: number
+  mobileBottomPadding?: number
   jumpBottom?: number
 }
 
 const props = withDefaults(defineProps<Props>(), {
-  bottomPadding: 200,
+  mobileBottomPadding: 200,
   jumpBottom: 14,
 })
 
@@ -42,7 +42,10 @@ const emit = defineEmits<{
   (e: 'open-image', images: GeneratedImage[], index: number): void
   (e: 'download', image: GeneratedImage, index: number): void
   (e: 'copy', text: string, message: string): void
+  (e: 'remix', image: GeneratedImage, prompt: string, messageId: string, imageIndex: number): void
   (e: 'pick-suggestion', style: ImageStyle): void
+  (e: 'scroll-to-message', id: string): void
+  (e: 'abort', id: string): void
 }>()
 
 const scrollerRef = ref<HTMLDivElement | null>(null)
@@ -66,6 +69,22 @@ function scrollToBottom(smooth = true) {
     top: el.scrollHeight,
     behavior: smooth ? 'smooth' : 'auto',
   })
+}
+
+const flashedMessageIds = ref<Record<string, boolean>>({})
+
+function scrollToMessage(id: string) {
+  const el = scrollerRef.value
+  if (!el) return
+  const target = el.querySelector(`[data-message-id="${CSS.escape(id)}"]`) as HTMLElement | null
+  if (!target) return
+  target.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  flashedMessageIds.value = { ...flashedMessageIds.value, [id]: true }
+  window.setTimeout(() => {
+    const next = { ...flashedMessageIds.value }
+    delete next[id]
+    flashedMessageIds.value = next
+  }, 1600)
 }
 
 function onScroll() {
@@ -97,7 +116,7 @@ onMounted(() => {
   nextTick(() => scrollToBottom(false))
 })
 
-defineExpose({ scrollToBottom })
+defineExpose({ scrollToBottom, scrollToMessage })
 </script>
 
 <template>
@@ -105,7 +124,7 @@ defineExpose({ scrollToBottom })
     <div
       ref="scrollerRef"
       class="chat-stream__scroller"
-      :style="{ paddingBottom: `${bottomPadding}px` }"
+      :style="{ paddingBottom: `${mobileBottomPadding}px` }"
       role="log"
       aria-live="polite"
       aria-label="对话流"
@@ -148,15 +167,22 @@ defineExpose({ scrollToBottom })
           v-for="(message, index) in messages"
           :key="message.id"
           class="chat-stream__item reveal"
-          :class="shouldVirtualize(index, messages.length) ? 'chat-stream__item--virtual' : null"
+          :class="[
+            shouldVirtualize(index, messages.length) ? 'chat-stream__item--virtual' : null,
+            flashedMessageIds[message.id] ? 'chat-stream__item--flash' : null,
+          ]"
           :style="shouldVirtualize(index, messages.length) ? { '--cv-size': `${estimateMessageHeight(message)}px` } : undefined"
+          :data-message-id="message.id"
         >
           <ChatBubble
             :message="message"
             @retry="(id) => emit('retry', id)"
-            @open-image="(images, index) => emit('open-image', images, index)"
-            @download="(image, index) => emit('download', image, index)"
+            @open-image="(images, idx) => emit('open-image', images, idx)"
+            @download="(image, idx) => emit('download', image, idx)"
             @copy="(text, msg) => emit('copy', text, msg)"
+            @remix="(image, content, idx) => emit('remix', image, content, message.id, idx)"
+            @scroll-to-message="(id) => emit('scroll-to-message', id)"
+            @abort="(id) => emit('abort', id)"
           />
         </li>
       </ol>
@@ -210,6 +236,29 @@ defineExpose({ scrollToBottom })
 .chat-stream__item--virtual {
   content-visibility: auto;
   contain-intrinsic-size: 0 var(--cv-size, 360px);
+}
+
+.chat-stream__item--flash {
+  position: relative;
+  animation: chat-stream-flash 1.4s ease-out;
+}
+
+@keyframes chat-stream-flash {
+  0% {
+    box-shadow: 0 0 0 0 rgb(var(--color-accent) / 0);
+  }
+  18% {
+    box-shadow: 0 0 0 4px rgb(var(--color-accent) / 0.22);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgb(var(--color-accent) / 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-stream__item--flash {
+    animation: none;
+  }
 }
 
 .empty-studio-mark {

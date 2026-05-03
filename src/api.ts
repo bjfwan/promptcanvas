@@ -186,7 +186,10 @@ function buildRequest(
   }
 }
 
-export async function generateImage(payload: GenerateImageRequest): Promise<GenerateImageResponse> {
+export async function generateImage(
+  payload: GenerateImageRequest,
+  options?: { signal?: AbortSignal },
+): Promise<GenerateImageResponse> {
   const provider = snapshotProviderConfig()
   const apiKey = (payload.apiKey ?? provider.apiKey ?? '').trim()
   const baseUrl = (payload.baseUrl ?? provider.baseUrl ?? '').trim().replace(/\/+$/, '')
@@ -309,10 +312,18 @@ export async function generateImage(payload: GenerateImageRequest): Promise<Gene
         method: 'POST',
         headers: built.headers,
         body: requestBody,
+        signal: options?.signal,
       })
     } catch (error) {
       const err = error as Error
       const elapsedMs = Math.round(nowMs() - t0)
+
+      // 用户主动取消 → 抛专用错误码，由调用方处理
+      if (err?.name === 'AbortError' || options?.signal?.aborted) {
+        group.warn(`fetch aborted by user after ${elapsedMs}ms`)
+        throw new ApiRequestError('已取消生成', 'ABORTED', requestId)
+      }
+
       group.error(`fetch threw after ${elapsedMs}ms`, {
         name: err?.name,
         message: err?.message,

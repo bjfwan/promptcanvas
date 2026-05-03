@@ -1,26 +1,21 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { ApiRequestError, PROVIDER_NOT_CONFIGURED, generateImage, resolveImageSource, testProvider } from './api'
-import {
-  allowedReferenceImageMimeTypes,
-  maxReferenceImageSizeBytes,
-  maxReferenceImages,
-} from './lib/imagesApi'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { resolveImageSource } from './api'
 import { customModelSentinel, qualityOptions, sizeOptions, styleOptions, stylePresetById } from './presets'
-import { clearDraft, clearHistory, loadDraft, loadHistory, prependHistory, saveDraft } from './storage'
+import { clearDraft, clearHistory, loadDraft, loadHistory } from './storage'
 import type {
-  ChatAssistantMessage,
   ChatMessage,
-  ChatMessageMeta,
   ChatUserMessage,
+  ContinuationContext,
   GeneratedImage,
   GenerateImageRequest,
   GenerationHistoryItem,
   ImageQuality,
   ImageSize,
   ImageStyle,
-  ReferenceImageAttachment,
 } from './types'
+import { createId } from './lib/id'
+import { payloadToMeta } from './lib/chatMessage'
 import AppHeader from './components/AppHeader.vue'
 import PromptComposer from './components/PromptComposer.vue'
 import CanvasStage from './components/CanvasStage.vue'
@@ -37,7 +32,13 @@ import { useLightbox } from './composables/useLightbox'
 import { useProviderConfig } from './composables/useProviderConfig'
 import { useDiscoveredModels } from './composables/useDiscoveredModels'
 import { useVibration } from './composables/useVibration'
-import { rafThrottle } from './lib/rafThrottle'
+import { useReferenceImages } from './composables/useReferenceImages'
+import { useImagePriming } from './composables/useImagePriming'
+import { useDownloadImage } from './composables/useDownloadImage'
+import { useDraftAutoSave } from './composables/useDraftAutoSave'
+import { useMobileViewport } from './composables/useMobileViewport'
+import { useHealthCheck } from './composables/useHealthCheck'
+import { useGenerationFlow } from './composables/useGenerationFlow'
 
 const defaultPrompt = '一只穿着复古宇航服的橘猫，站在月球摄影棚里，像 1970 年代科幻电影海报'
 const defaultNegativePrompt = '低清晰度、模糊、水印、错误文字、畸形手指、画面杂乱'
@@ -53,7 +54,6 @@ const creativity = ref(7)
 const seed = ref('')
 const modelChoice = ref<string>('')
 const customModel = ref<string>('')
-const referenceImages = ref<ReferenceImageAttachment[]>([])
 const images = ref<GeneratedImage[]>([])
 const activeImageIndex = ref(0)
 const isGenerating = ref(false)
@@ -61,9 +61,6 @@ const errorMessage = ref('')
 const lastRequestId = ref('')
 const elapsedSeconds = ref(0)
 const history = ref<GenerationHistoryItem[]>(loadHistory())
-const healthStatus = ref<'checking' | 'online' | 'offline'>('checking')
-const healthMessage = ref('正在检查 API 配置')
-const healthRequestId = ref('')
 
 const toast = useToast()
 const { theme, toggle: toggleTheme } = useTheme()
@@ -71,16 +68,30 @@ const lightbox = useLightbox()
 const provider = useProviderConfig()
 const discoveredModels = useDiscoveredModels()
 const { vibrate } = useVibration()
-const composerOpen = ref(false)
 const settingsOpen = ref(false)
 const historyOpen = ref(false)
 const styleSheetOpen = ref(false)
 const composerRef = ref<InstanceType<typeof PromptComposer> | null>(null)
 const chatDockRef = ref<InstanceType<typeof ChatDock> | null>(null)
+const chatStreamRef = ref<{ scrollToMessage?: (id: string) => void } | null>(null)
 const messages = ref<ChatMessage[]>([])
+const pendingContinuation = ref<ContinuationContext | null>(null)
 const mobileDockHeight = ref(180)
-const mobileViewportHeight = ref<number | null>(null)
-const mobileKeyboardInset = ref(0)
+
+const { viewportHeight: mobileViewportHeight, keyboardInset: mobileKeyboardInset } = useMobileViewport()
+const refImages = useReferenceImages({ toast })
+const referenceImages = refImages.items
+const addReferenceImages = refImages.add
+const removeReferenceImage = refImages.remove
+const clearComposerReferenceImages = refImages.clear
+const { primeGeneratedImages } = useImagePriming()
+const { download: downloadImage } = useDownloadImage({ provider, toast, outputFormat })
+const health = useHealthCheck({ provider, discoveredModels, toast })
+const healthStatus = health.status
+const healthMessage = health.message
+const refreshHealth = health.refresh
+const handleProviderTestResult = health.handleTestResult
+
 const mobileRootStyle = computed(() => {
   if (!mobileViewportHeight.value) return undefined
   return {
@@ -98,6 +109,33 @@ const mobileJumpButtonBottom = computed(() => {
 })
 let templateAnchorPrompt: string = defaultPrompt
 let skipNextStyleSync = false
+
+const magicSuffixByStyle: Record<ImageStyle, string> = {
+  natural: 'natural ambient light, honest textures, documentary realism, subtle color grading',
+  poster: 'strong poster composition, cinematic hierarchy, elegant negative space, premium editorial typography area',
+  product: 'studio-grade lighting, clean reflections, crisp material detail, premium commercial photography',
+  portrait: 'expressive eyes, refined skin texture, editorial portrait lighting, shallow depth of field',
+  anime: 'clean cel shading, expressive character design, crisp linework, vibrant yet controlled palette',
+  cinematic: 'anamorphic framing, dramatic practical lighting, atmospheric depth, film still composition',
+  logo: 'minimal vector geometry, scalable silhouette, balanced negative space, no text',
+  interior: 'architectural composition, layered natural light, warm material palette, lived-in spatial detail',
+  raw: 'sharp focus, coherent composition, refined lighting, high detail',
+}
+
+const quickPromptCards = [
+  {
+    title: '咖啡海报',
+    prompt: '精品咖啡品牌的竖版海报，米白背景，一杯冰拿铁居中，玻璃杯凝着水珠，焦糖棕与奶油白双色调，大面积留白，极简高级排版',
+  },
+  {
+    title: '夜雨街景',
+    prompt: '雨后夜晚的城市街角，霓虹灯映在湿润路面，一个穿风衣的人站在便利店门口，冷暖光对比，电影截图质感，35mm 镜头',
+  },
+  {
+    title: '产品棚拍',
+    prompt: '高端护肤精华液棚拍，琥珀色玻璃瓶居中，浅奶油色背景，柔光箱左侧布光，瓶身反光干净，商业杂志广告质感',
+  },
+]
 
 const restoredDraft = loadDraft()
 
@@ -120,35 +158,9 @@ if (restoredDraft) {
   if (typeof restoredDraft.customModel === 'string') customModel.value = restoredDraft.customModel
 }
 
-let timerId: number | undefined
-let draftSaveTimer: number | undefined
-const primedImageOrigins = new Set<string>()
-const ownedReferencePreviewUrls = new Set<string>()
-
-watch(
-  [prompt, negativePrompt, style, size, count, outputFormat, quality, creativity, seed, modelChoice, customModel],
-  () => {
-    if (draftSaveTimer) {
-      window.clearTimeout(draftSaveTimer)
-    }
-
-    draftSaveTimer = window.setTimeout(() => {
-      saveDraft({
-        prompt: prompt.value,
-        negativePrompt: negativePrompt.value,
-        style: style.value,
-        size: size.value,
-        count: count.value,
-        outputFormat: outputFormat.value,
-        quality: quality.value,
-        creativity: creativity.value,
-        seed: seed.value,
-        modelChoice: modelChoice.value,
-        customModel: customModel.value,
-      })
-    }, 400)
-  },
-)
+useDraftAutoSave({
+  prompt, negativePrompt, style, size, count, outputFormat, quality, creativity, seed, modelChoice, customModel,
+})
 
 const selectedStyle = computed(() => styleOptions.find((item) => item.value === style.value))
 const selectedStyleLabel = computed(() => selectedStyle.value?.label ?? style.value)
@@ -172,185 +184,6 @@ const canGenerate = computed(
 )
 const promptPreview = computed(() => trimmedPrompt.value.split('\n')[0]?.slice(0, 64) ?? '')
 
-function createId() {
-  if ('randomUUID' in crypto) {
-    return crypto.randomUUID()
-  }
-
-  return `${Date.now()}-${Math.random().toString(16).slice(2)}`
-}
-
-function resolveReferenceMimeType(file: File) {
-  const explicit = (file.type || '').trim().toLowerCase()
-  if (explicit) return explicit
-
-  const lowerName = file.name.toLowerCase()
-  if (lowerName.endsWith('.png')) return 'image/png'
-  if (lowerName.endsWith('.jpg') || lowerName.endsWith('.jpeg')) return 'image/jpeg'
-  if (lowerName.endsWith('.webp')) return 'image/webp'
-  if (lowerName.endsWith('.gif')) return 'image/gif'
-  return ''
-}
-
-function createReferenceImageAttachment(file: File): ReferenceImageAttachment {
-  const previewUrl = URL.createObjectURL(file)
-  ownedReferencePreviewUrls.add(previewUrl)
-
-  return {
-    id: createId(),
-    name: file.name,
-    mimeType: resolveReferenceMimeType(file),
-    sizeBytes: file.size,
-    previewUrl,
-    file,
-  }
-}
-
-function cloneReferenceImageAttachment(image: ReferenceImageAttachment): ReferenceImageAttachment {
-  if (!image.file) {
-    return {
-      ...image,
-      id: createId(),
-    }
-  }
-
-  const previewUrl = URL.createObjectURL(image.file)
-  ownedReferencePreviewUrls.add(previewUrl)
-
-  return {
-    ...image,
-    id: createId(),
-    previewUrl,
-    file: image.file,
-  }
-}
-
-function releaseOwnedReferencePreviewUrls(list: ReferenceImageAttachment[]) {
-  list.forEach((image) => {
-    if (!ownedReferencePreviewUrls.has(image.previewUrl)) return
-    URL.revokeObjectURL(image.previewUrl)
-    ownedReferencePreviewUrls.delete(image.previewUrl)
-  })
-}
-
-function clearComposerReferenceImages() {
-  releaseOwnedReferencePreviewUrls(referenceImages.value)
-  referenceImages.value = []
-}
-
-function addReferenceImages(files: File[]) {
-  if (!files.length) return
-
-  if (referenceImages.value.length >= maxReferenceImages) {
-    toast.info(`最多添加 ${maxReferenceImages} 张参考图`)
-    return
-  }
-
-  const remaining = Math.max(0, maxReferenceImages - referenceImages.value.length)
-  const candidates = files.slice(0, remaining)
-  const existingKeys = new Set(
-    referenceImages.value.map((image) => `${image.name}:${image.sizeBytes}:${image.mimeType}`),
-  )
-  const accepted: ReferenceImageAttachment[] = []
-  const rejected: string[] = []
-
-  for (const file of candidates) {
-    const mimeType = resolveReferenceMimeType(file)
-    const identity = `${file.name}:${file.size}:${mimeType}`
-
-    if (!allowedReferenceImageMimeTypes.has(mimeType)) {
-      rejected.push(`${file.name} 格式不支持`)
-      continue
-    }
-
-    if (file.size > maxReferenceImageSizeBytes) {
-      rejected.push(`${file.name} 超过 ${Math.round(maxReferenceImageSizeBytes / 1024 / 1024)}MB`)
-      continue
-    }
-
-    if (existingKeys.has(identity)) {
-      rejected.push(`${file.name} 已添加过`)
-      continue
-    }
-
-    existingKeys.add(identity)
-    accepted.push(createReferenceImageAttachment(file))
-  }
-
-  if (accepted.length) {
-    referenceImages.value = [...referenceImages.value, ...accepted]
-    toast.success(`已添加 ${accepted.length} 张参考图`)
-  }
-
-  if (files.length > candidates.length) {
-    rejected.push(`最多添加 ${maxReferenceImages} 张参考图`)
-  }
-
-  if (rejected.length) {
-    toast.info(rejected[0], rejected.length > 1 ? `另有 ${rejected.length - 1} 项未加入` : undefined)
-  }
-}
-
-function removeReferenceImage(id: string) {
-  const removed = referenceImages.value.find((image) => image.id === id)
-  if (removed) {
-    releaseOwnedReferencePreviewUrls([removed])
-  }
-  referenceImages.value = referenceImages.value.filter((image) => image.id !== id)
-}
-
-function primeImageOrigin(src: string) {
-  if (typeof document === 'undefined' || /^(data|blob):/i.test(src)) return
-
-  try {
-    const url = new URL(src, window.location.href)
-    if (primedImageOrigins.has(url.origin)) return
-
-    primedImageOrigins.add(url.origin)
-
-    const dnsPrefetch = document.createElement('link')
-    dnsPrefetch.rel = 'dns-prefetch'
-    dnsPrefetch.href = url.origin
-    document.head.appendChild(dnsPrefetch)
-
-    const preconnect = document.createElement('link')
-    preconnect.rel = 'preconnect'
-    preconnect.href = url.origin
-    preconnect.crossOrigin = 'anonymous'
-    document.head.appendChild(preconnect)
-  } catch {
-    return
-  }
-}
-
-function primeImageSource(src: string, fetchPriority: 'high' | 'auto') {
-  if (typeof window === 'undefined' || !src) return
-
-  primeImageOrigin(src)
-
-  const preloader = new Image() as HTMLImageElement & {
-    fetchPriority?: 'high' | 'low' | 'auto'
-  }
-
-  preloader.decoding = 'async'
-  if ('fetchPriority' in preloader) {
-    preloader.fetchPriority = fetchPriority
-  }
-  preloader.src = src
-
-  if (typeof preloader.decode === 'function') {
-    void preloader.decode().catch(() => undefined)
-  }
-}
-
-function primeGeneratedImages(list: GeneratedImage[]) {
-  list.slice(0, 3).forEach((image, index) => {
-    const src = resolveImageSource(image)
-    if (!src) return
-    primeImageSource(src, index === 0 ? 'high' : 'auto')
-  })
-}
-
 function buildPayload(): GenerateImageRequest {
   const resolvedModel =
     modelChoice.value === customModelSentinel
@@ -372,196 +205,81 @@ function buildPayload(): GenerateImageRequest {
   }
 }
 
-function payloadToMeta(payload: GenerateImageRequest): ChatMessageMeta {
-  return {
-    style: payload.style,
-    size: payload.size,
-    count: payload.count,
-    outputFormat: payload.outputFormat,
-    generationMode: payload.referenceImages?.length ? 'reference' : 'text',
-    model: payload.model,
-    quality: payload.quality,
-    creativity: payload.creativity,
-    seed: payload.seed,
-    negativePrompt: payload.negativePrompt,
-    referenceImageCount: payload.referenceImages?.length || undefined,
-  }
+const generation = useGenerationFlow({
+  messages, images, activeImageIndex, elapsedSeconds, errorMessage, lastRequestId,
+  isGenerating, history, settingsOpen, styleSheetOpen, toast, vibrate, primeGeneratedImages,
+})
+const { runGeneration } = generation
+
+function handleAbortGeneration() {
+  generation.abortGeneration()
 }
 
-function updateAssistantMessage(
-  id: string,
-  mutator: (message: ChatAssistantMessage) => ChatAssistantMessage,
+async function handleRemix(
+  image: GeneratedImage,
+  content: string,
+  fromMessageId: string,
+  fromImageIndex: number,
 ) {
-  messages.value = messages.value.map((message) =>
-    message.id === id && message.role === 'assistant' ? mutator(message) : message,
-  )
-}
-
-async function runGeneration(args: {
-  payload: GenerateImageRequest
-  userMessageId: string
-}): Promise<void> {
-  const meta = payloadToMeta(args.payload)
-  const assistantId = createId()
-  messages.value = [
-    ...messages.value,
-    {
-      id: assistantId,
-      role: 'assistant',
-      status: 'pending',
-      content: args.payload.prompt,
-      createdAt: new Date().toISOString(),
-      replyTo: args.userMessageId,
-      meta,
-      elapsedSeconds: 0,
-    },
-  ]
-
-  isGenerating.value = true
-  errorMessage.value = ''
-  images.value = []
-  activeImageIndex.value = 0
-  lastRequestId.value = ''
-  elapsedSeconds.value = 0
-
-  composerOpen.value = false
-  settingsOpen.value = false
-  styleSheetOpen.value = false
-
-  let elapsed = 0
-  if (timerId) {
-    window.clearInterval(timerId)
-    timerId = undefined
-  }
-  timerId = window.setInterval(() => {
-    elapsed += 1
-    elapsedSeconds.value = elapsed
-    updateAssistantMessage(assistantId, (current) => ({ ...current, elapsedSeconds: elapsed }))
-  }, 1000)
-
-  try {
-    const result = await generateImage(args.payload)
-
-    primeGeneratedImages(result.images)
-    images.value = result.images
-    lastRequestId.value = result.requestId || ''
-    const persistableImages: GeneratedImage[] = result.images
-      .filter((image) => typeof image.url === 'string' && image.url.length > 0)
-      .map((image) => ({
-        id: image.id,
-        url: image.url,
-        mimeType: image.mimeType,
-        revisedPrompt: image.revisedPrompt,
-      }))
-    history.value = prependHistory({
-      prompt: args.payload.prompt,
-      style: args.payload.style,
-      size: args.payload.size,
-      count: args.payload.count,
-      outputFormat: args.payload.outputFormat,
-      negativePrompt: args.payload.negativePrompt,
-      quality: args.payload.quality,
-      creativity: args.payload.creativity,
-      seed: args.payload.seed,
-      model: args.payload.model,
-      id: createId(),
-      createdAt: new Date().toISOString(),
-      requestId: result.requestId,
-      imageCount: result.images.length,
-      referenceImageCount: args.payload.referenceImages?.length || undefined,
-      images: persistableImages.length ? persistableImages : undefined,
-    })
-
-    updateAssistantMessage(assistantId, (current) => ({
-      ...current,
-      status: 'success',
-      images: result.images,
-      requestId: result.requestId,
-      elapsedSeconds: elapsed,
-    }))
-
-    vibrate('success')
-    toast.success(
-      `已生成 ${result.images.length} 张`,
-      result.requestId ? `req ${result.requestId.slice(0, 8)}` : undefined,
-    )
-  } catch (error) {
-    let message = '生成失败，请稍后重试。'
-    let code: string | undefined
-    let requestId: string | undefined
-
-    if (error instanceof ApiRequestError) {
-      message = error.message
-      code = error.code
-      requestId = error.requestId
-    } else if (error instanceof Error) {
-      message = error.message
-    }
-
-    errorMessage.value = requestId ? `${message}（请求 ID：${requestId}）` : message
-    lastRequestId.value = requestId || ''
-
-    updateAssistantMessage(assistantId, (current) => ({
-      ...current,
-      status: 'error',
-      errorMessage: message,
-      errorCode: code,
-      requestId,
-      elapsedSeconds: elapsed,
-    }))
-
-    vibrate('error')
-    toast.error(message, requestId ? `req ${requestId.slice(0, 8)}` : undefined)
-
-    if (code === PROVIDER_NOT_CONFIGURED) {
-      settingsOpen.value = true
-    }
-  } finally {
-    isGenerating.value = false
-
-    if (timerId) {
-      window.clearInterval(timerId)
-      timerId = undefined
-    }
-  }
-}
-
-async function handleRemix(image: GeneratedImage, content: string) {
   vibrate('tap')
-  
-  // 1. 设置提示词
-  prompt.value = content
-  
-  // 2. 将图片转化为 File 对象并添加到参考图
+
   const source = resolveImageSource(image)
   if (!source) {
-    toast.error('无法重混：找不到图片源')
+    toast.error('找不到这张图片的源数据', '可能未保存或链接已失效')
     return
   }
 
+  // 用上一轮的提示词作为起点（用户可继续编辑指令）
+  prompt.value = content || prompt.value
+
   try {
-    toast.info('正在提取图片进行重混…')
+    toast.info('正在准备「接着画」', '把这张图加入参考')
     let blob: Blob
     if (source.startsWith('data:')) {
       const res = await fetch(source)
       blob = await res.blob()
     } else {
-      // 远程 URL 可能需要通过代理
       const res = await fetch(source)
       if (!res.ok) throw new Error('远程图片下载失败')
       blob = await res.blob()
     }
 
-    const file = new File([blob], `remix-${Date.now()}.png`, { type: 'image/png' })
+    const file = new File([blob], `continue-${Date.now()}.png`, { type: 'image/png' })
+
+    // 接着画时：用这张图替换之前的参考图，避免误用上一轮的素材
+    clearComposerReferenceImages()
     addReferenceImages([file])
-    
-    // 3. 聚焦并提示
+
+    pendingContinuation.value = {
+      fromMessageId,
+      fromImageId: image.id,
+      fromImageIndex,
+      thumbnailUrl: source,
+      promptPreview: (content || '').split('\n')[0]?.slice(0, 60) ?? '',
+    }
+
     focusPrompt()
-    toast.success('已准备好重混', '图片已加入参考，提示词已回填')
+    toast.success('已接上这张图', '修改提示词后发送即可继续创作')
   } catch (err) {
-    console.error('Remix failed:', err)
-    toast.error('重混失败，图片可能存在跨域限制')
+    console.error('Continue from image failed:', err)
+    toast.error('准备失败', '图片可能存在跨域限制，无法直接接着画')
   }
+}
+
+function handlePickSuggestion(value: ImageStyle) {
+  pickStyleFromChat(value)
+}
+
+function handleScrollToMessage(id: string) {
+  vibrate('tap')
+  chatStreamRef.value?.scrollToMessage?.(id)
+}
+
+function handleCancelContinuation() {
+  vibrate('tap')
+  pendingContinuation.value = null
+  clearComposerReferenceImages()
+  toast.info('已取消接着画', '回到自由创作模式')
 }
 
 function handleMagicEnhance() {
@@ -571,24 +289,22 @@ function handleMagicEnhance() {
     return
   }
 
-  const magicSuffixes = [
-    'highly detailed, sharp focus, 8k resolution, cinematic lighting, masterpiece',
-    'ultra-realistic, intricate textures, dramatic atmosphere, professional photography',
-    'ethereal glow, soft bokeh, vibrant colors, stunning composition',
-    'digital art style, Unreal Engine 5 render, ray tracing, concept art'
-  ]
-
-  // 随机选一个还没加过的
-  const randomSuffix = magicSuffixes[Math.floor(Math.random() * magicSuffixes.length)]
-  
-  if (current.includes(randomSuffix)) {
+  const suffix = magicSuffixByStyle[style.value]
+  if (current.includes(suffix)) {
     toast.info('魔法已经施展过啦')
     return
   }
 
-  prompt.value = `${current}, ${randomSuffix}`
+  prompt.value = `${current}, ${suffix}`
   vibrate('success')
-  toast.success('魔法已施展', '已追加艺术修饰词')
+  toast.success('魔法已施展', `已按「${selectedStyleLabel.value}」追加修饰词`)
+}
+
+function handlePickQuickPrompt(value: string) {
+  prompt.value = value
+  templateAnchorPrompt = value
+  vibrate('tap')
+  focusPrompt()
 }
 
 async function handleGenerate(options?: { clearAfter?: boolean }) {
@@ -606,8 +322,11 @@ async function handleGenerate(options?: { clearAfter?: boolean }) {
   const payload = buildPayload()
   const userId = createId()
   const messageReferenceImages = payload.referenceImages?.length
-    ? payload.referenceImages.map(cloneReferenceImageAttachment)
+    ? refImages.cloneList(payload.referenceImages)
     : undefined
+
+  const continuation = pendingContinuation.value
+  pendingContinuation.value = null
 
   messages.value = [
     ...messages.value,
@@ -618,6 +337,7 @@ async function handleGenerate(options?: { clearAfter?: boolean }) {
       createdAt: new Date().toISOString(),
       meta: payloadToMeta(payload),
       referenceImages: messageReferenceImages,
+      continuedFrom: continuation ?? undefined,
     },
   ]
 
@@ -688,85 +408,7 @@ function pickStyleFromChat(value: ImageStyle) {
   nextTick(() => chatDockRef.value?.focusInput())
 }
 
-async function fetchAsBlob(url: string, headers?: Record<string, string>): Promise<Blob | null> {
-  try {
-    const response = await fetch(url, { headers })
-    if (!response.ok) return null
-    return await response.blob()
-  } catch {
-    return null
-  }
-}
-
-function triggerBlobDownload(blob: Blob, filename: string) {
-  const objectUrl = URL.createObjectURL(blob)
-  const anchor = document.createElement('a')
-  anchor.href = objectUrl
-  anchor.download = filename
-  document.body.appendChild(anchor)
-  anchor.click()
-  anchor.remove()
-  URL.revokeObjectURL(objectUrl)
-}
-
-async function downloadImage(image: GeneratedImage, index: number) {
-  const source = resolveImageSource(image)
-
-  if (!source) {
-    toast.error('这张图片没有可下载地址')
-    return
-  }
-
-  if (source.startsWith('data:')) {
-    const response = await fetch(source)
-    const blob = await response.blob()
-    const ext = (image.mimeType?.split('/')[1] || outputFormat.value).split(';')[0]
-    triggerBlobDownload(blob, `promptcanvas-${Date.now()}-${index + 1}.${ext}`)
-    toast.success('图片已下载')
-    return
-  }
-
-  const extension = image.mimeType?.split('/')[1] || outputFormat.value
-  const filename = `promptcanvas-${Date.now()}-${index + 1}.${extension}`
-
-  const direct = await fetchAsBlob(source)
-  if (direct) {
-    triggerBlobDownload(direct, filename)
-    toast.success('图片已下载', filename)
-    return
-  }
-
-  const proxyUrl = (provider.snapshot().proxyUrl || '').trim().replace(/\/+$/, '')
-  if (proxyUrl) {
-    try {
-      const u = new URL(source)
-      const upstreamBase = `${u.protocol}//${u.host}`
-      const proxiedUrl = `${proxyUrl}${u.pathname}${u.search}`
-      const viaProxy = await fetchAsBlob(proxiedUrl, { 'X-Upstream-Base': upstreamBase })
-      if (viaProxy) {
-        triggerBlobDownload(viaProxy, filename)
-        toast.success('图片已下载（经代理）', filename)
-        return
-      }
-    } catch {}
-  }
-
-  try {
-    const anchor = document.createElement('a')
-    anchor.href = source
-    anchor.download = filename
-    anchor.target = '_blank'
-    anchor.rel = 'noopener'
-    document.body.appendChild(anchor)
-    anchor.click()
-    anchor.remove()
-    toast.info('已在新标签打开', '原站不允许跨域下载，可右键图片另存为')
-  } catch {
-    window.open(source, '_blank', 'noopener,noreferrer')
-  }
-}
-
-function restoreHistory(item: GenerationHistoryItem) {
+async function restoreHistory(item: GenerationHistoryItem) {
   prompt.value = item.prompt
   templateAnchorPrompt = item.prompt
   if (style.value !== item.style) {
@@ -793,7 +435,6 @@ function restoreHistory(item: GenerationHistoryItem) {
     customModel.value = restoredModel
   }
   errorMessage.value = ''
-  composerOpen.value = false
   historyOpen.value = false
 
   if (item.images && item.images.length) {
@@ -902,73 +543,6 @@ function exportCurrentConfig() {
   toast.success('参数已导出', 'JSON')
 }
 
-async function refreshHealth(options?: { silent?: boolean }) {
-  if (!provider.isConfigured.value) {
-    healthStatus.value = 'offline'
-    healthRequestId.value = ''
-    healthMessage.value = '未配置 API 服务商，请打开「设置」填写 baseUrl 与 Key'
-    return
-  }
-
-  healthStatus.value = 'checking'
-  healthMessage.value = '正在测试连接…'
-  healthRequestId.value = ''
-
-  try {
-    const result = await testProvider()
-
-    if (result.models?.length) {
-      discoveredModels.setModels(result.models)
-    }
-
-    if (!result.generationsCorsOk) {
-      healthStatus.value = 'offline'
-      healthMessage.value = result.message
-      if (!options?.silent) {
-        toast.error('生成路径 CORS 缺失', '生成会被浏览器拦截，但上游仍会扣费。详见「设置」中的测试面板')
-      }
-      return
-    }
-
-    healthStatus.value = 'online'
-    healthMessage.value = result.message
-
-    if (!options?.silent) {
-      toast.success('API 连接正常', result.message)
-    }
-  } catch (error) {
-    healthStatus.value = 'offline'
-
-    if (error instanceof ApiRequestError) {
-      healthRequestId.value = error.requestId || ''
-      healthMessage.value = error.message
-      if (!options?.silent) {
-        toast.error('API 连接失败', error.message)
-      }
-      return
-    }
-
-    const message = error instanceof Error ? error.message : '连接测试失败'
-    healthMessage.value = message
-    if (!options?.silent) {
-      toast.error('API 连接失败', message)
-    }
-  }
-}
-
-function handleProviderTestResult(payload: { ok: boolean; message: string; code?: string }) {
-  if (payload.ok) {
-    healthStatus.value = 'online'
-    healthMessage.value = payload.message
-    healthRequestId.value = ''
-  } else {
-    healthStatus.value = 'offline'
-    healthMessage.value = payload.message
-    healthRequestId.value = ''
-  }
-}
-
-
 function focusPrompt() {
   if (typeof window !== 'undefined' && window.innerWidth >= 1024) {
     composerRef.value?.focusPrompt()
@@ -980,26 +554,6 @@ function focusPrompt() {
 function handleChatDockLayoutChange(height: number) {
   if (!Number.isFinite(height)) return
   mobileDockHeight.value = Math.max(0, Math.round(height))
-}
-
-function syncMobileViewport() {
-  if (typeof window === 'undefined') return
-
-  if (window.innerWidth >= 1024) {
-    mobileViewportHeight.value = null
-    mobileKeyboardInset.value = 0
-    return
-  }
-
-  const visualViewport = window.visualViewport
-  const layoutHeight = window.innerHeight || document.documentElement.clientHeight || 0
-  const visualHeight = visualViewport?.height ?? layoutHeight
-  const offsetTop = visualViewport?.offsetTop ?? 0
-  const nextViewportHeight = Math.round(visualHeight + offsetTop)
-  const nextKeyboardInset = Math.max(layoutHeight - visualHeight - offsetTop, 0)
-
-  mobileViewportHeight.value = nextViewportHeight > 0 ? nextViewportHeight : null
-  mobileKeyboardInset.value = nextKeyboardInset > 88 ? Math.round(nextKeyboardInset) : 0
 }
 
 watch(style, (newValue, oldValue) => {
@@ -1024,45 +578,8 @@ watch(style, (newValue, oldValue) => {
   toast.info('已切换提示词模板', `${preset.label} · 输入框已更新`)
 })
 
-const throttledViewportSync = rafThrottle(syncMobileViewport)
-
 onMounted(() => {
-  refreshHealth({ silent: true })
-  syncMobileViewport()
-  window.addEventListener('resize', throttledViewportSync, { passive: true })
-  window.addEventListener('orientationchange', throttledViewportSync, { passive: true })
-  window.visualViewport?.addEventListener('resize', throttledViewportSync, { passive: true })
-  window.visualViewport?.addEventListener('scroll', throttledViewportSync, { passive: true })
-})
-
-watch(
-  () => provider.isConfigured.value,
-  () => {
-    refreshHealth({ silent: true })
-  },
-)
-
-onUnmounted(() => {
-  if (timerId) {
-    window.clearInterval(timerId)
-    timerId = undefined
-  }
-
-  if (draftSaveTimer) {
-    window.clearTimeout(draftSaveTimer)
-    draftSaveTimer = undefined
-  }
-
-  window.removeEventListener('resize', throttledViewportSync)
-  window.removeEventListener('orientationchange', throttledViewportSync)
-  window.visualViewport?.removeEventListener('resize', throttledViewportSync)
-  window.visualViewport?.removeEventListener('scroll', throttledViewportSync)
-  throttledViewportSync.cancel()
-
-  ownedReferencePreviewUrls.forEach((url) => {
-    URL.revokeObjectURL(url)
-  })
-  ownedReferencePreviewUrls.clear()
+  void refreshHealth({ silent: true })
 })
 </script>
 
@@ -1103,12 +620,15 @@ onUnmounted(() => {
           :elapsed-seconds="elapsedSeconds"
           :can-generate="canGenerate"
           :health-offline="healthStatus === 'offline'"
+          :continuation="pendingContinuation"
           @generate="handleGenerate"
+          @abort="handleAbortGeneration"
           @copy="copyToClipboard"
           @open-settings="settingsOpen = true"
           @select-reference-images="addReferenceImages"
           @remove-reference-image="removeReferenceImage"
           @magic-enhance="handleMagicEnhance"
+          @cancel-continuation="handleCancelContinuation"
         />
       </section>
 
@@ -1125,6 +645,7 @@ onUnmounted(() => {
           :model-label="selectedModelLabel"
           :prompt-preview="promptPreview"
           :has-prompt="trimmedPrompt.length >= 4"
+          :quick-prompts="quickPromptCards"
           @select="(index) => (activeImageIndex = index)"
           @open-lightbox="(index) => lightbox.open(images, index)"
           @download="downloadImage"
@@ -1132,7 +653,9 @@ onUnmounted(() => {
           @copy="copyToClipboard"
           @export="exportCurrentConfig"
           @go-compose="focusPrompt"
+          @pick-prompt="handlePickQuickPrompt"
           @generate="handleGenerate"
+          @abort="handleAbortGeneration"
         />
       </section>
 
@@ -1150,13 +673,18 @@ onUnmounted(() => {
 
     <div class="flex min-h-0 flex-1 flex-col overflow-hidden lg:hidden">
       <ChatStream
+        ref="chatStreamRef"
         :messages="messages"
         :mobile-bottom-padding="mobileChatBottomPadding"
+        :jump-bottom="mobileJumpButtonBottom"
         @retry="regenerateFromMessage"
         @open-image="lightbox.open"
         @download="downloadImage"
         @copy="copyToClipboard"
         @remix="handleRemix"
+        @pick-suggestion="handlePickSuggestion"
+        @scroll-to-message="handleScrollToMessage"
+        @abort="handleAbortGeneration"
       />
     </div>
 
@@ -1174,12 +702,16 @@ onUnmounted(() => {
       :reference-images="referenceImages"
       :keyboard-inset="mobileKeyboardInset"
       :viewport-height="mobileViewportHeight ?? undefined"
+      :continuation="pendingContinuation"
       @send="sendFromChat"
+      @abort="handleAbortGeneration"
       @open-style-sheet="styleSheetOpen = true"
       @layout-change="handleChatDockLayoutChange"
       @select-reference-images="addReferenceImages"
       @remove-reference-image="removeReferenceImage"
       @magic-enhance="handleMagicEnhance"
+      @cancel-continuation="handleCancelContinuation"
+      @jump-to-continuation="handleScrollToMessage"
     />
 
     <StyleSheet

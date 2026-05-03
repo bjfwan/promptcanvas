@@ -8,7 +8,7 @@ import { customModelSentinel, styleOptions } from '../presets'
 import { useDiscoveredModels } from '../composables/useDiscoveredModels'
 import { useVibration } from '../composables/useVibration'
 import { rafThrottle } from '../lib/rafThrottle'
-import type { ImageStyle, ReferenceImageAttachment } from '../types'
+import type { ContinuationContext, ImageStyle, ReferenceImageAttachment } from '../types'
 
 interface Props {
   isGenerating: boolean
@@ -19,11 +19,13 @@ interface Props {
   referenceImages: ReferenceImageAttachment[]
   keyboardInset?: number
   viewportHeight?: number
+  continuation?: ContinuationContext | null
 }
 
 const props = withDefaults(defineProps<Props>(), {
   keyboardInset: 0,
   viewportHeight: 0,
+  continuation: null,
 })
 
 const prompt = defineModel<string>('prompt', { required: true })
@@ -32,11 +34,14 @@ const customModel = defineModel<string>('customModel', { required: true })
 
 const emit = defineEmits<{
   (e: 'send'): void
+  (e: 'abort'): void
   (e: 'open-style-sheet'): void
   (e: 'layout-change', height: number): void
   (e: 'select-reference-images', files: File[]): void
   (e: 'remove-reference-image', id: string): void
   (e: 'magic-enhance'): void
+  (e: 'cancel-continuation'): void
+  (e: 'jump-to-continuation', id: string): void
 }>()
 
 const dockRef = ref<HTMLDivElement | null>(null)
@@ -78,7 +83,16 @@ const modelLabel = computed(() => {
   return match?.label ?? (modelChoice.value || '默认')
 })
 
-const sendDisabled = computed(() => !props.canGenerate || props.isGenerating)
+// 当正在生成时，发送按钮变成「取消」按钮，所以单独算一个真正禁用的状态
+const sendDisabled = computed(() => !props.isGenerating && !props.canGenerate)
+
+const dockOuterStyle = computed(() => {
+  if (!props.keyboardInset) return undefined
+  return {
+    bottom: `${props.keyboardInset}px`,
+    paddingBottom: '0.4rem',
+  }
+})
 
 function openReferencePicker() {
   vibrate('tap')
@@ -164,10 +178,27 @@ function ensureDockVisible() {
   if (typeof window === 'undefined') return
   const el = dockRef.value
   if (!el) return
+  const behavior: ScrollBehavior = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
       try {
-        el.scrollIntoView({ block: 'end', behavior: 'smooth' })
+        el.scrollIntoView({ block: 'end', behavior })
+      } catch {
+        el.scrollIntoView(false)
+      }
+    })
+  })
+}
+
+function ensureTextareaVisible() {
+  if (typeof window === 'undefined') return
+  const el = textareaRef.value
+  if (!el) return
+  const behavior: ScrollBehavior = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      try {
+        el.scrollIntoView({ block: 'center', inline: 'nearest', behavior })
       } catch {
         el.scrollIntoView(false)
       }
@@ -181,14 +212,18 @@ function focusInput() {
     autosize()
     reportLayout()
     ensureDockVisible()
+    ensureTextareaVisible()
   })
 }
 
 function send() {
+  if (props.isGenerating) {
+    vibrate('tap')
+    emit('abort')
+    return
+  }
   if (sendDisabled.value) {
-    if (!props.canGenerate || props.isGenerating) {
-      vibrate('error')
-    }
+    vibrate('error')
     return
   }
   emit('send')
@@ -239,7 +274,13 @@ watch(() => props.referenceImages.length, syncLayoutSoon)
 
 watch(() => props.keyboardInset, syncLayoutSoon)
 
+watch(() => props.keyboardInset, (value) => {
+  if (value > 0 && focused.value) ensureTextareaVisible()
+})
+
 watch(() => props.viewportHeight, syncLayoutSoon)
+
+watch(() => props.continuation?.fromMessageId, syncLayoutSoon)
 
 const throttledLayoutSync = rafThrottle(syncLayoutSoon)
 
@@ -274,11 +315,49 @@ defineExpose({ focusInput })
   <div
     ref="dockRef"
     class="chat-dock absolute inset-x-0 bottom-0 z-dock pb-[max(env(safe-area-inset-bottom,0px),0.5rem)] pt-2"
+    :style="dockOuterStyle"
   >
     <div
       class="pointer-events-none absolute inset-x-0 -top-8 h-8 bg-gradient-to-t from-paper to-transparent"
       aria-hidden="true"
     ></div>
+
+    <Transition name="chat-dock-continuation">
+      <div
+        v-if="continuation"
+        class="chat-dock__continuation mx-2.5 mb-2 sm:mx-3"
+        role="status"
+        aria-label="正在接着画"
+      >
+        <button
+          type="button"
+          class="chat-dock__continuation-target"
+          :aria-label="`跳回原始对话`"
+          @click.stop="emit('jump-to-continuation', continuation.fromMessageId)"
+        >
+          <span class="chat-dock__continuation-thumb" aria-hidden="true">
+            <img :src="continuation.thumbnailUrl" alt="" loading="lazy" decoding="async" />
+            <span class="chat-dock__continuation-thumb-mark">
+              <Icon name="sparkle" :size="9" />
+            </span>
+          </span>
+          <span class="chat-dock__continuation-text">
+            <span class="chat-dock__continuation-title">接着画</span>
+            <span class="chat-dock__continuation-sub">
+              基于第 {{ continuation.fromImageIndex + 1 }} 张图，描述你想改的细节
+            </span>
+          </span>
+        </button>
+        <button
+          type="button"
+          class="chat-dock__continuation-cancel"
+          aria-label="取消接着画"
+          @click.stop="emit('cancel-continuation')"
+        >
+          <Icon name="close" :size="11" />
+        </button>
+      </div>
+    </Transition>
 
     <div
       v-if="healthOffline"
@@ -425,17 +504,23 @@ defineExpose({ focusInput })
             type="button"
             class="chat-dock__send-inner"
             :class="{
-              'chat-dock__send-inner--ready': promptHasContent && !sendDisabled,
+              'chat-dock__send-inner--ready': promptHasContent && !sendDisabled && !isGenerating,
               'chat-dock__send-inner--busy': isGenerating,
             }"
             :disabled="sendDisabled"
-            aria-label="发送提示词生成图片"
+            :aria-label="isGenerating ? '取消生成' : '发送提示词生成图片'"
             @click.stop="send"
           >
             <Icon
-              :name="isGenerating ? 'sparkle' : 'send'"
+              v-if="isGenerating"
+              name="close"
               :size="16"
-              :class="isGenerating ? 'animate-breathe' : ''"
+              class="chat-dock__send-busy-icon"
+            />
+            <Icon
+              v-else
+              name="send"
+              :size="16"
             />
           </button>
         </div>
@@ -497,6 +582,15 @@ defineExpose({ focusInput })
 <style scoped>
 .chat-dock {
   --chat-dock-radius: 28px;
+  transition: bottom 220ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    padding-bottom 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  will-change: bottom;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-dock {
+    transition: none;
+  }
 }
 
 .chat-dock__shell--focused {
@@ -594,6 +688,7 @@ defineExpose({ focusInput })
 .chat-dock__send-inner--busy {
   background: rgb(var(--color-ink));
   color: rgb(var(--color-paper));
+  cursor: pointer;
 }
 
 .chat-dock__send-inner--busy::after {
@@ -604,6 +699,15 @@ defineExpose({ focusInput })
   border: 2px solid transparent;
   border-top-color: rgb(var(--color-paper));
   animation: spin 1s linear infinite;
+}
+
+.chat-dock__send-inner--busy:hover {
+  background: rgb(var(--color-accent));
+}
+
+.chat-dock__send-busy-icon {
+  position: relative;
+  z-index: 1;
 }
 
 @keyframes spin {
@@ -942,6 +1046,146 @@ defineExpose({ focusInput })
   }
 }
 
+.chat-dock__continuation {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.5rem;
+  border-radius: 18px;
+  border: 1px solid rgb(var(--color-accent) / 0.32);
+  background: linear-gradient(180deg, rgb(var(--color-accent) / 0.07), rgb(var(--color-accent) / 0.04));
+  box-shadow: 0 6px 18px -14px rgb(var(--color-accent) / 0.6);
+}
+
+.chat-dock__continuation-target {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex: 1;
+  min-width: 0;
+  padding: 0.15rem 0.25rem;
+  border-radius: 14px;
+  background: transparent;
+  color: rgb(var(--color-ink));
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 140ms ease;
+}
+
+.chat-dock__continuation-target:hover {
+  background: rgb(var(--color-paper) / 0.5);
+}
+
+.chat-dock__continuation-thumb {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid rgb(var(--color-line-strong) / 0.6);
+  background: rgb(var(--color-paper-soft));
+  box-shadow: 0 6px 14px -10px rgb(var(--color-ink) / 0.4);
+}
+
+.chat-dock__continuation-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.chat-dock__continuation-thumb-mark {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  display: grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: rgb(var(--color-accent));
+  color: rgb(var(--color-paper));
+  border: 1.5px solid rgb(var(--color-vellum));
+}
+
+.chat-dock__continuation-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.15;
+}
+
+.chat-dock__continuation-title {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgb(var(--color-accent));
+}
+
+.chat-dock__continuation-sub {
+  margin-top: 1px;
+  font-size: 12px;
+  color: rgb(var(--color-ink) / 0.78);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chat-dock__continuation-cancel {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: rgb(var(--color-paper) / 0.6);
+  color: rgb(var(--color-muted));
+  border: 1px solid rgb(var(--color-line) / 0.7);
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease, transform 140ms ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.chat-dock__continuation-cancel::before {
+  content: '';
+  position: absolute;
+  inset: -6px;
+}
+
+.chat-dock__continuation-cancel:hover {
+  background: rgb(var(--color-paper));
+  color: rgb(var(--color-accent));
+  border-color: rgb(var(--color-accent) / 0.4);
+}
+
+.chat-dock__continuation-cancel:active {
+  transform: scale(0.95);
+}
+
+.chat-dock-continuation-enter-from,
+.chat-dock-continuation-leave-to {
+  opacity: 0;
+  transform: translateY(6px) scale(0.98);
+}
+
+.chat-dock-continuation-enter-to,
+.chat-dock-continuation-leave-from {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.chat-dock-continuation-enter-active,
+.chat-dock-continuation-leave-active {
+  transition: opacity 0.24s cubic-bezier(0.2, 0.8, 0.2, 1),
+    transform 0.24s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .chat-dock__send-inner,
   .asset-chip,
@@ -949,7 +1193,9 @@ defineExpose({ focusInput })
   .chat-dock-attachments-enter-active,
   .chat-dock-attachments-leave-active,
   .chat-dock-custom-enter-active,
-  .chat-dock-custom-leave-active {
+  .chat-dock-custom-leave-active,
+  .chat-dock-continuation-enter-active,
+  .chat-dock-continuation-leave-active {
     transition: none;
   }
 }

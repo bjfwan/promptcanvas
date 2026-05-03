@@ -108,6 +108,14 @@ export interface ChatMessageMeta {
   referenceImageCount?: number
 }
 
+export interface ContinuationContext {
+  fromMessageId: string
+  fromImageId?: string
+  fromImageIndex: number
+  thumbnailUrl: string
+  promptPreview: string
+}
+
 export interface ChatUserMessage {
   id: string
   role: 'user'
@@ -115,6 +123,7 @@ export interface ChatUserMessage {
   createdAt: string
   meta: ChatMessageMeta
   referenceImages?: ReferenceImageAttachment[]
+  continuedFrom?: ContinuationContext
 }
 
 export interface ChatAssistantMessage {

@@ -5,6 +5,7 @@ export type ThemeMode = 'paper' | 'night'
 const storageKey = 'promptcanvas:theme-v1'
 const theme = ref<ThemeMode>('paper')
 let initialised = false
+let transitionTimer: number | undefined
 
 function detectInitial(): ThemeMode {
   if (typeof window === 'undefined') return 'paper'
@@ -35,6 +36,20 @@ function applyTheme(value: ThemeMode) {
   }
 }
 
+function startThemeTransition() {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return
+  if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return
+  const root = document.documentElement
+  root.classList.add('theme-transition')
+  if (transitionTimer) {
+    window.clearTimeout(transitionTimer)
+  }
+  transitionTimer = window.setTimeout(() => {
+    root.classList.remove('theme-transition')
+    transitionTimer = undefined
+  }, 220)
+}
+
 export function useTheme() {
   if (!initialised && typeof window !== 'undefined') {
     initialised = true
@@ -47,6 +62,7 @@ export function useTheme() {
   })
 
   watch(theme, (next) => {
+    startThemeTransition()
     applyTheme(next)
     try {
       window.localStorage.setItem(storageKey, next)

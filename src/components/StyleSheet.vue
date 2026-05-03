@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { onBeforeUnmount, watch } from 'vue'
+import { onBeforeUnmount, ref, watch } from 'vue'
 import Icon from './Icon.vue'
 import StyleSwatch from './StyleSwatch.vue'
+import { useFocusTrap } from '../composables/useFocusTrap'
 import { styleOptions } from '../presets'
 import { stylePrompts } from '../lib/imagesApi'
 import type { ImageStyle } from '../types'
@@ -16,6 +17,7 @@ interface Props {
 }
 
 const props = defineProps<Props>()
+const sheetRef = ref<HTMLElement | null>(null)
 
 const emit = defineEmits<{
   (e: 'update:open', value: boolean): void
@@ -53,6 +55,8 @@ watch(
   { immediate: true },
 )
 
+useFocusTrap(() => props.open, sheetRef)
+
 onBeforeUnmount(() => {
   if (typeof document !== 'undefined') {
     document.body.style.overflow = ''
@@ -74,6 +78,7 @@ onBeforeUnmount(() => {
 
     <Transition name="style-sheet">
       <section
+        ref="sheetRef"
         v-if="open"
         class="style-sheet fixed inset-x-0 bottom-0 z-sheet flex flex-col rounded-t-[28px] border-t border-line bg-paper text-ink shadow-paper-3"
         role="dialog"

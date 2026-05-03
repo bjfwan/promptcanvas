@@ -16,7 +16,9 @@ const emit = defineEmits<{
   (e: 'open-image', images: GeneratedImage[], index: number): void
   (e: 'download', image: GeneratedImage, index: number): void
   (e: 'copy', text: string, message: string): void
-  (e: 'remix', image: GeneratedImage, prompt: string): void
+  (e: 'remix', image: GeneratedImage, prompt: string, imageIndex: number): void
+  (e: 'scroll-to-message', id: string): void
+  (e: 'abort', id: string): void
 }>()
 
 function openImage(index: number) {
@@ -97,6 +99,21 @@ const pendingProgress = computed(() => {
 
 const pendingPercentLabel = computed(() => `${pendingProgress.value}%`)
 
+const pendingRemainingLabel = computed(() => {
+  const message = assistantMessage.value
+  if (!message || message.status !== 'pending') return ''
+  const target = estimatedPendingDuration(message)
+  const elapsed = Math.max(0, message.elapsedSeconds ?? 0)
+  const remain = Math.max(0, target - elapsed)
+  if (elapsed >= target) {
+    // 已经超时：用模糊语言而非倒计时
+    return '已超出预估，仍在等上游回包'
+  }
+  if (remain <= 1) return '即将出图'
+  if (remain <= 4) return `约 ${remain}s`
+  return `约 ${remain}s`
+})
+
 const pendingStageLabel = computed(() => {
   const progress = pendingProgress.value
   if (progress < 24) return '解析提示词'
@@ -151,6 +168,28 @@ function isImageReady(image: GeneratedImage, index: number) {
     :data-role="message.role"
   >
     <div v-if="message.role === 'user'" class="flex max-w-[86%] flex-col items-end gap-1.5">
+      <button
+        v-if="message.continuedFrom"
+        type="button"
+        class="chat-continuation-chip self-end"
+        :aria-label="`基于先前生成的第 ${message.continuedFrom.fromImageIndex + 1} 张图，点击跳回原对话`"
+        @click="emit('scroll-to-message', message.continuedFrom.fromMessageId)"
+      >
+        <span class="chat-continuation-chip__thumb" aria-hidden="true">
+          <img
+            :src="message.continuedFrom.thumbnailUrl"
+            alt=""
+            loading="lazy"
+            decoding="async"
+          />
+        </span>
+        <span class="chat-continuation-chip__body">
+          <span class="chat-continuation-chip__title">接着上一张</span>
+          <span class="chat-continuation-chip__sub">{{ message.continuedFrom.promptPreview || '继续编辑' }}</span>
+        </span>
+        <Icon name="arrowUp" :size="11" class="chat-continuation-chip__arrow" />
+      </button>
+
       <div
         v-if="(message.referenceImages?.length ?? 0) > 0"
         class="grid max-w-full gap-2 self-end"
@@ -214,26 +253,6 @@ function isImageReady(image: GeneratedImage, index: number) {
       >
           <div class="chat-pending-frame relative w-full overflow-hidden rounded-2xl" :class="previewFrameClass">
             <div class="chat-pending-bg absolute inset-0"></div>
-            <div class="chat-pending-grain absolute inset-0"></div>
-            
-            <div class="absolute inset-0 flex items-center justify-center overflow-hidden">
-              <svg class="chat-pending-weave w-full h-full" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
-                <defs>
-                  <filter id="glow">
-                    <feGaussianBlur stdDeviation="2.5" result="coloredBlur"/>
-                    <feMerge>
-                      <feMergeNode in="coloredBlur"/>
-                      <feMergeNode in="SourceGraphic"/>
-                    </feMerge>
-                  </filter>
-                </defs>
-                <g filter="url(#glow)">
-                  <path class="weave-path" d="M30,100 Q65,40 100,100 T170,100" fill="none" stroke="currentColor" stroke-width="0.5" stroke-opacity="0.3" />
-                  <path class="weave-path delay-1" d="M30,100 Q65,160 100,100 T170,100" fill="none" stroke="currentColor" stroke-width="0.5" stroke-opacity="0.2" />
-                  <circle class="weave-dot" cx="100" cy="100" r="1.5" fill="currentColor" fill-opacity="0.6" />
-                </g>
-              </svg>
-            </div>
 
             <div
               class="pointer-events-none absolute inset-x-3 top-3 z-10 flex items-center justify-between text-[10px] font-mono uppercase tracking-[0.22em] text-muted/60"
@@ -255,6 +274,23 @@ function isImageReady(image: GeneratedImage, index: number) {
             <div class="pointer-events-none absolute inset-x-4 bottom-4 z-10" aria-hidden="true">
               <div class="chat-pending-bar" :style="{ '--progress': pendingProgress + '%' }"></div>
             </div>
+          </div>
+
+          <div class="chat-pending-footer">
+            <span class="chat-pending-footer__remain" aria-live="polite">
+              <span class="chat-pending-footer__remain-dot" aria-hidden="true"></span>
+              <span>{{ pendingRemainingLabel }}</span>
+            </span>
+            <span class="chat-pending-footer__meta">{{ pendingMetaLabel }}</span>
+            <button
+              type="button"
+              class="chat-pending-footer__cancel"
+              aria-label="取消这次生成"
+              @click="emit('abort', message.id)"
+            >
+              <Icon name="close" :size="11" />
+              <span>取消</span>
+            </button>
           </div>
       </div>
 
@@ -307,15 +343,18 @@ function isImageReady(image: GeneratedImage, index: number) {
           class="grid gap-2"
           :class="assistantImageGridClass"
         >
-          <button
+          <div
             v-for="(image, index) in message.images"
             :key="image.id || index"
-            type="button"
-            class="group relative overflow-hidden rounded-2xl border border-line/70 bg-paper-soft transition hover:-translate-y-px hover:border-line-strong hover:shadow-paper-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/20"
-            :aria-label="`查看第 ${index + 1} 张图片`"
-            @click="openImage(index)"
+            class="chat-image-card group"
           >
-            <div class="relative grid place-items-center bg-paper/45" :class="previewFrameClass">
+            <button
+              type="button"
+              class="chat-image-card__surface"
+              :class="previewFrameClass"
+              :aria-label="`放大查看第 ${index + 1} 张图片`"
+              @click="openImage(index)"
+            >
               <div
                 v-if="!isImageReady(image, index)"
                 class="chat-image-placeholder absolute inset-0"
@@ -338,49 +377,40 @@ function isImageReady(image: GeneratedImage, index: number) {
                 :loading="index < 2 ? 'eager' : 'lazy'"
                 :fetchpriority="index === 0 ? 'high' : 'auto'"
                 decoding="async"
-                class="chat-image-fade h-full w-full object-contain will-change-[opacity,transform,filter]"
+                class="chat-image-fade h-full w-full object-contain will-change-[opacity]"
                 :class="isImageReady(image, index) ? 'chat-image-fade--ready' : 'chat-image-fade--loading'"
                 @load="markImageReady(image, index)"
                 @error="markImageReady(image, index)"
               />
+              <span
+                class="chat-image-card__index"
+                aria-hidden="true"
+              >{{ index + 1 }}<span v-if="(message.images?.length ?? 0) > 1" class="opacity-60"> / {{ message.images?.length }}</span></span>
+            </button>
+
+            <div class="chat-image-card__overlay" aria-hidden="false">
+              <button
+                type="button"
+                class="chat-image-action chat-image-action--primary"
+                :aria-label="`基于这张图接着画`"
+                @click.stop="emit('remix', image, message.content || '', index)"
+              >
+                <Icon name="sparkle" :size="13" />
+                <span>接着画</span>
+              </button>
+              <button
+                type="button"
+                class="chat-image-action"
+                :aria-label="`下载第 ${index + 1} 张`"
+                @click.stop="emit('download', image, index)"
+              >
+                <Icon name="download" :size="13" />
+              </button>
             </div>
-            <span
-              class="pointer-events-none absolute inset-x-2 bottom-2 flex items-center justify-between rounded-xl bg-ink/60 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.18em] text-paper opacity-0 backdrop-blur transition group-hover:opacity-100"
-            >
-              <span>{{ index + 1 }} / {{ message.images?.length }}</span>
-              <span>{{ message.meta.size }}</span>
-            </span>
-          </button>
+          </div>
         </div>
 
         <div class="mt-3 flex flex-wrap items-center gap-1.5 px-1">
-          <button
-            type="button"
-            class="chat-action-chip chat-action-chip--primary"
-            aria-label="重混：以此图为参考并复用提示词"
-            @click="message.images && message.images[0] && emit('remix', message.images[0], message.content || '')"
-          >
-            <Icon name="sparkle" :size="12" />
-            <span>重混</span>
-          </button>
-          <button
-            type="button"
-            class="chat-action-chip"
-            aria-label="下载第一张"
-            @click="message.images && message.images[0] && emit('download', message.images[0], 0)"
-          >
-            <Icon name="download" :size="12" />
-            <span>下载</span>
-          </button>
-          <button
-            type="button"
-            class="chat-action-chip"
-            aria-label="放大查看"
-            @click="openImage(0)"
-          >
-            <Icon name="zoomIn" :size="12" />
-            <span>放大</span>
-          </button>
           <button
             type="button"
             class="chat-action-chip"
@@ -389,6 +419,15 @@ function isImageReady(image: GeneratedImage, index: number) {
           >
             <Icon name="refresh" :size="12" />
             <span>再画一张</span>
+          </button>
+          <button
+            type="button"
+            class="chat-action-chip chat-action-chip--quiet"
+            aria-label="复制提示词"
+            @click="emit('copy', message.content || '', '已复制提示词')"
+          >
+            <Icon name="copy" :size="12" />
+            <span>复制提示词</span>
           </button>
           <span class="ml-auto font-mono text-[10px] uppercase tracking-[0.18em] text-muted">
             <span v-if="typeof message.elapsedSeconds === 'number'">{{ message.elapsedSeconds }}s</span>
@@ -441,34 +480,8 @@ function isImageReady(image: GeneratedImage, index: number) {
   animation: pending-bg-shift 8s ease-in-out infinite alternate;
 }
 
-.chat-pending-grain {
-  opacity: 0.08;
-  mix-blend-mode: overlay;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-}
-
-.chat-pending-weave {
-  transform: scale(1.4);
-  color: rgb(var(--color-ink));
-}
-
-.weave-path {
-  stroke-dasharray: 200;
-  stroke-dashoffset: 200;
-  animation: weave-flow 4s linear infinite;
-}
-
-.weave-path.delay-1 {
-  animation-delay: -2s;
-}
-
-.weave-dot {
-  animation: weave-dot-pulse 2s ease-in-out infinite;
-}
-
 .chat-pending-manifest {
   text-align: center;
-  animation: manifest-float 5s ease-in-out infinite;
 }
 
 .chat-pending-manifest__value {
@@ -508,38 +521,103 @@ function isImageReady(image: GeneratedImage, index: number) {
   transition: width 0.8s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
-@keyframes pending-bg-shift {
-  0% { transform: scale(1) rotate(0deg); }
-  100% { transform: scale(1.1) rotate(2deg); }
+.chat-pending-footer {
+  margin-top: 0.7rem;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0 0.25rem;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: rgb(var(--color-muted));
 }
 
-@keyframes weave-flow {
-  0% { stroke-dashoffset: 200; opacity: 0; }
-  10% { opacity: 0.3; }
-  90% { opacity: 0.3; }
-  100% { stroke-dashoffset: 0; opacity: 0; }
+.chat-pending-footer__remain {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: rgb(var(--color-ink) / 0.85);
+  font-feature-settings: 'tnum';
 }
 
-@keyframes weave-dot-pulse {
-  0%, 100% { transform: scale(1); opacity: 0.4; }
-  50% { transform: scale(1.5); opacity: 0.8; }
+.chat-pending-footer__remain-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: rgb(var(--color-forest));
+  box-shadow: 0 0 0 0 rgb(var(--color-forest) / 0.5);
+  animation: chat-pending-pulse 1.6s ease-in-out infinite;
 }
 
-@keyframes manifest-float {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-8px); }
+@keyframes chat-pending-pulse {
+  0%, 100% {
+    transform: scale(0.85);
+    box-shadow: 0 0 0 0 rgb(var(--color-forest) / 0.5);
+  }
+  50% {
+    transform: scale(1.05);
+    box-shadow: 0 0 0 6px rgb(var(--color-forest) / 0);
+  }
+}
+
+.chat-pending-footer__meta {
+  flex: 1;
+  text-align: right;
+  text-transform: uppercase;
+  font-size: 9px;
+  letter-spacing: 0.18em;
+  opacity: 0.65;
+}
+
+.chat-pending-footer__cancel {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  padding: 0.3rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid rgb(var(--color-line) / 0.8);
+  background: rgb(var(--color-cream));
+  color: rgb(var(--color-muted));
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: color 140ms ease, border-color 140ms ease, background 140ms ease, transform 140ms ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.chat-pending-footer__cancel::before {
+  content: '';
+  position: absolute;
+  inset: -6px;
+}
+
+.chat-pending-footer__cancel:hover {
+  color: rgb(var(--color-accent));
+  border-color: rgb(var(--color-accent) / 0.5);
+  background: rgb(var(--color-accent) / 0.07);
+}
+
+.chat-pending-footer__cancel:active {
+  transform: scale(0.97);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .chat-pending-orb,
-  .chat-pending-orb__ring,
-  .chat-pending-orb__halo {
+  .chat-pending-bg,
+  .chat-pending-footer__remain-dot {
     animation: none;
   }
-  .chat-pending-progress__bar,
-  .chat-pending-progress__glow {
+
+  .chat-pending-bar::after {
     transition: none;
   }
+}
+
+@keyframes pending-bg-shift {
+  0% { transform: scale(1) rotate(0deg); }
+  100% { transform: scale(1.1) rotate(2deg); }
 }
 
 .chat-image-placeholder {
@@ -593,6 +671,222 @@ function isImageReady(image: GeneratedImage, index: number) {
   gap: 0.5rem;
 }
 
+.chat-image-card {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  border-radius: 22px;
+  border: 1px solid rgb(var(--color-line) / 0.7);
+  background: rgb(var(--color-paper-soft));
+  transition: border-color 200ms ease, transform 200ms ease, box-shadow 200ms ease;
+}
+
+.chat-image-card:hover {
+  border-color: rgb(var(--color-line-strong));
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-paper-2);
+}
+
+.chat-image-card__surface {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  background: rgb(var(--color-paper) / 0.45);
+  border-radius: inherit;
+  overflow: hidden;
+  border: none;
+  cursor: zoom-in;
+  -webkit-tap-highlight-color: transparent;
+  appearance: none;
+}
+
+.chat-image-card__surface:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.chat-image-card__index {
+  position: absolute;
+  top: 0.55rem;
+  left: 0.55rem;
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  background: rgb(var(--color-ink) / 0.55);
+  color: rgb(var(--color-paper));
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  font-feature-settings: 'tnum';
+  letter-spacing: 0.04em;
+  backdrop-filter: blur(4px);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+
+.chat-image-card:hover .chat-image-card__index,
+.chat-image-card:focus-within .chat-image-card__index {
+  opacity: 1;
+}
+
+.chat-image-card__overlay {
+  position: absolute;
+  inset: auto 0.5rem 0.5rem 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 220ms cubic-bezier(0.2, 0.8, 0.2, 1), transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  z-index: 2;
+}
+
+.chat-image-card:hover .chat-image-card__overlay,
+.chat-image-card:focus-within .chat-image-card__overlay {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+@media (hover: none) {
+  .chat-image-card__overlay {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+  }
+
+  .chat-image-card__index {
+    opacity: 1;
+  }
+}
+
+.chat-image-action {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  height: 32px;
+  padding: 0 0.7rem;
+  border-radius: 999px;
+  border: 1px solid rgb(var(--color-paper) / 0.45);
+  background: rgb(var(--color-ink) / 0.78);
+  color: rgb(var(--color-paper));
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition: background 160ms ease, transform 160ms ease, box-shadow 160ms ease;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.chat-image-action::before {
+  content: '';
+  position: absolute;
+  inset: -6px -3px;
+}
+
+.chat-image-action:hover {
+  background: rgb(var(--color-ink));
+  transform: translateY(-1px);
+  box-shadow: 0 10px 24px -16px rgb(var(--color-ink) / 0.6);
+}
+
+.chat-image-action:active {
+  transform: translateY(0);
+}
+
+.chat-image-action--primary {
+  background: linear-gradient(135deg, rgb(var(--color-accent) / 0.95), rgb(var(--color-ochre) / 0.92));
+  border-color: rgb(var(--color-paper) / 0.55);
+  font-weight: 600;
+}
+
+.chat-image-action--primary:hover {
+  background: linear-gradient(135deg, rgb(var(--color-accent)), rgb(var(--color-ochre)));
+  box-shadow: 0 12px 28px -14px rgb(var(--color-accent) / 0.55);
+}
+
+.chat-continuation-chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  max-width: min(280px, 86vw);
+  padding: 0.35rem 0.7rem 0.35rem 0.4rem;
+  border-radius: 16px;
+  border: 1px dashed rgb(var(--color-line-strong) / 0.85);
+  background: linear-gradient(180deg, rgb(var(--color-vellum) / 0.86), rgb(var(--color-cream) / 0.94));
+  color: rgb(var(--color-ink));
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.chat-continuation-chip:hover {
+  border-color: rgb(var(--color-accent) / 0.6);
+  background: linear-gradient(180deg, rgb(var(--color-vellum)), rgb(var(--color-cream)));
+}
+
+.chat-continuation-chip:active {
+  transform: translateY(1px);
+}
+
+.chat-continuation-chip__thumb {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid rgb(var(--color-line-strong) / 0.6);
+  background: rgb(var(--color-paper-soft));
+}
+
+.chat-continuation-chip__thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.chat-continuation-chip__body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.15;
+}
+
+.chat-continuation-chip__title {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgb(var(--color-accent));
+}
+
+.chat-continuation-chip__sub {
+  margin-top: 1px;
+  font-size: 11px;
+  color: rgb(var(--color-muted));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chat-continuation-chip__arrow {
+  flex-shrink: 0;
+  color: rgb(var(--color-muted));
+}
+
 .chat-action-chip {
   position: relative;
   display: inline-flex;
@@ -609,6 +903,18 @@ function isImageReady(image: GeneratedImage, index: number) {
   letter-spacing: 0.01em;
   transition: border-color 140ms ease, background-color 140ms ease, transform 140ms ease;
   touch-action: manipulation;
+}
+
+.chat-action-chip--quiet {
+  background: transparent;
+  border-color: rgb(var(--color-line) / 0.7);
+  color: rgb(var(--color-muted));
+  font-weight: 500;
+}
+
+.chat-action-chip--quiet:hover {
+  background: rgb(var(--color-cream));
+  color: rgb(var(--color-ink));
 }
 
 .chat-action-chip::before {
@@ -677,76 +983,6 @@ function isImageReady(image: GeneratedImage, index: number) {
   font-weight: 500;
 }
 
-@keyframes chat-pending-scan {
-  0% {
-    transform: translateY(-36%) scale(0.94);
-    opacity: 0;
-  }
-
-  18% {
-    opacity: 1;
-  }
-
-  72% {
-    opacity: 0.8;
-  }
-
-  100% {
-    transform: translateY(170%) scale(1.08);
-    opacity: 0;
-  }
-}
-
-@keyframes chat-pending-bars {
-  0%,
-  100% {
-    transform: scaleY(0.42);
-    opacity: 0.5;
-  }
-
-  50% {
-    transform: scaleY(1);
-    opacity: 1;
-  }
-}
-
-@keyframes chat-pending-ring {
-  0% {
-    transform: scale(0.62);
-    opacity: 0;
-  }
-
-  18% {
-    opacity: 0.85;
-  }
-
-  100% {
-    transform: scale(1.26);
-    opacity: 0;
-  }
-}
-
-@keyframes chat-pending-orb-float {
-  0%,
-  100% {
-    transform: translateY(0);
-  }
-
-  50% {
-    transform: translateY(-6px);
-  }
-}
-
-@keyframes chat-pending-halo {
-  0% {
-    transform: rotate(0deg);
-  }
-
-  100% {
-    transform: rotate(360deg);
-  }
-}
-
 @keyframes chat-image-loader {
   0%,
   100% {
@@ -761,40 +997,25 @@ function isImageReady(image: GeneratedImage, index: number) {
 }
 
 .chat-image-fade {
-  transition:
-    opacity 800ms cubic-bezier(0.2, 0.8, 0.2, 1),
-    transform 1000ms cubic-bezier(0.2, 0.8, 0.2, 1),
-    filter 900ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  transition: opacity 320ms ease;
 }
 
 .chat-image-fade--loading {
   opacity: 0;
-  transform: scale(0.96);
-  filter: blur(12px) saturate(0.5);
 }
 
 .chat-image-fade--ready {
   opacity: 1;
-  transform: scale(1);
-  filter: blur(0) saturate(1);
 }
 
 @media (prefers-reduced-motion: reduce) {
   .chat-action-chip,
   .chat-retry-chip,
-  .chat-pending-frame__scan::before,
-  .chat-pending-bars span,
-  .chat-pending-orb__ring,
   .chat-image-placeholder__loader span,
   .chat-bubble-assistant img,
   .chat-image-fade {
     transition: none;
     animation: none;
-  }
-
-  .chat-image-fade--loading {
-    filter: none;
-    transform: none;
   }
 }
 </style>

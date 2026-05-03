@@ -7,7 +7,7 @@ import { maxReferenceImages } from '../lib/imagesApi'
 import { customModelSentinel, sizeOptions, styleOptions } from '../presets'
 import { stylePrompts } from '../lib/imagesApi'
 import { useDiscoveredModels } from '../composables/useDiscoveredModels'
-import type { ImageSize, ImageStyle, ReferenceImageAttachment } from '../types'
+import type { ContinuationContext, ImageSize, ImageStyle, ReferenceImageAttachment } from '../types'
 
 const sizeSelectOptions = computed<SelectOption<ImageSize>[]>(() =>
   sizeOptions.map((option) => ({ value: option.value, label: option.label, hint: option.hint })),
@@ -37,10 +37,12 @@ interface Props {
   healthOffline: boolean
   referenceImages: ReferenceImageAttachment[]
   layout?: 'panel' | 'sheet'
+  continuation?: ContinuationContext | null
 }
 
 const props = withDefaults(defineProps<Props>(), {
   layout: 'panel',
+  continuation: null,
 })
 
 const prompt = defineModel<string>('prompt', { required: true })
@@ -52,21 +54,26 @@ const customModel = defineModel<string>('customModel', { required: true })
 
 const emit = defineEmits<{
   (e: 'generate'): void
+  (e: 'abort'): void
   (e: 'copy', text: string, message: string): void
   (e: 'clear'): void
   (e: 'open-settings'): void
   (e: 'select-reference-images', files: File[]): void
   (e: 'remove-reference-image', id: string): void
   (e: 'magic-enhance'): void
+  (e: 'cancel-continuation'): void
 }>()
 
 const promptRef = ref<HTMLTextAreaElement | null>(null)
 const referenceInputRef = ref<HTMLInputElement | null>(null)
 const previewOpen = ref(false)
+const dragActive = ref(false)
+let dragDepth = 0
 
 const activeStylePrompt = computed(() => stylePrompts[stl.value] ?? '')
 const isRawStyle = computed(() => stl.value === 'raw')
 const hasReferenceImages = computed(() => props.referenceImages.length > 0)
+const canAddReferenceImages = computed(() => props.referenceImages.length < maxReferenceImages)
 
 const promptCount = computed(() => prompt.value.length)
 const promptTokens = computed(() => Math.max(1, Math.round(prompt.value.length / 4)))
@@ -81,9 +88,22 @@ const promptTone = computed(() => {
 
 const generateLabel = computed(() => {
   if (!prompt.value.trim()) return '写下提示词以生成'
-  if (props.isGenerating) return 'Composing'
+  if (props.isGenerating) return 'Composing · 点击取消'
   return 'Generate'
 })
+
+function handleGenerateClick(event: Event) {
+  if (props.isGenerating) {
+    event.preventDefault()
+    emit('abort')
+    return
+  }
+  if (!props.canGenerate) {
+    event.preventDefault()
+    return
+  }
+  // 让 form 的 submit 处理（已经绑定了 emit('generate')）
+}
 
 const modelChipLabel = computed(() => {
   if (modelChoice.value === customModelSentinel) {
@@ -121,6 +141,51 @@ function onReferenceInputChange(event: Event) {
   }
 }
 
+function hasFileDrag(event: DragEvent) {
+  return Array.from(event.dataTransfer?.types ?? []).includes('Files')
+}
+
+function imageFilesFrom(dataTransfer: DataTransfer | null) {
+  if (!dataTransfer?.files?.length) return []
+  return Array.from(dataTransfer.files).filter((file) => file.type.startsWith('image/'))
+}
+
+function handleDragEnter(event: DragEvent) {
+  if (props.layout !== 'panel' || !hasFileDrag(event)) return
+  event.preventDefault()
+  dragDepth += 1
+  dragActive.value = true
+}
+
+function handleDragOver(event: DragEvent) {
+  if (props.layout !== 'panel' || !hasFileDrag(event)) return
+  event.preventDefault()
+  if (event.dataTransfer) {
+    event.dataTransfer.dropEffect = canAddReferenceImages.value ? 'copy' : 'none'
+  }
+  dragActive.value = true
+}
+
+function handleDragLeave() {
+  if (!dragActive.value) return
+  dragDepth = Math.max(0, dragDepth - 1)
+  if (dragDepth === 0) {
+    dragActive.value = false
+  }
+}
+
+function handleReferenceDrop(event: DragEvent) {
+  if (props.layout !== 'panel') return
+  event.preventDefault()
+  dragDepth = 0
+  dragActive.value = false
+  if (!canAddReferenceImages.value) return
+  const files = imageFilesFrom(event.dataTransfer)
+  if (files.length) {
+    emit('select-reference-images', files)
+  }
+}
+
 function removeReferenceImage(id: string) {
   emit('remove-reference-image', id)
 }
@@ -145,10 +210,30 @@ watch(
 
 <template>
   <form
-    class="flex flex-col gap-7"
+    class="relative flex flex-col gap-7"
     :class="{ 'pb-2': layout === 'sheet' }"
     @submit.prevent="emit('generate')"
+    @dragenter="handleDragEnter"
+    @dragover="handleDragOver"
+    @dragleave="handleDragLeave"
+    @drop="handleReferenceDrop"
   >
+    <div
+      v-if="layout === 'panel' && dragActive"
+      class="pointer-events-none absolute inset-0 z-20 grid place-items-center rounded-[28px] border-2 border-dashed border-forest/60 bg-vellum/90 p-6 text-center shadow-paper-3 backdrop-blur"
+      aria-hidden="true"
+    >
+      <div class="rounded-3xl border border-line bg-paper/85 px-6 py-5 shadow-paper-2">
+        <Icon :name="canAddReferenceImages ? 'upload' : 'warning'" :size="22" class="mx-auto text-forest" />
+        <p class="mt-3 font-display text-xl italic text-ink">
+          {{ canAddReferenceImages ? '松手添加参考图' : '参考图已达上限' }}
+        </p>
+        <p class="mt-1 text-[12px] text-muted">
+          {{ canAddReferenceImages ? '支持 PNG / JPEG / WEBP / GIF' : `最多 ${maxReferenceImages} 张参考图` }}
+        </p>
+      </div>
+    </div>
+
     <header v-if="layout === 'panel'" class="space-y-2">
       <p class="display-eyebrow">01 · Compose</p>
       <h1 class="display-h1">写下你想看见的<span class="italic">画面</span></h1>
@@ -176,6 +261,32 @@ watch(
         multiple
         @change="onReferenceInputChange"
       />
+
+      <Transition name="composer-continuation">
+        <div v-if="continuation" class="composer-continuation" role="status" aria-label="正在接着画">
+          <span class="composer-continuation__thumb" aria-hidden="true">
+            <img :src="continuation.thumbnailUrl" alt="" loading="lazy" decoding="async" />
+            <span class="composer-continuation__thumb-mark">
+              <Icon name="sparkle" :size="9" />
+            </span>
+          </span>
+          <span class="composer-continuation__body">
+            <span class="composer-continuation__title">接着画</span>
+            <span class="composer-continuation__sub">
+              基于第 {{ continuation.fromImageIndex + 1 }} 张图，告诉它你想改什么
+            </span>
+          </span>
+          <button
+            type="button"
+            class="composer-continuation__cancel"
+            aria-label="取消接着画"
+            @click="emit('cancel-continuation')"
+          >
+            <Icon name="close" :size="12" />
+          </button>
+        </div>
+      </Transition>
+
       <div class="flex items-center justify-between">
         <label for="prompt-input" class="label inline-flex items-center gap-1.5">
           <Icon name="pencil" :size="12" />
@@ -428,21 +539,23 @@ watch(
     >
       <button
         type="submit"
-        :disabled="!canGenerate"
+        :disabled="!isGenerating && !canGenerate"
         class="btn-primary group relative w-full overflow-hidden px-5 py-4 text-sm shadow-paper-2 disabled:shadow-paper-1"
+        :class="{ 'btn-primary--busy': isGenerating }"
         aria-keyshortcuts="Meta+Enter Control+Enter"
+        @click="handleGenerateClick"
       >
         <span class="flex w-full items-center justify-between gap-3">
           <span class="flex items-center gap-3">
             <Icon
-              :name="isGenerating ? 'sparkle' : 'lightning'"
+              :name="isGenerating ? 'close' : 'lightning'"
               :size="14"
-              :class="isGenerating ? 'animate-breathe' : ''"
+              :class="isGenerating ? '' : ''"
             />
             <span class="font-display text-base italic">{{ generateLabel }}</span>
             <span v-if="isGenerating" class="font-mono text-[11px] tabular-nums text-paper/70">{{ elapsedSeconds }}s</span>
           </span>
-          <span class="hidden font-mono text-[10px] uppercase tracking-[0.22em] text-paper/65 sm:inline" aria-hidden="true">⌘ ↵</span>
+          <span v-if="!isGenerating" class="hidden font-mono text-[10px] uppercase tracking-[0.22em] text-paper/65 sm:inline" aria-hidden="true">⌘ ↵</span>
         </span>
         <span
           v-if="isGenerating"
@@ -455,12 +568,14 @@ watch(
     <div v-else class="sticky bottom-0 -mx-5 border-t border-line/70 bg-paper/95 px-5 pb-2 pt-3 backdrop-blur">
       <button
         type="submit"
-        :disabled="!canGenerate"
+        :disabled="!isGenerating && !canGenerate"
         class="btn-primary group relative w-full overflow-hidden px-5 py-4 text-sm shadow-paper-2 disabled:shadow-paper-1"
+        :class="{ 'btn-primary--busy': isGenerating }"
+        @click="handleGenerateClick"
       >
         <span class="flex w-full items-center justify-between gap-3">
           <span class="flex items-center gap-3">
-            <Icon :name="isGenerating ? 'sparkle' : 'lightning'" :size="14" />
+            <Icon :name="isGenerating ? 'close' : 'lightning'" :size="14" />
             <span class="font-display text-base italic">{{ generateLabel }}</span>
             <span v-if="isGenerating" class="font-mono text-[11px] tabular-nums text-paper/70">{{ elapsedSeconds }}s</span>
           </span>
@@ -492,5 +607,139 @@ watch(
 .acc-leave-active {
   transition: opacity 0.24s ease-out, transform 0.24s ease-out, max-height 0.32s cubic-bezier(0.2, 0.8, 0.2, 1);
   overflow: hidden;
+}
+
+.composer-continuation {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.55rem 0.6rem;
+  border-radius: 18px;
+  border: 1px solid rgb(var(--color-accent) / 0.32);
+  background: linear-gradient(180deg, rgb(var(--color-accent) / 0.06), rgb(var(--color-accent) / 0.03));
+  box-shadow: 0 6px 18px -14px rgb(var(--color-accent) / 0.55);
+}
+
+.composer-continuation__thumb {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid rgb(var(--color-line-strong) / 0.6);
+  background: rgb(var(--color-paper-soft));
+  box-shadow: 0 6px 14px -10px rgb(var(--color-ink) / 0.35);
+}
+
+.composer-continuation__thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.composer-continuation__thumb-mark {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  display: grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: rgb(var(--color-accent));
+  color: rgb(var(--color-paper));
+  border: 1.5px solid rgb(var(--color-vellum));
+}
+
+.composer-continuation__body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  line-height: 1.2;
+}
+
+.composer-continuation__title {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgb(var(--color-accent));
+}
+
+.composer-continuation__sub {
+  margin-top: 2px;
+  font-size: 12px;
+  color: rgb(var(--color-ink) / 0.78);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.composer-continuation__cancel {
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: rgb(var(--color-paper) / 0.6);
+  color: rgb(var(--color-muted));
+  border: 1px solid rgb(var(--color-line) / 0.7);
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease, transform 140ms ease;
+}
+
+.composer-continuation__cancel:hover {
+  background: rgb(var(--color-paper));
+  color: rgb(var(--color-accent));
+  border-color: rgb(var(--color-accent) / 0.4);
+}
+
+.composer-continuation__cancel:active {
+  transform: scale(0.95);
+}
+
+.composer-continuation-enter-from,
+.composer-continuation-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+  max-height: 0;
+}
+
+.composer-continuation-enter-to,
+.composer-continuation-leave-from {
+  opacity: 1;
+  transform: translateY(0);
+  max-height: 96px;
+}
+
+.composer-continuation-enter-active,
+.composer-continuation-leave-active {
+  transition: opacity 0.22s ease, transform 0.22s ease, max-height 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
+  overflow: hidden;
+}
+
+.btn-primary--busy {
+  background: linear-gradient(135deg, rgb(var(--color-ink)), rgb(var(--color-ink) / 0.88));
+  cursor: pointer;
+}
+
+.btn-primary--busy:hover {
+  background: linear-gradient(135deg, rgb(var(--color-accent)), rgb(var(--color-accent) / 0.88));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .acc-enter-active,
+  .acc-leave-active,
+  .composer-continuation-enter-active,
+  .composer-continuation-leave-active,
+  .composer-continuation__cancel {
+    transition: none;
+  }
 }
 </style>

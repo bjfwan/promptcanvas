@@ -4,6 +4,11 @@ import Icon from './Icon.vue'
 import { resolveImageSource } from '../api'
 import type { GeneratedImage, ImageSize } from '../types'
 
+interface QuickPromptCard {
+  title: string
+  prompt: string
+}
+
 interface Props {
   images: GeneratedImage[]
   activeImageIndex: number
@@ -16,6 +21,7 @@ interface Props {
   promptPreview: string
   hasPrompt: boolean
   modelLabel?: string
+  quickPrompts?: QuickPromptCard[]
 }
 
 const props = defineProps<Props>()
@@ -28,7 +34,9 @@ const emit = defineEmits<{
   (e: 'copy', text: string, message: string): void
   (e: 'export'): void
   (e: 'go-compose'): void
+  (e: 'pick-prompt', prompt: string): void
   (e: 'generate'): void
+  (e: 'abort'): void
 }>()
 
 const activeImage = computed(() => props.images[props.activeImageIndex])
@@ -56,6 +64,21 @@ const canvasStageLabel = computed(() => {
   return '等待返回'
 })
 const canvasProgressStyle = computed(() => ({ '--progress': `${canvasProgress.value}%` }))
+
+// 估算预期完成时长（与 ChatBubble 算法保持一致），并据此显示剩余文案
+const canvasEstimatedDuration = computed(() => {
+  let seconds = 11
+  if (props.size !== '1024x1024') seconds += 2
+  return Math.max(8, seconds)
+})
+const canvasRemainingLabel = computed(() => {
+  const elapsed = Math.max(0, props.elapsedSeconds)
+  const target = canvasEstimatedDuration.value
+  const remain = Math.max(0, target - elapsed)
+  if (elapsed >= target) return '已超出预估，仍在等上游回包'
+  if (remain <= 1) return '即将出图'
+  return `约 ${remain}s`
+})
 
 function imageSource(image: GeneratedImage) {
   return resolveImageSource(image)
@@ -112,26 +135,6 @@ function isImageReady(image: GeneratedImage, index: number) {
       aria-live="polite"
     >
       <div class="chat-pending-bg absolute inset-0"></div>
-      <div class="chat-pending-grain absolute inset-0"></div>
-
-      <div class="absolute inset-0 flex items-center justify-center overflow-hidden">
-        <svg class="chat-pending-weave w-full h-full opacity-60" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
-          <defs>
-            <filter id="canvas-glow">
-              <feGaussianBlur stdDeviation="3" result="blur"/>
-              <feMerge>
-                <feMergeNode in="blur"/>
-                <feMergeNode in="SourceGraphic"/>
-              </feMerge>
-            </filter>
-          </defs>
-          <g filter="url(#canvas-glow)">
-            <path class="weave-path" d="M20,100 Q60,20 100,100 T180,100" fill="none" stroke="currentColor" stroke-width="0.3" />
-            <path class="weave-path delay-1" d="M20,100 Q60,180 100,100 T180,100" fill="none" stroke="currentColor" stroke-width="0.3" />
-            <circle class="weave-dot" cx="100" cy="100" r="1" fill="currentColor" />
-          </g>
-        </svg>
-      </div>
 
       <div class="absolute inset-0 grid grid-rows-[auto_1fr_auto] p-6 sm:p-8">
         <div class="flex items-center justify-between font-mono text-[10px] uppercase tracking-[0.25em] text-muted/60">
@@ -152,16 +155,29 @@ function isImageReady(image: GeneratedImage, index: number) {
         <div class="space-y-4">
           <div class="chat-pending-bar" :style="canvasProgressStyle"></div>
           <div class="flex items-end justify-between gap-6">
-            <p class="font-display text-lg italic leading-snug tracking-tight text-ink/80 truncate-2 max-w-[70%]">
+            <p class="font-display text-lg italic leading-snug tracking-tight text-ink/80 truncate-2 max-w-[60%]">
               {{ promptPreview || 'untitled draft' }}
             </p>
-            <div class="flex flex-col items-end gap-1 font-mono text-[9px] uppercase tracking-[0.2em] text-muted/50">
-              <span>{{ size }}</span>
-              <span>{{ styleLabel }}</span>
+            <div class="flex flex-col items-end gap-1 font-mono text-[9px] uppercase tracking-[0.2em] text-muted/55">
+              <span class="canvas-pending__remain">
+                <span class="canvas-pending__remain-dot" aria-hidden="true"></span>
+                <span>{{ canvasRemainingLabel }}</span>
+              </span>
+              <span>{{ size }} · {{ styleLabel }}</span>
             </div>
           </div>
         </div>
       </div>
+
+      <button
+        type="button"
+        class="canvas-pending__cancel"
+        aria-label="取消这次生成"
+        @click="emit('abort')"
+      >
+        <Icon name="close" :size="13" />
+        <span>取消</span>
+      </button>
     </div>
 
     <div v-else-if="activeImage" class="space-y-5">
@@ -190,8 +206,8 @@ function isImageReady(image: GeneratedImage, index: number) {
             loading="eager"
             fetchpriority="high"
             decoding="async"
-            class="max-h-full max-w-full rounded-xl object-contain shadow-paper-1 transition duration-500 will-change-transform group-hover:scale-[1.01]"
-            :class="isImageReady(activeImage, activeImageIndex) ? 'opacity-100 scale-100' : 'opacity-0 scale-[1.01]'"
+            class="max-h-full max-w-full rounded-xl object-contain opacity-0 shadow-paper-1 transition-opacity duration-[320ms] will-change-[opacity]"
+            :class="isImageReady(activeImage, activeImageIndex) ? 'opacity-100' : 'opacity-0'"
             @load="markImageReady(activeImage, activeImageIndex)"
             @error="markImageReady(activeImage, activeImageIndex)"
           />
@@ -228,23 +244,23 @@ function isImageReady(image: GeneratedImage, index: number) {
       </div>
 
       <div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <button type="button" class="result-button" @click="emit('download', activeImage, activeImageIndex)">
+        <button type="button" class="btn-secondary rounded-xl px-3 py-3 sm:py-2.5 sm:text-xs" @click="emit('download', activeImage, activeImageIndex)">
           <Icon name="download" :size="14" />
           下载
         </button>
-        <button type="button" class="result-button" @click="emit('open-lightbox', activeImageIndex)">
+        <button type="button" class="btn-secondary rounded-xl px-3 py-3 sm:py-2.5 sm:text-xs" @click="emit('open-lightbox', activeImageIndex)">
           <Icon name="zoomIn" :size="14" />
           放大
         </button>
         <button
           type="button"
-          class="result-button"
+          class="btn-secondary rounded-xl px-3 py-3 sm:py-2.5 sm:text-xs"
           @click="emit('copy', activeImage.revisedPrompt || promptPreview, '已复制提示词')"
         >
           <Icon name="copy" :size="14" />
           复制提示词
         </button>
-        <button type="button" class="result-button" @click="emit('export')">
+        <button type="button" class="btn-secondary rounded-xl px-3 py-3 sm:py-2.5 sm:text-xs" @click="emit('export')">
           <Icon name="share" :size="14" />
           导出参数
         </button>
@@ -319,6 +335,22 @@ function isImageReady(image: GeneratedImage, index: number) {
             写下提示词，或先选一种模板气质，再生成第一张画面。
           </p>
 
+          <div
+            v-if="quickPrompts?.length"
+            class="mt-6 grid gap-2 text-left sm:grid-cols-3"
+          >
+            <button
+              v-for="item in quickPrompts"
+              :key="item.title"
+              type="button"
+              class="rounded-2xl border border-line bg-vellum/80 px-3 py-2.5 text-left transition hover:-translate-y-px hover:border-line-strong hover:bg-cream hover:shadow-paper-1"
+              @click="emit('pick-prompt', item.prompt)"
+            >
+              <span class="block font-mono text-[10px] uppercase tracking-[0.18em] text-muted">{{ item.title }}</span>
+              <span class="mt-1 block truncate-2 text-[12px] leading-5 text-ink/75">{{ item.prompt }}</span>
+            </button>
+          </div>
+
           <div class="mt-6 flex flex-col items-center gap-2.5 sm:flex-row sm:justify-center">
             <button
               v-if="hasPrompt"
@@ -332,7 +364,7 @@ function isImageReady(image: GeneratedImage, index: number) {
             <button
               v-else
               type="button"
-              class="btn-ghost px-4 lg:hidden"
+              class="btn-secondary px-4 lg:hidden"
               @click="emit('go-compose')"
             >
               <Icon name="textCursor" :size="14" />
@@ -347,6 +379,132 @@ function isImageReady(image: GeneratedImage, index: number) {
 </template>
 
 <style scoped>
+.chat-pending-bg {
+  background:
+    radial-gradient(circle at 30% 20%, rgb(var(--color-vellum) / 0.8) 0%, transparent 50%),
+    radial-gradient(circle at 70% 80%, rgb(var(--color-cream) / 0.6) 0%, transparent 50%),
+    rgb(var(--color-paper-soft));
+  animation: pending-bg-shift 8s ease-in-out infinite alternate;
+}
+
+.chat-pending-manifest {
+  text-align: center;
+}
+
+.chat-pending-manifest__value {
+  display: block;
+  font-family: 'IBM Plex Mono', monospace;
+  font-weight: 200;
+  letter-spacing: -0.05em;
+  color: rgb(var(--color-ink));
+  font-feature-settings: 'tnum';
+}
+
+.chat-pending-manifest__label {
+  display: block;
+  text-transform: uppercase;
+  letter-spacing: 0.3em;
+  color: rgb(var(--color-muted));
+  opacity: 0.6;
+}
+
+.chat-pending-bar {
+  height: 1px;
+  background: rgb(var(--color-line-strong) / 0.2);
+  width: 100%;
+  position: relative;
+  overflow: hidden;
+}
+
+.chat-pending-bar::after {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--progress, 0%);
+  background: rgb(var(--color-ink));
+  transition: width 0.8s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes pending-bg-shift {
+  0% { transform: scale(1) rotate(0deg); }
+  100% { transform: scale(1.1) rotate(2deg); }
+}
+
+.canvas-pending__remain {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.32rem;
+  letter-spacing: 0.06em;
+  text-transform: none;
+  font-size: 11px;
+  color: rgb(var(--color-ink) / 0.78);
+  font-feature-settings: 'tnum';
+}
+
+.canvas-pending__remain-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: rgb(var(--color-forest));
+  box-shadow: 0 0 0 0 rgb(var(--color-forest) / 0.5);
+  animation: canvas-pending-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes canvas-pending-pulse {
+  0%, 100% {
+    transform: scale(0.85);
+    box-shadow: 0 0 0 0 rgb(var(--color-forest) / 0.5);
+  }
+  50% {
+    transform: scale(1.05);
+    box-shadow: 0 0 0 6px rgb(var(--color-forest) / 0);
+  }
+}
+
+.canvas-pending__cancel {
+  position: absolute;
+  top: 0.85rem;
+  right: 0.85rem;
+  z-index: 20;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.35rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid rgb(var(--color-line) / 0.9);
+  background: rgb(var(--color-vellum) / 0.92);
+  color: rgb(var(--color-muted));
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition: color 140ms ease, border-color 140ms ease, background 140ms ease, transform 140ms ease;
+}
+
+.canvas-pending__cancel:hover {
+  color: rgb(var(--color-accent));
+  border-color: rgb(var(--color-accent) / 0.5);
+  background: rgb(var(--color-paper));
+}
+
+.canvas-pending__cancel:active {
+  transform: scale(0.97);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-pending-bg,
+  .canvas-pending__remain-dot {
+    animation: none;
+  }
+
+  .chat-pending-bar::after {
+    transition: none;
+  }
+}
+
 .canvas-image-placeholder {
   display: grid;
   place-items: center;

@@ -586,7 +586,7 @@ onBeforeUnmount(() => {
 @media (prefers-reduced-motion: reduce) {
   .select-pop-enter-active,
   .select-pop-leave-active {
-    transition: opacity 120ms ease;
+    transition: none;
     transform: none !important;
   }
 

@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { onBeforeUnmount, watch } from 'vue'
+import { onBeforeUnmount, ref, watch } from 'vue'
 import Icon from './Icon.vue'
+import { useFocusTrap } from '../composables/useFocusTrap'
 import { resolveImageSource } from '../api'
 import type { GenerationHistoryItem } from '../types'
 
@@ -10,6 +11,9 @@ interface Props {
 }
 
 const props = defineProps<Props>()
+const clearConfirming = ref(false)
+const dialogRef = ref<HTMLElement | null>(null)
+let clearConfirmTimer: number | undefined
 
 const emit = defineEmits<{
   (e: 'update:open', value: boolean): void
@@ -42,19 +46,46 @@ function applyAndClose(item: GenerationHistoryItem) {
   close()
 }
 
+function resetClearConfirm() {
+  clearConfirming.value = false
+  if (clearConfirmTimer) {
+    window.clearTimeout(clearConfirmTimer)
+    clearConfirmTimer = undefined
+  }
+}
+
+function requestClearHistory() {
+  if (clearConfirming.value) {
+    emit('clear')
+    resetClearConfirm()
+    return
+  }
+  clearConfirming.value = true
+  clearConfirmTimer = window.setTimeout(() => {
+    clearConfirming.value = false
+    clearConfirmTimer = undefined
+  }, 3200)
+}
+
 watch(
   () => props.open,
   (open) => {
     if (typeof document === 'undefined') return
     document.body.style.overflow = open ? 'hidden' : ''
     if (open) window.addEventListener('keydown', handleKey)
-    else window.removeEventListener('keydown', handleKey)
+    else {
+      window.removeEventListener('keydown', handleKey)
+      resetClearConfirm()
+    }
   },
   { immediate: true },
 )
 
+useFocusTrap(() => props.open, dialogRef)
+
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleKey)
+  resetClearConfirm()
   if (typeof document !== 'undefined') document.body.style.overflow = ''
 })
 </script>
@@ -75,7 +106,8 @@ onBeforeUnmount(() => {
         <Transition name="dlg-zoom">
           <div
             v-if="open"
-            class="relative flex w-full max-w-xl flex-col overflow-hidden rounded-3xl border border-line-strong bg-vellum text-ink shadow-paper-3"
+            ref="dialogRef"
+            class="relative max-h-[86dvh] w-full max-w-2xl overflow-hidden rounded-3xl border border-line-strong bg-vellum text-ink shadow-paper-3"
           >
             <header class="flex items-start justify-between gap-3 border-b border-line px-6 py-5">
               <div>
@@ -90,10 +122,11 @@ onBeforeUnmount(() => {
                   v-if="history.length"
                   type="button"
                   class="btn-quiet inline-flex items-center gap-1 text-[11px]"
-                  @click="emit('clear')"
+                  :class="clearConfirming ? 'text-accent hover:text-accent' : ''"
+                  @click="requestClearHistory"
                 >
                   <Icon name="trash" :size="11" />
-                  <span>清空</span>
+                  <span>{{ clearConfirming ? '确认清空' : '清空' }}</span>
                 </button>
                 <button type="button" class="icon-btn-sm" aria-label="关闭" @click="close">
                   <Icon name="close" :size="14" />
@@ -198,5 +231,14 @@ onBeforeUnmount(() => {
 .dlg-zoom-enter-active,
 .dlg-zoom-leave-active {
   transition: opacity 0.24s ease-out, transform 0.32s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dlg-fade-enter-active,
+  .dlg-fade-leave-active,
+  .dlg-zoom-enter-active,
+  .dlg-zoom-leave-active {
+    transition: none;
+  }
 }
 </style>

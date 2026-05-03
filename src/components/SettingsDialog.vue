@@ -5,6 +5,7 @@ import Select, { type SelectOption } from './Select.vue'
 import { customModelSentinel, qualityOptions } from '../presets'
 import { useProviderConfig } from '../composables/useProviderConfig'
 import { useDiscoveredModels } from '../composables/useDiscoveredModels'
+import { useFocusTrap } from '../composables/useFocusTrap'
 import { ApiRequestError, testProvider } from '../api'
 import type { GenerateImageRequest, ImageQuality } from '../types'
 
@@ -35,6 +36,7 @@ const customModel = defineModel<string>('customModel', { required: true })
 const provider = useProviderConfig()
 const discoveredModels = useDiscoveredModels()
 const showApiKey = ref(false)
+const dialogRef = ref<HTMLElement | null>(null)
 
 type TestStatus = 'idle' | 'testing' | 'success' | 'partial' | 'error'
 const testStatus = ref<TestStatus>('idle')
@@ -185,6 +187,8 @@ watch(
   { immediate: true },
 )
 
+useFocusTrap(() => props.open, dialogRef)
+
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleKey, { capture: true })
   if (typeof document !== 'undefined') document.body.style.overflow = ''
@@ -205,6 +209,7 @@ onBeforeUnmount(() => {
 
         <Transition name="dlg-zoom">
           <div
+            ref="dialogRef"
             v-if="open"
             class="relative flex max-h-[92dvh] w-full max-w-xl flex-col overflow-hidden rounded-t-[28px] border border-line-strong bg-vellum text-ink shadow-paper-3 sm:max-h-none sm:rounded-3xl"
           >
@@ -499,7 +504,7 @@ onBeforeUnmount(() => {
               </button>
               <button
                 type="button"
-                class="btn-ghost text-[12px]"
+                class="btn-secondary text-[12px]"
                 @click="emit('export')"
               >
                 <Icon name="download" :size="13" />
@@ -534,5 +539,14 @@ onBeforeUnmount(() => {
 .dlg-zoom-enter-active,
 .dlg-zoom-leave-active {
   transition: opacity 0.24s ease-out, transform 0.32s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dlg-fade-enter-active,
+  .dlg-fade-leave-active,
+  .dlg-zoom-enter-active,
+  .dlg-zoom-leave-active {
+    transition: none;
+  }
 }
 </style>

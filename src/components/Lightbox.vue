@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useLightbox } from '../composables/useLightbox'
 import { resolveImageSource } from '../api'
+import { useFocusTrap } from '../composables/useFocusTrap'
 import { useVibration } from '../composables/useVibration'
 import Icon from './Icon.vue'
 
@@ -19,6 +20,8 @@ const gestureActive = ref(false)
 
 const imageWrapRef = ref<HTMLDivElement | null>(null)
 const imageRef = ref<HTMLImageElement | null>(null)
+const lightboxRef = ref<HTMLElement | null>(null)
+const preloadedSources = new Set<string>()
 
 let pinchStartDistance = 0
 let pinchStartScale = 1
@@ -110,6 +113,26 @@ function handleKey(event: KeyboardEvent) {
   }
 }
 
+function preloadImageAt(index: number) {
+  if (typeof window === 'undefined') return
+  const total = lightbox.state.images.length
+  if (total < 2) return
+  const image = lightbox.state.images[(index + total) % total]
+  if (!image) return
+  const source = resolveImageSource(image)
+  if (!source || preloadedSources.has(source)) return
+  preloadedSources.add(source)
+  const preload = new Image()
+  preload.decoding = 'async'
+  preload.src = source
+}
+
+function preloadAdjacentImages() {
+  if (!lightbox.state.open) return
+  preloadImageAt(lightbox.state.index - 1)
+  preloadImageAt(lightbox.state.index + 1)
+}
+
 watch(
   () => lightbox.state.open,
   (isOpen) => {
@@ -128,7 +151,16 @@ watch(
 
 watch(() => lightbox.state.index, () => {
   resetTransform()
+  preloadAdjacentImages()
 })
+
+watch(
+  () => [lightbox.state.open, lightbox.state.index, lightbox.state.images.length] as const,
+  preloadAdjacentImages,
+  { immediate: true },
+)
+
+useFocusTrap(() => lightbox.state.open, lightboxRef)
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleKey)
@@ -314,6 +346,7 @@ async function downloadCurrent() {
     <Transition name="lb-fade">
       <div
         v-if="lightbox.state.open"
+        ref="lightboxRef"
         class="fixed inset-0 z-lightbox flex flex-col bg-ink/90 text-paper backdrop-blur"
         role="dialog"
         aria-modal="true"
@@ -454,6 +487,15 @@ async function downloadCurrent() {
 .lb-zoom-enter-active,
 .lb-zoom-leave-active {
   transition: opacity 0.32s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lb-fade-enter-active,
+  .lb-fade-leave-active,
+  .lb-zoom-enter-active,
+  .lb-zoom-leave-active {
+    transition: none;
+  }
 }
 
 .lb-stage {
