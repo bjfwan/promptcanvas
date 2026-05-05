@@ -1,6 +1,7 @@
 import type { ImageStyle } from '../types'
 import type { IconName } from '../icons'
 import { detectSubjectType } from './imagesApi'
+import { getVocab, type SK, type Dim } from './enhanceVocab'
 
 export type EnhanceLevel = 'light' | 'standard' | 'heavy'
 
@@ -33,33 +34,6 @@ export const enhanceLevelMeta: Record<EnhanceLevel, { label: string; hint: strin
   heavy: { label: '强力', hint: '全面补全' },
 }
 
-const dimensionVocabulary: Record<EnhanceDimension, Record<string, string>> = {
-  lighting: {
-    zh: '自然侧逆光，柔和方向性阴影，光质通透',
-    en: 'natural side-back lighting, soft directional shadows, luminous quality',
-  },
-  color: {
-    zh: '克制双色调配色，主色与点缀色形成和谐对比',
-    en: 'controlled dual-tone palette, harmonious contrast between primary and accent colors',
-  },
-  composition: {
-    zh: '三分法构图，视觉重心明确，层次分明',
-    en: 'rule of thirds composition, clear visual anchor, layered depth',
-  },
-  material: {
-    zh: '真实材质纹理，表面细节可触可感',
-    en: 'authentic material textures, tactile surface detail',
-  },
-  atmosphere: {
-    zh: '沉浸式氛围，画面有叙事张力',
-    en: 'immersive atmosphere, narrative tension in the frame',
-  },
-  lens: {
-    zh: '35mm 纪实视角，浅景深，焦点锐利',
-    en: '35mm documentary perspective, shallow depth of field, sharp focus',
-  },
-}
-
 const subjectDimensionPriority: Record<string, EnhanceDimension[]> = {
   person: ['lighting', 'lens', 'atmosphere', 'color', 'material', 'composition'],
   landscape: ['composition', 'atmosphere', 'lighting', 'color', 'lens', 'material'],
@@ -68,42 +42,6 @@ const subjectDimensionPriority: Record<string, EnhanceDimension[]> = {
   architecture: ['composition', 'lens', 'lighting', 'material', 'atmosphere', 'color'],
   food: ['material', 'lighting', 'color', 'composition', 'atmosphere', 'lens'],
   general: ['lighting', 'composition', 'color', 'atmosphere', 'material', 'lens'],
-}
-
-const styleSuffixByLevel: Record<EnhanceLevel, Record<ImageStyle, string>> = {
-  light: {
-    natural: 'natural ambient light, honest textures',
-    poster: 'strong composition, elegant negative space',
-    product: 'studio-grade lighting, clean reflections',
-    portrait: 'expressive eyes, refined skin texture',
-    anime: 'clean cel shading, crisp linework',
-    cinematic: 'anamorphic framing, dramatic lighting',
-    logo: 'minimal vector geometry, balanced negative space',
-    interior: 'architectural composition, layered natural light',
-    raw: '',
-  },
-  standard: {
-    natural: 'natural ambient light, honest textures, documentary realism, subtle color grading',
-    poster: 'strong poster composition, cinematic hierarchy, elegant negative space, premium editorial typography area',
-    product: 'studio-grade lighting, clean reflections, crisp material detail, premium commercial photography',
-    portrait: 'expressive eyes, refined skin texture, editorial portrait lighting, shallow depth of field',
-    anime: 'clean cel shading, expressive character design, crisp linework, vibrant yet controlled palette',
-    cinematic: 'anamorphic framing, dramatic practical lighting, atmospheric depth, film still composition',
-    logo: 'minimal vector geometry, scalable silhouette, balanced negative space, no text',
-    interior: 'architectural composition, layered natural light, warm material palette, lived-in spatial detail',
-    raw: '',
-  },
-  heavy: {
-    natural: 'natural ambient light with soft directional shadows, honest textures preserving material imperfections, documentary realism with candid atmosphere, subtle color grading with authentic tonal depth, 35mm lens shallow depth of field',
-    poster: 'strong poster composition with clear visual hierarchy, cinematic framing with dramatic lighting contrast, elegant negative space reserved for typography, premium editorial aesthetic with controlled dual-tone palette, print-quality tonal depth',
-    product: 'studio-grade lighting with large softbox key and reflector fill, clean specular reflections on polished surfaces, crisp material detail with authentic texture rendering, premium commercial photography with seamless background, tight crop with product occupying 60% of frame',
-    portrait: 'expressive eyes with natural catchlights, refined skin texture preserving pores and micro-detail, editorial portrait lighting with window-light quality, shallow depth of field with creamy bokeh background, 85mm lens at f/1.8 with focus on near eye',
-    anime: 'clean cel shading with consistent line weight, expressive character design with lively features, crisp linework with no artifacts, vibrant yet controlled palette with clear light-shadow separation, simplified geometric background with atmospheric depth',
-    cinematic: 'anamorphic framing with 2.39:1 widescreen aspect, dramatic practical lighting with deep shadows, atmospheric depth with 35mm film grain, film still composition with A24-style restraint, horizontal lens flare and elliptical bokeh',
-    logo: 'minimal vector geometry with pure flat aesthetics, scalable silhouette recognizable at 16px, balanced negative space with strong visual weight, no text no gradients no shadows, contemporary brand mark suitable for digital and print',
-    interior: 'architectural composition with corrected verticals, layered natural light from window sources, warm material palette with authentic textures, lived-in spatial detail with personal traces, 24mm wide-angle with waist-level perspective',
-    raw: '',
-  },
 }
 
 const lightingKeywords = [
@@ -193,6 +131,25 @@ function isChinese(prompt: string): boolean {
   return cjk / total > 0.25
 }
 
+function toSK(s: string): SK {
+  if (['person','landscape','object','abstract','architecture','food'].includes(s)) return s as SK
+  return 'general'
+}
+
+function toDim(d: EnhanceDimension): Dim { return d as Dim }
+
+const styleQualityTag: Record<ImageStyle, string> = {
+  natural: 'documentary realism, natural color grading',
+  poster: 'bold visual hierarchy, premium editorial feel',
+  product: 'commercial studio quality, clean background',
+  portrait: 'editorial portrait quality, refined detail',
+  anime: 'clean cel shading, crisp linework',
+  cinematic: 'cinematic film still, anamorphic depth',
+  logo: 'minimal vector, pure flat aesthetics',
+  interior: 'architectural photography, corrected verticals',
+  raw: '',
+}
+
 export function enhancePrompt(
   prompt: string,
   style: ImageStyle,
@@ -211,19 +168,21 @@ export function enhancePrompt(
 
   const dims = pickDimensionsForLevel(missing, level)
   const useZh = isChinese(trimmed)
-  const langKey = useZh ? 'zh' : 'en'
+  const sk = toSK(analysis.subjectType)
 
   const addedParts: string[] = []
 
-  const styleSuffix = styleSuffixByLevel[level][style]
-  if (styleSuffix && !trimmed.includes(styleSuffix)) {
-    addedParts.push(styleSuffix)
+  for (const dim of dims) {
+    const phrase = getVocab(toDim(dim), sk, useZh)
+    if (phrase && !trimmed.includes(phrase)) {
+      addedParts.push(phrase)
+    }
   }
 
-  for (const dim of dims) {
-    const vocab = dimensionVocabulary[dim]?.[langKey]
-    if (vocab && !trimmed.includes(vocab)) {
-      addedParts.push(vocab)
+  if (level !== 'light') {
+    const tag = styleQualityTag[style]
+    if (tag && !trimmed.includes(tag)) {
+      addedParts.push(tag)
     }
   }
 

@@ -206,29 +206,12 @@ function ensureDockVisible() {
   })
 }
 
-function ensureTextareaVisible() {
-  if (typeof window === 'undefined') return
-  const el = textareaRef.value
-  if (!el) return
-  const behavior: ScrollBehavior = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
-      try {
-        el.scrollIntoView({ block: 'center', inline: 'nearest', behavior })
-      } catch {
-        el.scrollIntoView(false)
-      }
-    })
-  })
-}
-
 function focusInput() {
   nextTick(() => {
     textareaRef.value?.focus()
     autosize()
     reportLayout()
     ensureDockVisible()
-    ensureTextareaVisible()
   })
 }
 
@@ -293,9 +276,6 @@ watch(() => props.referenceImages.length, syncLayoutSoon)
 
 watch(() => props.keyboardInset, syncLayoutSoon)
 
-watch(() => props.keyboardInset, (value) => {
-  if (value > 0 && focused.value) ensureTextareaVisible()
-})
 
 watch(() => props.viewportHeight, syncLayoutSoon)
 
@@ -469,7 +449,7 @@ defineExpose({ focusInput })
       </div>
 
       <div
-        class="chat-dock__input relative mx-2.5 mb-2 rounded-[22px] bg-paper-soft border border-line transition-all focus-within:border-ink/30 focus-within:bg-paper sm:mx-3"
+        class="chat-dock__input relative z-30 mx-2.5 mb-2 rounded-[22px] bg-paper-soft border border-line transition-all focus-within:border-ink/30 focus-within:bg-paper sm:mx-3"
         :class="{ 'magic-pulse': isMagicPulsing }"
       >
         <textarea
@@ -492,7 +472,7 @@ defineExpose({ focusInput })
           @keydown="onKeydown"
         ></textarea>
 
-        <div class="absolute bottom-1.5 right-1.5 flex items-center gap-1.5 z-10">
+        <div class="absolute bottom-1.5 right-1.5 flex items-center gap-1.5 z-40">
           <div class="chat-dock__indicators mr-1 hidden sm:flex items-center">
             <span
               v-if="isGenerating"
