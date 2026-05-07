@@ -99,7 +99,6 @@ const modelLabel = computed(() => {
   return match?.label ?? (modelChoice.value || '默认')
 })
 
-// 当正在生成时，发送按钮变成「取消」按钮，所以单独算一个真正禁用的状态
 const sendDisabled = computed(() => !props.isGenerating && !props.canGenerate)
 
 const dockOuterStyle = computed(() => {
@@ -504,8 +503,8 @@ defineExpose({ focusInput })
                 v-if="magicMenuOpen"
                 :prompt="prompt"
                 :style="currentStyle"
+                :has-reference-images="hasReferenceImages"
                 compact
-                class="absolute right-0 bottom-full mb-2"
                 @enhance="handleEnhanceResult"
                 @close="magicMenuOpen = false"
               />

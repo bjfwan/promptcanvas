@@ -118,7 +118,6 @@ function handleGenerateClick(event: Event) {
     event.preventDefault()
     return
   }
-  // 让 form 的 submit 处理（已经绑定了 emit('generate')）
 }
 
 const modelChipLabel = computed(() => {
@@ -334,7 +333,7 @@ watch(
                 v-if="magicMenuOpen"
                 :prompt="prompt"
                 :style="stl"
-                class="absolute right-0 top-full mt-2"
+                :has-reference-images="hasReferenceImages"
                 @enhance="(result: EnhanceResult) => { emit('magic-enhance', result); magicMenuOpen = false }"
                 @close="magicMenuOpen = false"
               />

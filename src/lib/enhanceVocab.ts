@@ -1,7 +1,15 @@
 export type SK = 'person'|'landscape'|'object'|'abstract'|'architecture'|'food'|'general'
 export type Dim = 'lighting'|'color'|'composition'|'material'|'atmosphere'|'lens'
 
-export function pick<T>(a:T[]):T{return a[Math.floor(Math.random()*a.length)]}
+export function pick<T>(a:T[],seed=''):T{
+  if(!seed)return a[Math.floor(Math.random()*a.length)]
+  let hash=2166136261
+  for(let i=0;i<seed.length;i+=1){
+    hash^=seed.charCodeAt(i)
+    hash=Math.imul(hash,16777619)
+  }
+  return a[Math.abs(hash)%a.length]
+}
 
 const V:Record<Dim,Record<SK,{z:string[];e:string[]}>>={
 lighting:{
@@ -60,9 +68,9 @@ general:{z:['50mm 标准镜头，最接近人眼视角','35mm 纪实视角，浅
 },
 }
 
-export function getVocab(dim:Dim,subject:SK,useZh:boolean):string|undefined{
+export function getVocab(dim:Dim,subject:SK,useZh:boolean,seed=''):string|undefined{
   const entry=V[dim]?.[subject]
   if(!entry)return undefined
   const arr=useZh?entry.z:entry.e
-  return arr.length?pick(arr):undefined
+  return arr.length?pick(arr,seed):undefined
 }
