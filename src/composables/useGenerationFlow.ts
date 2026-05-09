@@ -103,10 +103,11 @@ export function useGenerationFlow(deps: GenerationFlowDeps) {
       deps.images.value = result.images
       deps.lastRequestId.value = result.requestId || ''
       const persistableImages: GeneratedImage[] = result.images
-        .filter((image) => typeof image.url === 'string' && image.url.length > 0)
+        .filter((image) => Boolean(image.url || image.b64Json))
         .map((image) => ({
           id: image.id,
-          url: image.url,
+          url: image.url || null,
+          b64Json: image.b64Json || null,
           mimeType: image.mimeType,
           revisedPrompt: image.revisedPrompt,
         }))

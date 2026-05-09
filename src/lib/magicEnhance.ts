@@ -586,6 +586,24 @@ export function enhancePrompt(
     : pickDimensionsForLevel(analysis.missing, level)
   const sk = toSK(analysis.subjectType)
   const addedParts: string[] = []
+  const defaultMode = recommendedModeFor(style)
+  const defaultIntent = recommendedIntentFor(style)
+
+  if (!targetDimensions?.length && analysis.score >= 88 && !dims.length && level === 'light' && mode === defaultMode && intent === defaultIntent) {
+    return {
+      enhanced: trimmed,
+      addedParts: [],
+      dimensions: [],
+      dimensionLabels: [],
+      level,
+      mode,
+      intent,
+      original: prompt,
+      scoreBefore: analysis.score,
+      scoreAfter: analysis.score,
+      summary: summarizeResult([], mode, intent, analysis.score, analysis.score),
+    }
+  }
 
   for (const dim of dims) {
     const phrase = getVocab(toDim(dim), sk, analysis.language === 'zh', `${trimmed}|${style}|${level}|${mode}|${intent}|${dim}`)

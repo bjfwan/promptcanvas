@@ -252,6 +252,12 @@ function isImageReady(image: GeneratedImage, index: number) {
       >
           <div class="chat-pending-frame relative w-full overflow-hidden rounded-2xl" :class="previewFrameClass">
             <div class="chat-pending-bg absolute inset-0"></div>
+            <div class="chat-pending-layers" aria-hidden="true">
+              <span></span>
+              <span></span>
+              <span></span>
+              <span></span>
+            </div>
 
             <div
               class="pointer-events-none absolute inset-x-3 top-3 z-10 flex items-center justify-between text-[10px] font-mono uppercase tracking-[0.22em] text-muted/60"
@@ -479,6 +485,55 @@ function isImageReady(image: GeneratedImage, index: number) {
   animation: pending-bg-shift 8s ease-in-out infinite alternate;
 }
 
+.chat-pending-layers {
+  position: absolute;
+  inset: 3rem 1.25rem 3.1rem;
+  display: grid;
+  grid-template-columns: 0.9fr 1.15fr;
+  grid-template-rows: 0.7fr 1fr 0.55fr;
+  gap: 0.45rem;
+  opacity: 0.48;
+  transform: perspective(700px) rotateX(6deg);
+}
+
+.chat-pending-layers span {
+  position: relative;
+  overflow: hidden;
+  border-radius: 16px;
+  border: 1px solid rgb(var(--color-line-strong) / 0.22);
+  background: rgb(var(--color-paper) / 0.34);
+}
+
+.chat-pending-layers span::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(110deg, transparent 0%, rgb(var(--color-paper) / 0.44) 45%, transparent 70%);
+  transform: translateX(-120%);
+  animation: chat-layer-sweep 2.35s ease-in-out infinite;
+}
+
+.chat-pending-layers span:nth-child(1) {
+  grid-column: 1 / 3;
+}
+
+.chat-pending-layers span:nth-child(2) {
+  grid-column: 1 / 2;
+  grid-row: 2 / 4;
+  border-radius: 16px 999px 999px 16px;
+}
+
+.chat-pending-layers span:nth-child(3) {
+  grid-column: 2 / 3;
+  grid-row: 2 / 3;
+  border-radius: 999px;
+}
+
+.chat-pending-layers span:nth-child(4) {
+  grid-column: 2 / 3;
+  grid-row: 3 / 4;
+}
+
 .chat-pending-manifest {
   text-align: center;
 }
@@ -605,7 +660,8 @@ function isImageReady(image: GeneratedImage, index: number) {
 
 @media (prefers-reduced-motion: reduce) {
   .chat-pending-bg,
-  .chat-pending-footer__remain-dot {
+  .chat-pending-footer__remain-dot,
+  .chat-pending-layers span::after {
     animation: none;
   }
 
@@ -617,6 +673,11 @@ function isImageReady(image: GeneratedImage, index: number) {
 @keyframes pending-bg-shift {
   0% { transform: scale(1) rotate(0deg); }
   100% { transform: scale(1.1) rotate(2deg); }
+}
+
+@keyframes chat-layer-sweep {
+  0% { transform: translateX(-120%); }
+  56%, 100% { transform: translateX(120%); }
 }
 
 .chat-image-placeholder {
@@ -750,7 +811,7 @@ function isImageReady(image: GeneratedImage, index: number) {
   pointer-events: auto;
 }
 
-@media (hover: none) {
+@media (hover: none), (max-width: 640px) {
   .chat-image-card__overlay {
     opacity: 1;
     transform: translateY(0);

@@ -72,18 +72,69 @@ export function loadHistory(): GenerationHistoryItem[] {
   }
 }
 
+function normalizeHistoryItem(item: GenerationHistoryItem): GenerationHistoryItem {
+  const images = item.images
+    ?.filter((image) => image.url || image.b64Json)
+    .map((image) => ({
+      id: image.id,
+      url: image.url || null,
+      b64Json: image.b64Json || null,
+      mimeType: image.mimeType || null,
+      revisedPrompt: image.revisedPrompt || null,
+    }))
+
+  return {
+    ...item,
+    images: images?.length ? images : undefined,
+  }
+}
+
+function withoutImages(item: GenerationHistoryItem): GenerationHistoryItem {
+  const { images, ...rest } = item
+  void images
+  return rest
+}
+
+function trimImages(item: GenerationHistoryItem, count: number): GenerationHistoryItem {
+  if (!item.images?.length) return item
+  return {
+    ...item,
+    images: item.images.slice(0, count),
+  }
+}
+
+function persistHistory(items: GenerationHistoryItem[]): GenerationHistoryItem[] {
+  const normalized = items.slice(0, maxHistoryItems).map(normalizeHistoryItem)
+  const attempts = [
+    normalized,
+    normalized.map((item, index) => (index < 2 ? trimImages(item, 2) : withoutImages(item))),
+    normalized.map((item, index) => (index === 0 ? trimImages(item, 1) : withoutImages(item))),
+    normalized.map(withoutImages),
+    normalized.slice(0, 1).map(withoutImages),
+  ]
+
+  for (const candidate of attempts) {
+    try {
+      localStorage.setItem(historyKey, JSON.stringify(candidate))
+      return candidate
+    } catch {}
+  }
+
+  return normalized
+}
+
 export function saveHistory(items: GenerationHistoryItem[]) {
-  localStorage.setItem(historyKey, JSON.stringify(items.slice(0, maxHistoryItems)))
+  persistHistory(items)
 }
 
 export function prependHistory(item: GenerationHistoryItem) {
-  const nextItems = [item, ...loadHistory()].slice(0, maxHistoryItems)
-  saveHistory(nextItems)
-  return nextItems
+  return persistHistory([item, ...loadHistory()])
 }
 
 export function clearHistory() {
-  localStorage.removeItem(historyKey)
+  try {
+    localStorage.removeItem(historyKey)
+  } catch {}
 }
 
 const emptyProvider: ProviderConfig = { baseUrl: '', apiKey: '', proxyUrl: '' }

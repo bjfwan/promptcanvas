@@ -35,6 +35,7 @@ const emit = defineEmits<{
   (e: 'export'): void
   (e: 'go-compose'): void
   (e: 'pick-prompt', prompt: string): void
+  (e: 'remix', image: GeneratedImage, index: number): void
   (e: 'generate'): void
   (e: 'abort'): void
 }>()
@@ -134,6 +135,13 @@ function isImageReady(image: GeneratedImage, index: number) {
       aria-live="polite"
     >
       <div class="chat-pending-bg absolute inset-0"></div>
+      <div class="canvas-pending-layers" aria-hidden="true">
+        <span></span>
+        <span></span>
+        <span></span>
+        <span></span>
+        <span></span>
+      </div>
 
       <div class="absolute inset-0 grid grid-rows-[auto_1fr_auto] p-6 sm:p-8">
         <div class="flex items-center justify-between font-mono text-[10px] uppercase tracking-[0.25em] text-muted/60">
@@ -242,7 +250,11 @@ function isImageReady(image: GeneratedImage, index: number) {
         </div>
       </div>
 
-      <div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <div class="grid grid-cols-2 gap-2 sm:grid-cols-5">
+        <button type="button" class="btn-secondary rounded-xl px-3 py-3 sm:py-2.5 sm:text-xs" @click="emit('remix', activeImage, activeImageIndex)">
+          <Icon name="sparkle" :size="14" />
+          接着画
+        </button>
         <button type="button" class="btn-secondary rounded-xl px-3 py-3 sm:py-2.5 sm:text-xs" @click="emit('download', activeImage, activeImageIndex)">
           <Icon name="download" :size="14" />
           下载
@@ -386,6 +398,62 @@ function isImageReady(image: GeneratedImage, index: number) {
   animation: pending-bg-shift 8s ease-in-out infinite alternate;
 }
 
+.canvas-pending-layers {
+  position: absolute;
+  inset: 5.5rem 3.2rem 5.8rem;
+  display: grid;
+  grid-template-columns: 0.95fr 1.2fr 0.8fr;
+  grid-template-rows: 0.8fr 1.1fr 0.7fr;
+  gap: 0.6rem;
+  opacity: 0.5;
+  transform: perspective(900px) rotateX(7deg);
+}
+
+.canvas-pending-layers span {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgb(var(--color-line-strong) / 0.2);
+  border-radius: 18px;
+  background: rgb(var(--color-paper) / 0.34);
+  box-shadow: inset 0 1px 0 rgb(var(--color-paper) / 0.48);
+}
+
+.canvas-pending-layers span::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(110deg, transparent 0%, rgb(var(--color-paper) / 0.42) 45%, transparent 70%);
+  transform: translateX(-120%);
+  animation: canvas-layer-sweep 2.4s ease-in-out infinite;
+}
+
+.canvas-pending-layers span:nth-child(1) {
+  grid-column: 1 / 3;
+  grid-row: 1 / 2;
+}
+
+.canvas-pending-layers span:nth-child(2) {
+  grid-column: 3 / 4;
+  grid-row: 1 / 3;
+  border-radius: 999px 18px 18px 999px;
+}
+
+.canvas-pending-layers span:nth-child(3) {
+  grid-column: 1 / 2;
+  grid-row: 2 / 4;
+  border-radius: 18px 999px 999px 18px;
+}
+
+.canvas-pending-layers span:nth-child(4) {
+  grid-column: 2 / 3;
+  grid-row: 2 / 3;
+}
+
+.canvas-pending-layers span:nth-child(5) {
+  grid-column: 2 / 4;
+  grid-row: 3 / 4;
+}
+
 .chat-pending-manifest {
   text-align: center;
 }
@@ -427,6 +495,11 @@ function isImageReady(image: GeneratedImage, index: number) {
 @keyframes pending-bg-shift {
   0% { transform: scale(1) rotate(0deg); }
   100% { transform: scale(1.1) rotate(2deg); }
+}
+
+@keyframes canvas-layer-sweep {
+  0% { transform: translateX(-120%); }
+  56%, 100% { transform: translateX(120%); }
 }
 
 .canvas-pending__remain {
@@ -495,7 +568,8 @@ function isImageReady(image: GeneratedImage, index: number) {
 
 @media (prefers-reduced-motion: reduce) {
   .chat-pending-bg,
-  .canvas-pending__remain-dot {
+  .canvas-pending__remain-dot,
+  .canvas-pending-layers span::after {
     animation: none;
   }
 

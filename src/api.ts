@@ -108,6 +108,8 @@ async function buildEditFormData(payload: {
   formData.set('size', payload.size)
   formData.set('n', String(payload.count))
   formData.set('user', requestId)
+  formData.set('output_format', payload.outputFormat)
+  formData.set('quality', payload.quality)
 
   if (payload.model) {
     formData.set('model', payload.model)

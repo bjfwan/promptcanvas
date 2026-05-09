@@ -76,7 +76,7 @@ const historyOpen = ref(false)
 const styleSheetOpen = ref(false)
 const composerRef = ref<{ focusPrompt?: () => void } | null>(null)
 const chatDockRef = ref<{ focusInput?: () => void } | null>(null)
-const chatStreamRef = ref<{ scrollToMessage?: (id: string) => void } | null>(null)
+const chatStreamRef = ref<{ scrollToMessage?: (id: string) => void; scrollToBottom?: (smooth?: boolean) => void } | null>(null)
 const messages = ref<ChatMessage[]>([])
 const pendingContinuation = ref<ContinuationContext | null>(null)
 const mobileDockHeight = ref(180)
@@ -103,6 +103,7 @@ const mobileRootStyle = computed(() => {
     height: `${mobileViewportHeight.value}px`,
   }
 })
+const mobileDockKeyboardInset = computed(() => (mobileViewportHeight.value ? 0 : mobileKeyboardInset.value))
 const mobileChatBottomPadding = computed(() => Math.max(120, mobileDockHeight.value + 16))
 const mobileJumpButtonBottom = computed(() => {
   const desired = mobileDockHeight.value + 12
@@ -209,6 +210,30 @@ function handleAbortGeneration() {
   generation.abortGeneration()
 }
 
+async function fetchContinuationBlob(source: string): Promise<Blob> {
+  try {
+    const response = await fetch(source)
+    if (response.ok) return await response.blob()
+  } catch {}
+
+  const proxyUrl = (provider.snapshot().proxyUrl || '').trim().replace(/\/+$/, '')
+  if (!proxyUrl || /^(data|blob):/i.test(source)) {
+    throw new Error('图片读取失败')
+  }
+
+  const url = new URL(source)
+  const upstreamBase = `${url.protocol}//${url.host}`
+  const response = await fetch(`${proxyUrl}${url.pathname}${url.search}`, {
+    headers: { 'X-Upstream-Base': upstreamBase },
+  })
+
+  if (!response.ok) {
+    throw new Error('代理读取失败')
+  }
+
+  return await response.blob()
+}
+
 async function handleRemix(
   image: GeneratedImage,
   content: string,
@@ -227,17 +252,11 @@ async function handleRemix(
 
   try {
     toast.info('正在准备「接着画」', '把这张图加入参考')
-    let blob: Blob
-    if (source.startsWith('data:')) {
-      const res = await fetch(source)
-      blob = await res.blob()
-    } else {
-      const res = await fetch(source)
-      if (!res.ok) throw new Error('远程图片下载失败')
-      blob = await res.blob()
-    }
+    const blob = await fetchContinuationBlob(source)
+    const mimeType = (blob.type || image.mimeType || 'image/png').split(';')[0] || 'image/png'
+    const ext = mimeType.split('/')[1] || 'png'
 
-    const file = new File([blob], `continue-${Date.now()}.png`, { type: 'image/png' })
+    const file = new File([blob], `continue-${Date.now()}.${ext}`, { type: mimeType })
 
     clearComposerReferenceImages()
     addReferenceImages([file])
@@ -405,6 +424,49 @@ function pickStyleFromChat(value: ImageStyle) {
   nextTick(() => chatDockRef.value?.focusInput?.())
 }
 
+function historyMessages(item: GenerationHistoryItem): ChatMessage[] {
+  const userId = `history_user_${item.id}`
+  const meta = {
+    style: item.style,
+    size: item.size,
+    count: item.count,
+    outputFormat: item.outputFormat,
+    generationMode: item.referenceImageCount ? 'reference' as const : 'text' as const,
+    model: item.model,
+    quality: item.quality,
+    creativity: item.creativity,
+    seed: item.seed,
+    negativePrompt: item.negativePrompt,
+    referenceImageCount: item.referenceImageCount,
+  }
+  const userMessage: ChatUserMessage = {
+    id: userId,
+    role: 'user',
+    content: item.prompt,
+    createdAt: item.createdAt,
+    meta,
+  }
+
+  if (!item.images?.length) {
+    return [userMessage]
+  }
+
+  return [
+    userMessage,
+    {
+      id: `history_assistant_${item.id}`,
+      role: 'assistant',
+      status: 'success',
+      content: item.prompt,
+      createdAt: item.createdAt,
+      replyTo: userId,
+      meta,
+      images: item.images,
+      requestId: item.requestId,
+    },
+  ]
+}
+
 async function restoreHistory(item: GenerationHistoryItem) {
   prompt.value = item.prompt
   templateAnchorPrompt = item.prompt
@@ -433,6 +495,7 @@ async function restoreHistory(item: GenerationHistoryItem) {
   }
   errorMessage.value = ''
   historyOpen.value = false
+  messages.value = historyMessages(item)
 
   if (item.images && item.images.length) {
     images.value = item.images
@@ -455,6 +518,8 @@ async function restoreHistory(item: GenerationHistoryItem) {
         : '该历史未保存图片，重新生成可再得一次',
     )
   }
+
+  nextTick(() => chatStreamRef.value?.scrollToBottom?.(false))
 }
 
 function resetDraft() {
@@ -476,7 +541,14 @@ function resetDraft() {
   modelChoice.value = ''
   customModel.value = ''
   errorMessage.value = ''
-  toast.info('已重置为默认参数')
+  images.value = []
+  activeImageIndex.value = 0
+  messages.value = []
+  pendingContinuation.value = null
+  lastEnhanceResult.value = null
+  lastRequestId.value = ''
+  elapsedSeconds.value = 0
+  toast.info('已重置画布与参数')
 }
 
 function clearLocalHistory() {
@@ -552,6 +624,12 @@ function handleChatDockLayoutChange(height: number) {
   if (!Number.isFinite(height)) return
   mobileDockHeight.value = Math.max(0, Math.round(height))
 }
+
+watch(prompt, (value) => {
+  if (lastEnhanceResult.value && value !== lastEnhanceResult.value.enhanced) {
+    lastEnhanceResult.value = null
+  }
+})
 
 watch(style, (newValue, oldValue) => {
   if (newValue === oldValue) return
@@ -635,6 +713,7 @@ onMounted(() => {
           @remove-reference-image="removeReferenceImage"
           @magic-enhance="handleMagicEnhance"
           @undo-enhance="handleUndoEnhance"
+          @clear="lastEnhanceResult = null"
           @cancel-continuation="handleCancelContinuation"
         />
       </section>
@@ -661,6 +740,7 @@ onMounted(() => {
           @export="exportCurrentConfig"
           @go-compose="focusPrompt"
           @pick-prompt="handlePickQuickPrompt"
+          @remix="(image, index) => handleRemix(image, prompt, lastRequestId || 'canvas', index)"
           @generate="handleGenerate"
           @abort="handleAbortGeneration"
         />
@@ -707,7 +787,7 @@ onMounted(() => {
       :health-offline="healthStatus === 'offline'"
       :current-style="style"
       :reference-images="referenceImages"
-      :keyboard-inset="mobileKeyboardInset"
+      :keyboard-inset="mobileDockKeyboardInset"
       :viewport-height="mobileViewportHeight ?? undefined"
       :continuation="pendingContinuation"
       :can-undo-enhance="!!lastEnhanceResult"
