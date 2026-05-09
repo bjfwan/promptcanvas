@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import Icon from './Icon.vue'
 import {
   analyzePrompt,
@@ -20,10 +20,12 @@ import {
   type PromptVariant,
 } from '../lib/magicEnhance'
 import type { ImageStyle } from '../types'
+import { useBodyLock } from '../composables/useBodyLock'
+import { useFocusTrap } from '../composables/useFocusTrap'
 
 interface Props {
   prompt: string
-  style: ImageStyle
+  imageStyle: ImageStyle
   compact?: boolean
   hasReferenceImages?: boolean
 }
@@ -43,24 +45,26 @@ const selectedMode = ref<EnhanceMode>('balanced')
 const selectedIntent = ref<EnhanceIntent>('create')
 const selectedVariantId = ref('current')
 const intentTouched = ref(false)
+const dialogRef = ref<HTMLElement | null>(null)
 
 const intentOptions = Object.values(enhanceIntentMeta)
 const modeOptions = Object.values(enhanceModeMeta)
 const levelKeys: EnhanceLevel[] = ['light', 'standard', 'heavy']
 
-const analysis = computed(() => analyzePrompt(props.prompt, props.style))
+const analysis = computed(() => analyzePrompt(props.prompt, props.imageStyle))
 const missingDimensions = computed(() => analysis.value.missing)
 const missingHint = computed(() => getMissingLabel(missingDimensions.value))
 const hasMissing = computed(() => missingDimensions.value.length > 0)
 const canEnhance = computed(() => props.prompt.trim().length > 0)
+const beforeText = computed(() => props.prompt.trim())
 
 const currentVariant = computed<PromptVariant>(() => ({
   id: 'current',
-  label: '当前方案',
+  label: '当前策略',
   hint: `${enhanceIntentMeta[selectedIntent.value].label} · ${enhanceLevelMeta[selectedLevel.value].label}`,
   result: enhancePrompt(
     props.prompt,
-    props.style,
+    props.imageStyle,
     selectedLevel.value,
     undefined,
     selectedMode.value,
@@ -71,7 +75,7 @@ const currentVariant = computed<PromptVariant>(() => ({
 const variants = computed<PromptVariant[]>(() => {
   const items = [
     currentVariant.value,
-    ...createPromptVariants(props.prompt, props.style, selectedMode.value, selectedIntent.value),
+    ...createPromptVariants(props.prompt, props.imageStyle, selectedMode.value, selectedIntent.value),
   ]
   const seen = new Set<string>()
   return items.filter((item) => {
@@ -88,7 +92,33 @@ const selectedVariant = computed(() =>
 
 const selectedResult = computed(() => selectedVariant.value.result)
 const scoreDelta = computed(() => Math.max(0, selectedResult.value.scoreAfter - selectedResult.value.scoreBefore))
-const previewParts = computed(() => selectedResult.value.addedParts.slice(0, 6))
+const previewParts = computed(() => selectedResult.value.addedParts.slice(0, 8))
+const activeDimensions = computed(() => selectedResult.value.dimensions.map((dim) => dimensionMeta(dim)))
+const strategyTags = computed(() => [
+  enhanceIntentMeta[selectedIntent.value].label,
+  enhanceModeMeta[selectedMode.value].label,
+  enhanceLevelMeta[selectedLevel.value].label,
+  analysis.value.subjectType === 'general' ? '通用主体' : analysis.value.subjectLabel,
+])
+const issueItems = computed(() => analysis.value.issues.slice(0, 3))
+const strengthItems = computed(() => analysis.value.strengths.slice(0, 4))
+const grade = computed(() => {
+  const score = selectedResult.value.scoreAfter
+  if (score >= 88) return { label: '强', tone: 'great', hint: '可直接进入高质量生成' }
+  if (score >= 72) return { label: '稳', tone: 'good', hint: '主体与画面控制已经清楚' }
+  if (score >= 54) return { label: '补', tone: 'mid', hint: '需要补齐画面短板' }
+  return { label: '弱', tone: 'low', hint: '建议先重构提示词' }
+})
+const applyLabel = computed(() => {
+  if (!canEnhance.value) return '先写提示词'
+  if (selectedResult.value.level === 'heavy') return '应用深度重构'
+  if (selectedResult.value.mode === 'faithful') return '应用精准优化'
+  return '应用智能优化'
+})
+
+function dimensionMeta(dim: EnhanceDimension) {
+  return enhanceDimensions.find((item) => item.id === dim) ?? enhanceDimensions[0]
+}
 
 function selectIntent(intent: EnhanceIntent) {
   selectedIntent.value = intent
@@ -114,16 +144,20 @@ function applyResult(result = selectedResult.value) {
 
 function handleDimensionClick(dim: EnhanceDimension) {
   if (!props.prompt.trim()) return
-  const result = enhanceSingleDimension(props.prompt, props.style, dim, selectedMode.value, selectedIntent.value)
+  const result = enhanceSingleDimension(props.prompt, props.imageStyle, dim, selectedMode.value, selectedIntent.value)
   emit('enhance', result)
   emit('close')
 }
 
+function onKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape') emit('close')
+}
+
 watch(
-  () => [props.style, props.hasReferenceImages] as const,
+  () => [props.imageStyle, props.hasReferenceImages] as const,
   () => {
     if (!intentTouched.value) {
-      selectedIntent.value = inferEnhanceIntent(props.style, props.hasReferenceImages)
+      selectedIntent.value = inferEnhanceIntent(props.imageStyle, props.hasReferenceImages)
     }
     selectedMode.value = analysis.value.recommendedMode
     selectedLevel.value = analysis.value.recommendedLevel
@@ -139,233 +173,329 @@ watch(
     selectedVariantId.value = 'current'
   },
 )
+
+onMounted(() => {
+  window.addEventListener('keydown', onKeydown)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onKeydown)
+})
+
+useBodyLock(() => true)
+useFocusTrap(() => true, dialogRef)
 </script>
 
 <template>
-  <div class="magic-menu" :class="{ 'magic-menu--compact': compact }">
-    <div class="magic-menu__top">
-      <div class="magic-menu__brand">
-        <span class="magic-menu__brand-icon">
-          <Icon name="sparkle" :size="14" />
-        </span>
-        <span>
-          <span class="magic-menu__title">提示词工程台</span>
-          <span class="magic-menu__sub">{{ missingHint }}</span>
-        </span>
-      </div>
-      <div class="magic-menu__score" :class="analysis.score >= 78 ? 'is-good' : analysis.score >= 52 ? 'is-mid' : 'is-low'">
-        <span>{{ selectedResult.scoreAfter }}</span>
-        <small v-if="scoreDelta">+{{ scoreDelta }}</small>
-      </div>
-    </div>
-
-    <p v-if="!prompt.trim()" class="magic-menu__empty">先写下主体或修改目标</p>
-
-    <template v-else>
-      <section class="magic-menu__section">
-        <div class="magic-menu__section-head">
-          <span>方向</span>
-          <small>{{ enhanceIntentMeta[selectedIntent].hint }}</small>
-        </div>
-        <div class="magic-menu__intent-grid">
-          <button
-            v-for="item in intentOptions"
-            :key="item.id"
-            type="button"
-            class="magic-menu__intent"
-            :class="{ 'is-active': selectedIntent === item.id }"
-            @click="selectIntent(item.id)"
-          >
-            <Icon :name="item.icon" :size="13" />
-            <span>{{ item.label }}</span>
-          </button>
-        </div>
-      </section>
-
-      <section class="magic-menu__section magic-menu__section--split">
-        <div>
-          <div class="magic-menu__section-head">
-            <span>强度</span>
-            <small>{{ enhanceLevelMeta[selectedLevel].hint }}</small>
-          </div>
-          <div class="magic-menu__seg">
-            <button
-              v-for="key in levelKeys"
-              :key="key"
-              type="button"
-              class="magic-menu__seg-btn"
-              :class="{ 'is-active': selectedLevel === key }"
-              @click="selectLevel(key)"
-            >
-              {{ enhanceLevelMeta[key].label }}
-            </button>
-          </div>
-        </div>
-
-        <div>
-          <div class="magic-menu__section-head">
-            <span>取向</span>
-            <small>{{ enhanceModeMeta[selectedMode].hint }}</small>
-          </div>
-          <div class="magic-menu__mode-row">
-            <button
-              v-for="item in modeOptions"
-              :key="item.id"
-              type="button"
-              class="magic-menu__mode"
-              :class="{ 'is-active': selectedMode === item.id }"
-              :aria-label="item.label"
-              @click="selectMode(item.id)"
-            >
-              <Icon :name="item.icon" :size="13" />
-            </button>
-          </div>
-        </div>
-      </section>
-
-      <section class="magic-menu__metrics">
-        <div
-          v-for="metric in analysis.metrics"
-          :key="metric.id"
-          class="magic-menu__metric"
-        >
-          <div class="magic-menu__metric-line">
-            <span>{{ metric.label }}</span>
-            <small>{{ metric.hint }}</small>
-          </div>
-          <span class="magic-menu__bar">
-            <span :style="{ width: `${metric.score}%` }" :class="`is-${metric.state}`"></span>
-          </span>
-        </div>
-      </section>
-
-      <section v-if="hasMissing" class="magic-menu__section">
-        <div class="magic-menu__section-head">
-          <span>精准补充</span>
-          <small>点一个维度直接应用</small>
-        </div>
-        <div class="magic-menu__dimensions">
-          <button
-            v-for="dim in missingDimensions"
-            :key="dim"
-            type="button"
-            class="magic-menu__dim-chip"
-            @click="handleDimensionClick(dim)"
-          >
-            <Icon :name="enhanceDimensions.find(d => d.id === dim)?.icon ?? 'sparkle'" :size="12" />
-            <span>{{ enhanceDimensions.find(d => d.id === dim)?.label }}</span>
-          </button>
-        </div>
-      </section>
-
-      <section class="magic-menu__section">
-        <div class="magic-menu__section-head">
-          <span>方案</span>
-          <small>{{ selectedResult.summary }}</small>
-        </div>
-        <div class="magic-menu__variants">
-          <button
-            v-for="item in variants"
-            :key="item.id"
-            type="button"
-            class="magic-menu__variant"
-            :class="{ 'is-active': selectedVariant.id === item.id }"
-            @click="selectedVariantId = item.id"
-          >
-            <span>{{ item.label }}</span>
-            <small>{{ item.hint }}</small>
-          </button>
-        </div>
-      </section>
-
-      <section class="magic-menu__preview">
-        <p>{{ selectedResult.enhanced }}</p>
-        <div v-if="previewParts.length" class="magic-menu__parts">
-          <span v-for="part in previewParts" :key="part">{{ part }}</span>
-        </div>
-      </section>
-
-      <button
-        type="button"
-        class="magic-menu__apply"
-        :disabled="!canEnhance"
-        @click="applyResult()"
+  <Teleport to="body">
+    <div class="magic-layer" :class="{ 'magic-layer--compact': compact }" @pointerdown.self="emit('close')">
+      <section
+        ref="dialogRef"
+        class="magic-menu"
+        :class="{ 'magic-menu--compact': compact }"
+        role="dialog"
+        aria-modal="true"
+        aria-label="提示词智能优化"
+        @pointerdown.stop
       >
-        <Icon name="check" :size="13" />
-        <span>应用优化</span>
-      </button>
-    </template>
-  </div>
+        <header class="magic-menu__hero">
+          <div class="magic-menu__brand">
+            <span class="magic-menu__brand-icon">
+              <Icon name="sparkle" :size="16" />
+            </span>
+            <span class="min-w-0">
+              <span class="magic-menu__title">提示词优化引擎</span>
+              <span class="magic-menu__sub">{{ missingHint }}</span>
+            </span>
+          </div>
+
+          <div class="magic-menu__score" :class="`is-${grade.tone}`">
+            <span>{{ selectedResult.scoreAfter }}</span>
+            <small>{{ grade.label }}</small>
+          </div>
+
+          <button type="button" class="magic-menu__close" aria-label="关闭提示词优化" @click="emit('close')">
+            <Icon name="close" :size="14" />
+          </button>
+        </header>
+
+        <p v-if="!prompt.trim()" class="magic-menu__empty">先写下主体或修改目标，优化引擎会自动拆解画面短板。</p>
+
+        <template v-else>
+          <section class="magic-menu__overview">
+            <div class="magic-menu__grade">
+              <span class="magic-menu__grade-label">{{ grade.hint }}</span>
+              <span class="magic-menu__grade-score">
+                {{ selectedResult.scoreBefore }}
+                <Icon name="arrowRight" :size="12" />
+                {{ selectedResult.scoreAfter }}
+                <small v-if="scoreDelta">+{{ scoreDelta }}</small>
+              </span>
+            </div>
+            <div class="magic-menu__tags">
+              <span v-for="tag in strategyTags" :key="tag">{{ tag }}</span>
+            </div>
+          </section>
+
+          <section class="magic-menu__section">
+            <div class="magic-menu__section-head">
+              <span>任务方向</span>
+              <small>{{ enhanceIntentMeta[selectedIntent].hint }}</small>
+            </div>
+            <div class="magic-menu__intent-grid">
+              <button
+                v-for="item in intentOptions"
+                :key="item.id"
+                type="button"
+                class="magic-menu__intent"
+                :class="{ 'is-active': selectedIntent === item.id }"
+                @click="selectIntent(item.id)"
+              >
+                <Icon :name="item.icon" :size="13" />
+                <span>{{ item.label }}</span>
+              </button>
+            </div>
+          </section>
+
+          <section class="magic-menu__section magic-menu__section--split">
+            <div>
+              <div class="magic-menu__section-head">
+                <span>优化强度</span>
+                <small>{{ enhanceLevelMeta[selectedLevel].hint }}</small>
+              </div>
+              <div class="magic-menu__seg">
+                <button
+                  v-for="key in levelKeys"
+                  :key="key"
+                  type="button"
+                  class="magic-menu__seg-btn"
+                  :class="{ 'is-active': selectedLevel === key }"
+                  @click="selectLevel(key)"
+                >
+                  {{ enhanceLevelMeta[key].label }}
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <div class="magic-menu__section-head">
+                <span>生成取向</span>
+                <small>{{ enhanceModeMeta[selectedMode].hint }}</small>
+              </div>
+              <div class="magic-menu__mode-row">
+                <button
+                  v-for="item in modeOptions"
+                  :key="item.id"
+                  type="button"
+                  class="magic-menu__mode"
+                  :class="{ 'is-active': selectedMode === item.id }"
+                  :aria-label="item.label"
+                  @click="selectMode(item.id)"
+                >
+                  <Icon :name="item.icon" :size="13" />
+                  <span>{{ item.label }}</span>
+                </button>
+              </div>
+            </div>
+          </section>
+
+          <section class="magic-menu__diagnosis">
+            <div
+              v-for="metric in analysis.metrics"
+              :key="metric.id"
+              class="magic-menu__metric"
+            >
+              <div class="magic-menu__metric-line">
+                <span>{{ metric.label }}</span>
+                <small>{{ metric.hint }}</small>
+              </div>
+              <span class="magic-menu__bar">
+                <span :style="{ width: `${metric.score}%` }" :class="`is-${metric.state}`"></span>
+              </span>
+            </div>
+          </section>
+
+          <section v-if="issueItems.length || strengthItems.length" class="magic-menu__insight">
+            <div v-if="strengthItems.length">
+              <span class="magic-menu__mini-title">已具备</span>
+              <div class="magic-menu__mini-tags">
+                <span v-for="item in strengthItems" :key="item">{{ item }}</span>
+              </div>
+            </div>
+            <div v-if="issueItems.length">
+              <span class="magic-menu__mini-title">待增强</span>
+              <div class="magic-menu__mini-tags is-warm">
+                <span v-for="item in issueItems" :key="item">{{ item }}</span>
+              </div>
+            </div>
+          </section>
+
+          <section v-if="hasMissing" class="magic-menu__section">
+            <div class="magic-menu__section-head">
+              <span>精准补维度</span>
+              <small>点一个维度直接应用</small>
+            </div>
+            <div class="magic-menu__dimensions">
+              <button
+                v-for="dim in missingDimensions"
+                :key="dim"
+                type="button"
+                class="magic-menu__dim-chip"
+                @click="handleDimensionClick(dim)"
+              >
+                <Icon :name="dimensionMeta(dim).icon" :size="12" />
+                <span>{{ dimensionMeta(dim).label }}</span>
+              </button>
+            </div>
+          </section>
+
+          <section class="magic-menu__section">
+            <div class="magic-menu__section-head">
+              <span>候选方案</span>
+              <small>{{ selectedResult.summary }}</small>
+            </div>
+            <div class="magic-menu__variants">
+              <button
+                v-for="item in variants"
+                :key="item.id"
+                type="button"
+                class="magic-menu__variant"
+                :class="{ 'is-active': selectedVariant.id === item.id }"
+                @click="selectedVariantId = item.id"
+              >
+                <span>{{ item.label }}</span>
+                <small>{{ item.hint }}</small>
+              </button>
+            </div>
+          </section>
+
+          <section class="magic-menu__compare">
+            <div>
+              <span class="magic-menu__mini-title">原提示词</span>
+              <p>{{ beforeText }}</p>
+            </div>
+            <div>
+              <span class="magic-menu__mini-title">优化后</span>
+              <p>{{ selectedResult.enhanced }}</p>
+            </div>
+          </section>
+
+          <div v-if="activeDimensions.length || previewParts.length" class="magic-menu__parts">
+            <span v-for="dim in activeDimensions" :key="dim.id" class="is-dim">
+              <Icon :name="dim.icon" :size="11" />
+              {{ dim.label }}
+            </span>
+            <span v-for="part in previewParts" :key="part">{{ part }}</span>
+          </div>
+
+          <button
+            type="button"
+            class="magic-menu__apply"
+            :disabled="!canEnhance"
+            @click="applyResult()"
+          >
+            <Icon name="check" :size="14" />
+            <span>{{ applyLabel }}</span>
+          </button>
+        </template>
+      </section>
+    </div>
+  </Teleport>
 </template>
 
 <style scoped>
-.magic-menu {
+.magic-layer {
   position: fixed;
-  left: 50%;
-  top: clamp(5rem, 9vh, 7rem);
-  transform: translateX(-50%);
-  width: min(92vw, 540px);
-  max-height: min(78vh, 720px);
+  inset: 0;
+  z-index: 90;
+  display: grid;
+  place-items: start center;
+  padding: calc(env(safe-area-inset-top, 0px) + 4.75rem) 1rem 1rem;
+  background: rgb(var(--color-ink) / 0.18);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.magic-layer--compact {
+  place-items: end center;
+  padding: 1rem 0.65rem calc(env(safe-area-inset-bottom, 0px) + 0.7rem);
+}
+
+.magic-menu {
+  width: min(94vw, 620px);
+  max-height: min(82vh, 760px);
   overflow: auto;
-  padding: 0.7rem;
-  border-radius: 20px;
-  border: 1px solid rgb(var(--color-line-strong) / 0.7);
-  background: rgb(var(--color-paper));
-  box-shadow:
-    0 24px 56px -24px rgb(var(--color-ink) / 0.34),
-    0 8px 18px -8px rgb(var(--color-ink) / 0.16);
-  z-index: 50;
-  scrollbar-width: thin;
   overscroll-behavior: contain;
+  padding: 0.85rem;
+  border-radius: 24px;
+  border: 1px solid rgb(var(--color-line-strong) / 0.78);
+  background:
+    linear-gradient(180deg, rgb(var(--color-vellum) / 0.98), rgb(var(--color-paper) / 0.98)),
+    radial-gradient(circle at 16% 0%, rgb(var(--color-forest) / 0.12), transparent 36%),
+    radial-gradient(circle at 92% 20%, rgb(var(--color-accent) / 0.1), transparent 32%);
+  color: rgb(var(--color-ink));
+  box-shadow:
+    0 32px 72px -32px rgb(var(--color-ink) / 0.46),
+    0 10px 24px -14px rgb(var(--color-ink) / 0.26);
+  scrollbar-width: thin;
+  touch-action: pan-y;
 }
 
 .magic-menu--compact {
-  width: min(94vw, 500px);
-  top: auto;
-  bottom: calc(7rem + env(safe-area-inset-bottom, 0px));
-  max-height: min(70vh, 620px);
-  padding: 0.65rem;
-  border-radius: 18px;
+  width: min(100%, 560px);
+  max-height: min(82dvh, 680px);
+  border-radius: 24px 24px 18px 18px;
 }
 
-.magic-menu__top {
-  display: flex;
+.magic-menu__hero {
+  position: sticky;
+  top: -0.85rem;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.8rem;
-  padding: 0.2rem 0.25rem 0.55rem;
+  gap: 0.65rem;
+  margin: -0.85rem -0.85rem 0;
+  padding: 0.85rem;
+  border-bottom: 1px solid rgb(var(--color-line) / 0.66);
+  background: rgb(var(--color-vellum) / 0.92);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
 }
 
 .magic-menu__brand {
   display: flex;
   align-items: center;
-  gap: 0.55rem;
+  gap: 0.65rem;
   min-width: 0;
 }
 
 .magic-menu__brand-icon {
   display: grid;
   place-items: center;
-  width: 30px;
-  height: 30px;
-  border-radius: 10px;
-  background: rgb(var(--color-forest) / 0.12);
-  color: rgb(var(--color-forest));
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  border-radius: 12px;
+  background: rgb(var(--color-ink));
+  color: rgb(var(--color-paper));
+  box-shadow: 0 12px 24px -16px rgb(var(--color-ink) / 0.45);
 }
 
 .magic-menu__title,
 .magic-menu__sub {
   display: block;
+  min-width: 0;
 }
 
 .magic-menu__title {
-  font-size: 13px;
-  font-weight: 700;
-  color: rgb(var(--color-ink));
+  font-size: 14px;
+  font-weight: 760;
+  letter-spacing: 0;
 }
 
 .magic-menu__sub {
-  margin-top: 1px;
+  margin-top: 2px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -376,60 +506,162 @@ watch(
 
 .magic-menu__score {
   display: grid;
+  grid-template-columns: 1fr;
   place-items: center;
+  width: 50px;
+  height: 50px;
   flex-shrink: 0;
-  width: 48px;
-  height: 48px;
   border-radius: 16px;
   border: 1px solid rgb(var(--color-line));
-  background: rgb(var(--color-cream));
-  color: rgb(var(--color-ink));
+  background: rgb(var(--color-paper));
 }
 
 .magic-menu__score span {
   font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
-  font-size: 17px;
-  font-weight: 700;
+  font-size: 18px;
+  font-weight: 760;
   line-height: 1;
 }
 
 .magic-menu__score small {
   margin-top: 2px;
-  font-size: 9px;
+  font-size: 10px;
+  font-weight: 720;
+}
+
+.magic-menu__score.is-great,
+.magic-menu__score.is-good {
+  border-color: rgb(var(--color-forest) / 0.38);
+  background: rgb(var(--color-forest) / 0.11);
   color: rgb(var(--color-forest));
 }
 
-.magic-menu__score.is-good {
-  border-color: rgb(var(--color-forest) / 0.32);
-  background: rgb(var(--color-forest) / 0.1);
-}
-
 .magic-menu__score.is-mid {
-  border-color: rgb(var(--color-ochre) / 0.34);
-  background: rgb(var(--color-ochre) / 0.1);
+  border-color: rgb(var(--color-ochre) / 0.38);
+  background: rgb(var(--color-ochre) / 0.12);
+  color: rgb(var(--color-ochre));
 }
 
 .magic-menu__score.is-low {
-  border-color: rgb(var(--color-accent) / 0.3);
-  background: rgb(var(--color-accent) / 0.08);
+  border-color: rgb(var(--color-accent) / 0.34);
+  background: rgb(var(--color-accent) / 0.1);
+  color: rgb(var(--color-accent));
+}
+
+.magic-menu__close {
+  display: inline-grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 999px;
+  border: 1px solid rgb(var(--color-line) / 0.78);
+  background: rgb(var(--color-paper) / 0.72);
+  color: rgb(var(--color-muted));
+  cursor: pointer;
+  transition: background 150ms ease, color 150ms ease, transform 150ms ease;
+}
+
+.magic-menu__close:hover {
+  background: rgb(var(--color-paper));
+  color: rgb(var(--color-ink));
+}
+
+.magic-menu__close:active {
+  transform: scale(0.94);
 }
 
 .magic-menu__empty {
-  padding: 1rem 0.45rem 0.75rem;
+  margin: 0;
+  padding: 1rem 0.2rem 0.2rem;
+  font-size: 13px;
+  line-height: 1.65;
+  color: rgb(var(--color-muted));
+}
+
+.magic-menu__overview {
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.75rem 0 0.65rem;
+}
+
+.magic-menu__grade {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border-radius: 18px;
+  border: 1px solid rgb(var(--color-line) / 0.8);
+  background: rgb(var(--color-paper) / 0.68);
+  padding: 0.7rem 0.75rem;
+}
+
+.magic-menu__grade-label {
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 680;
+}
+
+.magic-menu__grade-score {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  flex-shrink: 0;
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
   font-size: 12px;
   color: rgb(var(--color-muted));
-  line-height: 1.5;
+}
+
+.magic-menu__grade-score small {
+  color: rgb(var(--color-forest));
+}
+
+.magic-menu__tags,
+.magic-menu__mini-tags,
+.magic-menu__parts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.magic-menu__tags span,
+.magic-menu__mini-tags span,
+.magic-menu__parts span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.26rem;
+  max-width: 100%;
+  border-radius: 999px;
+  background: rgb(var(--color-paper-soft) / 0.86);
+  padding: 0.28rem 0.56rem;
+  font-size: 10px;
+  font-weight: 650;
+  color: rgb(var(--color-muted));
+}
+
+.magic-menu__parts span {
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+.magic-menu__parts .is-dim {
+  background: rgb(var(--color-forest) / 0.12);
+  color: rgb(var(--color-forest));
+}
+
+.magic-menu__mini-tags.is-warm span {
+  background: rgb(var(--color-accent) / 0.09);
+  color: rgb(var(--color-accent));
 }
 
 .magic-menu__section {
-  padding: 0.55rem 0;
-  border-top: 1px solid rgb(var(--color-line) / 0.72);
+  padding: 0.65rem 0;
+  border-top: 1px solid rgb(var(--color-line) / 0.7);
 }
 
 .magic-menu__section--split {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 0.65rem;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+  gap: 0.7rem;
 }
 
 .magic-menu__section-head {
@@ -437,13 +669,19 @@ watch(
   align-items: baseline;
   justify-content: space-between;
   gap: 0.5rem;
-  margin-bottom: 0.4rem;
+  margin-bottom: 0.45rem;
 }
 
-.magic-menu__section-head span {
+.magic-menu__section-head span,
+.magic-menu__mini-title {
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 760;
   color: rgb(var(--color-ink));
+}
+
+.magic-menu__mini-title {
+  display: block;
+  margin-bottom: 0.38rem;
 }
 
 .magic-menu__section-head small {
@@ -457,8 +695,8 @@ watch(
 
 .magic-menu__intent-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.4rem;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.38rem;
 }
 
 .magic-menu__intent,
@@ -466,25 +704,52 @@ watch(
 .magic-menu__seg-btn,
 .magic-menu__dim-chip,
 .magic-menu__variant {
-  border: 1px solid rgb(var(--color-line) / 0.82);
-  background: rgb(var(--color-cream));
+  border: 1px solid rgb(var(--color-line) / 0.86);
+  background: rgb(var(--color-paper) / 0.72);
   color: rgb(var(--color-ink));
   cursor: pointer;
-  transition: background 140ms ease, border-color 140ms ease, color 140ms ease, transform 140ms ease;
+  transition: background 150ms ease, border-color 150ms ease, color 150ms ease, transform 150ms ease, box-shadow 150ms ease;
   -webkit-tap-highlight-color: transparent;
 }
 
 .magic-menu__intent {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.32rem;
-  min-height: 34px;
-  padding: 0 0.45rem;
-  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  gap: 0.24rem;
+  min-height: 54px;
+  padding: 0.45rem 0.28rem;
+  border-radius: 14px;
   font-size: 11px;
-  font-weight: 650;
-  white-space: nowrap;
+  font-weight: 700;
+}
+
+.magic-menu__seg {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.35rem;
+}
+
+.magic-menu__seg-btn {
+  height: 38px;
+  border-radius: 14px;
+  font-size: 12px;
+  font-weight: 720;
+}
+
+.magic-menu__mode-row {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.35rem;
+}
+
+.magic-menu__mode {
+  display: grid;
+  place-items: center;
+  gap: 0.2rem;
+  min-height: 42px;
+  border-radius: 14px;
+  font-size: 10px;
+  font-weight: 700;
 }
 
 .magic-menu__intent:hover,
@@ -503,61 +768,36 @@ watch(
   border-color: rgb(var(--color-ink));
   background: rgb(var(--color-ink));
   color: rgb(var(--color-paper));
+  box-shadow: 0 10px 20px -16px rgb(var(--color-ink) / 0.5);
 }
 
-.magic-menu__seg {
+.magic-menu__diagnosis {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.32rem;
-}
-
-.magic-menu__seg-btn {
-  height: 34px;
-  border-radius: 12px;
-  font-size: 11px;
-  font-weight: 650;
-}
-
-.magic-menu__mode-row {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 0.32rem;
-}
-
-.magic-menu__mode {
-  display: grid;
-  place-items: center;
-  height: 34px;
-  border-radius: 12px;
-}
-
-.magic-menu__metrics {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.5rem;
-  padding: 0.55rem 0;
-  border-top: 1px solid rgb(var(--color-line) / 0.72);
+  grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
+  gap: 0.48rem;
+  padding: 0.65rem 0;
+  border-top: 1px solid rgb(var(--color-line) / 0.7);
 }
 
 .magic-menu__metric {
   min-width: 0;
+  border-radius: 14px;
+  background: rgb(var(--color-paper) / 0.52);
+  padding: 0.55rem;
 }
 
 .magic-menu__metric-line {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.35rem;
-  margin-bottom: 0.3rem;
+  display: grid;
+  gap: 0.16rem;
+  margin-bottom: 0.4rem;
 }
 
 .magic-menu__metric-line span {
   font-size: 10px;
-  font-weight: 700;
+  font-weight: 760;
 }
 
 .magic-menu__metric-line small {
-  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -589,110 +829,111 @@ watch(
   background: rgb(var(--color-accent));
 }
 
+.magic-menu__insight {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6rem;
+  padding: 0.65rem 0;
+  border-top: 1px solid rgb(var(--color-line) / 0.7);
+}
+
 .magic-menu__dimensions {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.4rem;
+  gap: 0.42rem;
 }
 
 .magic-menu__dim-chip {
   display: inline-flex;
   align-items: center;
-  gap: 0.32rem;
-  min-height: 32px;
-  padding: 0 0.65rem;
+  gap: 0.34rem;
+  min-height: 36px;
+  padding: 0 0.75rem;
   border-radius: 999px;
   font-size: 11px;
-  font-weight: 650;
+  font-weight: 720;
 }
 
 .magic-menu__variants {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.4rem;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.42rem;
 }
 
 .magic-menu__variant {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 0.08rem;
-  min-height: 48px;
-  padding: 0.5rem 0.55rem;
-  border-radius: 14px;
+  gap: 0.12rem;
+  min-height: 52px;
+  padding: 0.55rem 0.6rem;
+  border-radius: 15px;
   text-align: left;
 }
 
 .magic-menu__variant span {
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 760;
 }
 
 .magic-menu__variant small {
   font-size: 9px;
+  line-height: 1.25;
   opacity: 0.72;
 }
 
-.magic-menu__preview {
+.magic-menu__compare {
   display: grid;
-  gap: 0.45rem;
-  max-height: 154px;
-  overflow: auto;
-  margin-top: 0.15rem;
-  padding: 0.65rem;
-  border-radius: 16px;
-  border: 1px solid rgb(var(--color-line) / 0.7);
-  background: rgb(var(--color-vellum) / 0.62);
+  grid-template-columns: minmax(0, 0.78fr) minmax(0, 1.22fr);
+  gap: 0.55rem;
+  padding: 0.65rem 0;
+  border-top: 1px solid rgb(var(--color-line) / 0.7);
 }
 
-.magic-menu__preview p {
+.magic-menu__compare > div {
+  min-width: 0;
+  max-height: 190px;
+  overflow: auto;
+  border-radius: 18px;
+  border: 1px solid rgb(var(--color-line) / 0.72);
+  background: rgb(var(--color-paper) / 0.56);
+  padding: 0.65rem;
+}
+
+.magic-menu__compare p {
   margin: 0;
-  font-size: 12px;
-  line-height: 1.68;
   color: rgb(var(--color-ink));
+  font-size: 12px;
+  line-height: 1.7;
   white-space: pre-wrap;
   word-break: break-word;
 }
 
-.magic-menu__parts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.3rem;
-}
-
-.magic-menu__parts span {
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  border-radius: 999px;
-  background: rgb(var(--color-paper-soft));
-  padding: 0.22rem 0.48rem;
-  font-size: 10px;
-  color: rgb(var(--color-muted));
-}
-
 .magic-menu__apply {
+  position: sticky;
+  bottom: -0.85rem;
+  z-index: 3;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 0.45rem;
-  width: 100%;
-  min-height: 42px;
-  margin-top: 0.6rem;
-  border-radius: 14px;
-  border: none;
-  background: rgb(var(--color-forest));
+  gap: 0.48rem;
+  width: calc(100% + 1.7rem);
+  min-height: 50px;
+  margin: 0.72rem -0.85rem -0.85rem;
+  border: 0;
+  border-top: 1px solid rgb(var(--color-line) / 0.74);
+  background: linear-gradient(135deg, rgb(var(--color-ink)), rgb(var(--color-forest) / 0.96));
   color: rgb(var(--color-paper));
-  font-size: 13px;
-  font-weight: 750;
+  font-size: 14px;
+  font-weight: 780;
   cursor: pointer;
+  box-shadow: 0 -16px 28px -24px rgb(var(--color-ink) / 0.42);
   transition: filter 160ms ease, transform 160ms ease, opacity 160ms ease;
   -webkit-tap-highlight-color: transparent;
 }
 
 .magic-menu__apply:hover:not(:disabled) {
-  filter: brightness(1.07);
+  filter: brightness(1.06);
 }
 
 .magic-menu__apply:active:not(:disabled),
@@ -705,29 +946,74 @@ watch(
 }
 
 .magic-menu__apply:disabled {
-  opacity: 0.5;
+  opacity: 0.48;
   cursor: not-allowed;
 }
 
-@media (max-width: 460px) {
+@media (max-width: 720px) {
+  .magic-layer {
+    place-items: end center;
+    padding: 1rem 0.65rem calc(env(safe-area-inset-bottom, 0px) + 0.7rem);
+  }
+
   .magic-menu {
-    width: calc(100vw - 1rem);
-    max-height: min(74vh, 620px);
-    border-radius: 18px;
+    width: min(100%, 560px);
+    max-height: min(82dvh, 680px);
+    border-radius: 24px 24px 18px 18px;
+  }
+
+  .magic-menu__hero {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+  }
+
+  .magic-menu__intent-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .magic-menu__section--split,
+  .magic-menu__diagnosis,
+  .magic-menu__insight,
+  .magic-menu__compare,
+  .magic-menu__variants {
+    grid-template-columns: 1fr;
+  }
+
+  .magic-menu__diagnosis {
+    gap: 0.4rem;
+  }
+
+  .magic-menu__metric-line {
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: baseline;
+  }
+
+  .magic-menu__variant {
+    min-height: 46px;
+  }
+}
+
+@media (max-width: 390px) {
+  .magic-menu {
+    padding: 0.72rem;
+  }
+
+  .magic-menu__hero {
+    top: -0.72rem;
+    margin: -0.72rem -0.72rem 0;
+    padding: 0.72rem;
   }
 
   .magic-menu__intent-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
-  .magic-menu__section--split,
-  .magic-menu__metrics,
-  .magic-menu__variants {
-    grid-template-columns: 1fr;
+  .magic-menu__mode-row {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
-  .magic-menu__variant {
-    min-height: 42px;
+  .magic-menu__apply {
+    width: calc(100% + 1.44rem);
+    margin: 0.72rem -0.72rem -0.72rem;
   }
 }
 
@@ -737,7 +1023,8 @@ watch(
   .magic-menu__seg-btn,
   .magic-menu__dim-chip,
   .magic-menu__variant,
-  .magic-menu__apply {
+  .magic-menu__apply,
+  .magic-menu__close {
     transition: none;
   }
 }

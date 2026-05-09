@@ -3,6 +3,7 @@ import { onBeforeUnmount, ref, watch } from 'vue'
 import Icon from './Icon.vue'
 import StyleSwatch from './StyleSwatch.vue'
 import { useFocusTrap } from '../composables/useFocusTrap'
+import { useBodyLock } from '../composables/useBodyLock'
 import { styleOptions } from '../presets'
 import { stylePrompts } from '../lib/imagesApi'
 import type { ImageStyle } from '../types'
@@ -43,9 +44,6 @@ function onKeydown(event: KeyboardEvent) {
 watch(
   () => props.open,
   (isOpen) => {
-    if (typeof document === 'undefined') return
-
-    document.body.style.overflow = isOpen ? 'hidden' : ''
     if (isOpen) {
       window.addEventListener('keydown', onKeydown)
     } else {
@@ -56,11 +54,9 @@ watch(
 )
 
 useFocusTrap(() => props.open, sheetRef)
+useBodyLock(() => props.open)
 
 onBeforeUnmount(() => {
-  if (typeof document !== 'undefined') {
-    document.body.style.overflow = ''
-  }
   window.removeEventListener('keydown', onKeydown)
 })
 </script>

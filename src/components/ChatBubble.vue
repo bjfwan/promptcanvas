@@ -106,7 +106,6 @@ const pendingRemainingLabel = computed(() => {
   const elapsed = Math.max(0, message.elapsedSeconds ?? 0)
   const remain = Math.max(0, target - elapsed)
   if (elapsed >= target) {
-    // 已经超时：用模糊语言而非倒计时
     return '已超出预估，仍在等上游回包'
   }
   if (remain <= 1) return '即将出图'
@@ -489,7 +488,7 @@ function isImageReady(image: GeneratedImage, index: number) {
   font-family: 'IBM Plex Mono', monospace;
   font-size: 28px;
   font-weight: 200;
-  letter-spacing: -0.05em;
+  letter-spacing: 0;
   color: rgb(var(--color-ink));
   font-feature-settings: 'tnum';
 }

@@ -49,7 +49,7 @@ const heightClass = computed(() => {
   return props.size === 'sm' ? 'h-10 text-[12px]' : 'h-11 text-[13px]'
 })
 
-let outsideClickHandler: ((event: MouseEvent) => void) | null = null
+let outsideClickHandler: ((event: PointerEvent) => void) | null = null
 let scrollHandler: (() => void) | null = null
 let resizeHandler: (() => void) | null = null
 let searchBuffer = ''
@@ -116,7 +116,7 @@ function ensureActiveVisible() {
 }
 
 function bindOutside() {
-  outsideClickHandler = (event: MouseEvent) => {
+  outsideClickHandler = (event: PointerEvent) => {
     const target = event.target as Node
     if (triggerEl.value?.contains(target)) return
     if (listEl.value?.contains(target)) return
@@ -130,13 +130,13 @@ function bindOutside() {
     if (!open.value) return
     computePosition()
   }
-  document.addEventListener('mousedown', outsideClickHandler, true)
+  document.addEventListener('pointerdown', outsideClickHandler, true)
   window.addEventListener('scroll', scrollHandler, true)
   window.addEventListener('resize', resizeHandler)
 }
 
 function unbindOutside() {
-  if (outsideClickHandler) document.removeEventListener('mousedown', outsideClickHandler, true)
+  if (outsideClickHandler) document.removeEventListener('pointerdown', outsideClickHandler, true)
   if (scrollHandler) window.removeEventListener('scroll', scrollHandler, true)
   if (resizeHandler) window.removeEventListener('resize', resizeHandler)
   outsideClickHandler = null

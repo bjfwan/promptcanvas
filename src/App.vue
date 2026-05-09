@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onMounted, ref, watch } from 'vue'
 import { resolveImageSource } from './api'
 import { customModelSentinel, qualityOptions, sizeOptions, styleOptions, stylePresetById } from './presets'
 import { clearDraft, clearHistory, loadDraft, loadHistory } from './storage'
@@ -17,15 +17,7 @@ import type {
 import { createId } from './lib/id'
 import { payloadToMeta } from './lib/chatMessage'
 import AppHeader from './components/AppHeader.vue'
-import PromptComposer from './components/PromptComposer.vue'
-import CanvasStage from './components/CanvasStage.vue'
 import Toaster from './components/Toaster.vue'
-import Lightbox from './components/Lightbox.vue'
-import ChatStream from './components/ChatStream.vue'
-import ChatDock from './components/ChatDock.vue'
-import StyleSheet from './components/StyleSheet.vue'
-import SettingsDialog from './components/SettingsDialog.vue'
-import HistoryDialog from './components/HistoryDialog.vue'
 import { useToast } from './composables/useToast'
 import { useTheme } from './composables/useTheme'
 import { useLightbox } from './composables/useLightbox'
@@ -39,7 +31,17 @@ import { useDraftAutoSave } from './composables/useDraftAutoSave'
 import { useMobileViewport } from './composables/useMobileViewport'
 import { useHealthCheck } from './composables/useHealthCheck'
 import { useGenerationFlow } from './composables/useGenerationFlow'
-import { enhancePrompt, undoEnhance, enhanceDimensions, type EnhanceResult } from './lib/magicEnhance'
+import { useMediaQuery } from './composables/useMediaQuery'
+import type { EnhanceResult } from './lib/magicEnhance'
+
+const PromptComposer = defineAsyncComponent(() => import('./components/PromptComposer.vue'))
+const CanvasStage = defineAsyncComponent(() => import('./components/CanvasStage.vue'))
+const ChatStream = defineAsyncComponent(() => import('./components/ChatStream.vue'))
+const ChatDock = defineAsyncComponent(() => import('./components/ChatDock.vue'))
+const StyleSheet = defineAsyncComponent(() => import('./components/StyleSheet.vue'))
+const SettingsDialog = defineAsyncComponent(() => import('./components/SettingsDialog.vue'))
+const HistoryDialog = defineAsyncComponent(() => import('./components/HistoryDialog.vue'))
+const Lightbox = defineAsyncComponent(() => import('./components/Lightbox.vue'))
 
 const defaultPrompt = '一只穿着复古宇航服的橘猫，站在月球摄影棚里，像 1970 年代科幻电影海报'
 const defaultNegativePrompt = '低清晰度、模糊、水印、错误文字、畸形手指、画面杂乱'
@@ -72,14 +74,15 @@ const { vibrate } = useVibration()
 const settingsOpen = ref(false)
 const historyOpen = ref(false)
 const styleSheetOpen = ref(false)
-const composerRef = ref<InstanceType<typeof PromptComposer> | null>(null)
-const chatDockRef = ref<InstanceType<typeof ChatDock> | null>(null)
+const composerRef = ref<{ focusPrompt?: () => void } | null>(null)
+const chatDockRef = ref<{ focusInput?: () => void } | null>(null)
 const chatStreamRef = ref<{ scrollToMessage?: (id: string) => void } | null>(null)
 const messages = ref<ChatMessage[]>([])
 const pendingContinuation = ref<ContinuationContext | null>(null)
 const mobileDockHeight = ref(180)
 
 const { viewportHeight: mobileViewportHeight, keyboardInset: mobileKeyboardInset } = useMobileViewport()
+const isDesktop = useMediaQuery('(min-width: 1024px)')
 const refImages = useReferenceImages({ toast })
 const referenceImages = refImages.items
 const addReferenceImages = refImages.add
@@ -220,7 +223,6 @@ async function handleRemix(
     return
   }
 
-  // 用上一轮的提示词作为起点（用户可继续编辑指令）
   prompt.value = content || prompt.value
 
   try {
@@ -237,7 +239,6 @@ async function handleRemix(
 
     const file = new File([blob], `continue-${Date.now()}.png`, { type: 'image/png' })
 
-    // 接着画时：用这张图替换之前的参考图，避免误用上一轮的素材
     clearComposerReferenceImages()
     addReferenceImages([file])
 
@@ -283,18 +284,13 @@ function handleMagicEnhance(result: EnhanceResult) {
   prompt.value = result.enhanced
   vibrate('success')
 
-  const dimLabels = result.dimensions
-    .map((d) => {
-      const meta = enhanceDimensions.find((m) => m.id === d)
-      return meta?.label ?? d
-    })
-    .join('、')
+  const dimLabels = result.dimensionLabels.join('、')
   toast.success('魔法已施展', dimLabels ? `补充了「${dimLabels}」` : '已追加修饰词')
 }
 
 function handleUndoEnhance() {
   if (!lastEnhanceResult.value) return
-  prompt.value = undoEnhance(lastEnhanceResult.value)
+  prompt.value = lastEnhanceResult.value.original
   lastEnhanceResult.value = null
   vibrate('tap')
   toast.info('已撤销魔法增强')
@@ -406,7 +402,7 @@ function pickStyleFromChat(value: ImageStyle) {
     templateAnchorPrompt = preset.examplePrompt
     if (preset.defaultSize) size.value = preset.defaultSize
   }
-  nextTick(() => chatDockRef.value?.focusInput())
+  nextTick(() => chatDockRef.value?.focusInput?.())
 }
 
 async function restoreHistory(item: GenerationHistoryItem) {
@@ -545,10 +541,10 @@ function exportCurrentConfig() {
 }
 
 function focusPrompt() {
-  if (typeof window !== 'undefined' && window.innerWidth >= 1024) {
-    composerRef.value?.focusPrompt()
+  if (isDesktop.value) {
+    composerRef.value?.focusPrompt?.()
   } else {
-    chatDockRef.value?.focusInput()
+    chatDockRef.value?.focusInput?.()
   }
 }
 
@@ -579,6 +575,13 @@ watch(style, (newValue, oldValue) => {
   toast.info('已切换提示词模板', `${preset.label} · 输入框已更新`)
 })
 
+watch(isDesktop, (desktop) => {
+  if (desktop) {
+    styleSheetOpen.value = false
+    mobileDockHeight.value = 0
+  }
+})
+
 onMounted(() => {
   void refreshHealth({ silent: true })
 })
@@ -605,13 +608,14 @@ onMounted(() => {
     />
 
     <main
-      class="relative z-[2] mx-auto hidden w-full max-w-[1560px] flex-1 lg:grid lg:grid-cols-[minmax(340px,420px)_minmax(0,1fr)] lg:gap-8 lg:px-10 lg:pb-12 lg:pt-8 xl:gap-10 xl:pt-10"
+      v-if="isDesktop"
+      class="relative z-[2] mx-auto grid w-full max-w-[1560px] flex-1 grid-cols-[minmax(340px,420px)_minmax(0,1fr)] gap-8 px-10 pb-12 pt-8 xl:gap-10 xl:pt-10"
     >
-      <section class="hidden reveal lg:block" style="--reveal-delay: 40ms;">
+      <section class="reveal" style="--reveal-delay: 40ms;">
         <PromptComposer
           ref="composerRef"
           v-model:prompt="prompt"
-          v-model:style="style"
+          v-model:imageStyle="style"
           v-model:size="size"
           v-model:count="count"
           v-model:modelChoice="modelChoice"
@@ -674,7 +678,7 @@ onMounted(() => {
       </span>
     </footer>
 
-    <div class="flex min-h-0 flex-1 flex-col overflow-hidden lg:hidden">
+    <div v-if="!isDesktop" class="flex min-h-0 flex-1 flex-col overflow-hidden">
       <ChatStream
         ref="chatStreamRef"
         :messages="messages"
@@ -692,8 +696,8 @@ onMounted(() => {
     </div>
 
     <ChatDock
+      v-if="!isDesktop"
       ref="chatDockRef"
-      class="lg:hidden"
       v-model:prompt="prompt"
       v-model:model-choice="modelChoice"
       v-model:custom-model="customModel"
@@ -720,12 +724,14 @@ onMounted(() => {
     />
 
     <StyleSheet
+      v-if="styleSheetOpen"
       v-model:open="styleSheetOpen"
       :current="style"
       @select="(value) => (style = value)"
     />
 
     <SettingsDialog
+      v-if="settingsOpen"
       v-model:open="settingsOpen"
       v-model:negativePrompt="negativePrompt"
       v-model:outputFormat="outputFormat"
@@ -741,13 +747,14 @@ onMounted(() => {
     />
 
     <HistoryDialog
+      v-if="historyOpen"
       v-model:open="historyOpen"
       :history="history"
       @restore="restoreHistory"
       @clear="clearLocalHistory"
     />
 
-    <Lightbox />
+    <Lightbox v-if="lightbox.state.open" />
 
     <Toaster />
   </div>

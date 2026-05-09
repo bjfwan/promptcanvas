@@ -1,6 +1,3 @@
-// 轻量震动反馈封装：仅在支持的设备 / 用户未关闭 reduce-motion 时触发。
-// 不同模式对应不同震动模式（短促、双击、错误模式）。
-
 type VibrationPattern = 'tap' | 'double' | 'success' | 'error' | 'long'
 
 const patterns: Record<VibrationPattern, number | number[]> = {
@@ -15,8 +12,6 @@ let prefersReducedMotion = false
 if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
   const media = window.matchMedia('(prefers-reduced-motion: reduce)')
   prefersReducedMotion = media.matches
-  // 不订阅 listener：用户偏好变化属于罕见场景，每次 vibrate 调用前实时读 matchMedia 也行；
-  // 这里保持轻量，挂一次即可。
   if (typeof media.addEventListener === 'function') {
     media.addEventListener('change', (event) => {
       prefersReducedMotion = event.matches
@@ -37,7 +32,6 @@ export function useVibration() {
     try {
       navigator.vibrate(patterns[pattern])
     } catch {
-      // 某些 WebView 在限定上下文里会抛错，忽略。
     }
   }
 
@@ -46,7 +40,6 @@ export function useVibration() {
     try {
       navigator.vibrate(0)
     } catch {
-      // 同上。
     }
   }
 

@@ -2,6 +2,7 @@
 import { onBeforeUnmount, ref, watch } from 'vue'
 import Icon from './Icon.vue'
 import { useFocusTrap } from '../composables/useFocusTrap'
+import { useBodyLock } from '../composables/useBodyLock'
 import { resolveImageSource } from '../api'
 import type { GenerationHistoryItem } from '../types'
 
@@ -70,8 +71,6 @@ function requestClearHistory() {
 watch(
   () => props.open,
   (open) => {
-    if (typeof document === 'undefined') return
-    document.body.style.overflow = open ? 'hidden' : ''
     if (open) window.addEventListener('keydown', handleKey)
     else {
       window.removeEventListener('keydown', handleKey)
@@ -82,11 +81,11 @@ watch(
 )
 
 useFocusTrap(() => props.open, dialogRef)
+useBodyLock(() => props.open)
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleKey)
   resetClearConfirm()
-  if (typeof document !== 'undefined') document.body.style.overflow = ''
 })
 </script>
 
@@ -95,7 +94,7 @@ onBeforeUnmount(() => {
     <Transition name="dlg-fade">
       <div
         v-if="open"
-        class="fixed inset-0 z-sheet flex items-center justify-center px-4 py-6"
+        class="fixed inset-0 z-sheet flex items-end justify-center px-0 py-0 sm:items-center sm:px-4 sm:py-6"
         role="dialog"
         aria-modal="true"
         aria-label="历史"
@@ -107,9 +106,12 @@ onBeforeUnmount(() => {
           <div
             v-if="open"
             ref="dialogRef"
-            class="relative max-h-[86dvh] w-full max-w-2xl overflow-hidden rounded-3xl border border-line-strong bg-vellum text-ink shadow-paper-3"
+            class="relative flex max-h-[92dvh] w-full max-w-2xl flex-col overflow-hidden rounded-t-[28px] border border-line-strong bg-vellum text-ink shadow-paper-3 sm:max-h-[86dvh] sm:rounded-3xl"
           >
-            <header class="flex items-start justify-between gap-3 border-b border-line px-6 py-5">
+            <header class="relative flex items-start justify-between gap-3 border-b border-line px-5 py-4 sm:px-6 sm:py-5">
+              <div class="absolute inset-x-0 top-2 grid place-items-center sm:hidden">
+                <span class="h-1.5 w-10 rounded-full bg-line-strong/60"></span>
+              </div>
               <div>
                 <p class="display-eyebrow">History · 最近 {{ history.length }} 条</p>
                 <h2 class="mt-1.5 inline-flex items-center gap-2 font-display text-2xl tracking-tightish">
@@ -134,7 +136,7 @@ onBeforeUnmount(() => {
               </div>
             </header>
 
-            <div class="touch-scroll-y max-h-[70dvh] overflow-y-auto px-6 py-5">
+            <div class="touch-scroll-y max-h-[calc(92dvh-5.5rem)] flex-1 overflow-y-auto px-5 py-4 sm:max-h-[70dvh] sm:px-6 sm:py-5">
               <ul v-if="history.length" class="space-y-2">
                 <li
                   v-for="item in history"
@@ -142,7 +144,7 @@ onBeforeUnmount(() => {
                 >
                   <button
                     type="button"
-                    class="flex w-full items-stretch gap-3 rounded-2xl border border-line bg-cream/70 p-3 text-left transition hover:-translate-y-px hover:border-line-strong hover:bg-cream hover:shadow-paper-2"
+                    class="flex w-full items-stretch gap-3 rounded-2xl border border-line bg-cream/70 p-3 text-left transition hover:-translate-y-px hover:border-line-strong hover:bg-cream hover:shadow-paper-2 active:translate-y-0"
                     @click="applyAndClose(item)"
                   >
                     <div class="shrink-0">
@@ -231,6 +233,14 @@ onBeforeUnmount(() => {
 .dlg-zoom-enter-active,
 .dlg-zoom-leave-active {
   transition: opacity 0.24s ease-out, transform 0.32s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@media (max-width: 639px) {
+  .dlg-zoom-enter-from,
+  .dlg-zoom-leave-to {
+    opacity: 0;
+    transform: translateY(100%);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

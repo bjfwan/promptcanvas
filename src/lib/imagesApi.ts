@@ -51,11 +51,12 @@ export const stylePrompts: Record<string, string> = {
   raw: '',
 }
 
-type SubjectType = 'person' | 'landscape' | 'object' | 'abstract' | 'architecture' | 'food' | 'general'
+type SubjectType = 'person' | 'animal' | 'landscape' | 'object' | 'abstract' | 'architecture' | 'food' | 'general'
 
 const subjectKeywords: Record<SubjectType, string[]> = {
   person: ['person', 'man', 'woman', 'girl', 'boy', 'child', 'people', 'face', 'portrait', 'human', 'character', '人', '男人', '女人', '女孩', '男孩', '孩子', '人物', '脸', '肖像'],
-  landscape: ['landscape', 'mountain', 'ocean', 'sea', 'sky', 'forest', 'river', 'lake', 'beach', 'sunset', 'sunrise', 'nature', 'scenery', 'view', '风景', '山', '海', '天空', '森林', '河流', '湖泊', '海滩', '日落', '日出', '自然'],
+  animal: ['cat', 'dog', 'animal', 'pet', 'bird', 'horse', 'fox', 'rabbit', '猫', '狗', '动物', '宠物', '鸟', '马', '狐狸', '兔子'],
+  landscape: ['landscape', 'mountain', 'ocean', 'sea', 'sky', 'forest', 'river', 'lake', 'beach', 'sunset', 'sunrise', 'nature', 'scenery', 'view', '风景', '山脉', '高山', '大海', '海洋', '海边', '天空', '森林', '河流', '湖泊', '海滩', '日落', '日出', '自然风光'],
   object: ['product', 'bottle', 'cup', 'chair', 'table', 'car', 'phone', 'computer', 'watch', 'shoe', 'bag', '物品', '产品', '瓶子', '杯子', '椅子', '桌子', '车', '手机', '电脑', '手表', '鞋', '包'],
   abstract: ['abstract', 'pattern', 'texture', 'geometric', 'shapes', 'design', 'artistic', 'conceptual', '抽象', '图案', '纹理', '几何', '形状', '设计', '艺术', '概念'],
   architecture: ['building', 'house', 'architecture', 'interior', 'room', 'city', 'street', 'bridge', 'tower', '建筑', '房子', '室内', '房间', '城市', '街道', '桥', '塔'],
@@ -80,6 +81,7 @@ export function detectSubjectType(prompt: string): SubjectType {
 
 const adaptiveEnhancements: Record<SubjectType, string> = {
   person: 'Natural skin texture and realistic proportions preferred',
+  animal: 'Natural fur or feather texture, believable anatomy, expressive eyes',
   landscape: 'Natural atmospheric depth and environmental details',
   object: 'Authentic material textures and lighting',
   abstract: 'Cohesive composition and color harmony',
@@ -286,10 +288,6 @@ export function resolveCreativityInstruction(creativity: number | null): string 
   return `创意强度：${creativity}/10 · 可大胆扩展构图、光线与细节，强化视觉戏剧性`
 }
 
-/**
- * 确保图片文件是 PNG 格式。如果不是，则通过 Canvas 转换为 PNG。
- * OpenAI 的 /v1/images/edits 接口强制要求 PNG。
- */
 export async function ensurePngBlob(file: File): Promise<Blob> {
   if (file.type === 'image/png') {
     return file

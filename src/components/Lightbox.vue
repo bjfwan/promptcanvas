@@ -4,6 +4,7 @@ import { useLightbox } from '../composables/useLightbox'
 import { resolveImageSource } from '../api'
 import { useFocusTrap } from '../composables/useFocusTrap'
 import { useVibration } from '../composables/useVibration'
+import { useBodyLock } from '../composables/useBodyLock'
 import Icon from './Icon.vue'
 
 const lightbox = useLightbox()
@@ -136,9 +137,6 @@ function preloadAdjacentImages() {
 watch(
   () => lightbox.state.open,
   (isOpen) => {
-    if (typeof document === 'undefined') return
-
-    document.body.style.overflow = isOpen ? 'hidden' : ''
     if (isOpen) {
       window.addEventListener('keydown', handleKey)
       resetTransform()
@@ -161,12 +159,10 @@ watch(
 )
 
 useFocusTrap(() => lightbox.state.open, lightboxRef)
+useBodyLock(() => lightbox.state.open)
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleKey)
-  if (typeof document !== 'undefined') {
-    document.body.style.overflow = ''
-  }
 })
 
 function onTouchStart(event: TouchEvent) {

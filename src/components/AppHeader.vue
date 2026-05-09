@@ -168,7 +168,7 @@ onBeforeUnmount(() => {
           <div
             v-if="menuOpen"
             id="app-header-menu"
-            class="absolute right-0 top-[calc(100%+0.5rem)] w-48 overflow-hidden rounded-2xl border border-line-strong bg-vellum p-1.5 text-ink shadow-paper-3"
+            class="absolute right-0 top-[calc(100%+0.6rem)] w-52 overflow-hidden rounded-2xl border border-line-strong bg-vellum p-1.5 text-ink shadow-paper-3"
           >
             <button type="button" class="header-menu-item" @click="runMenuAction(() => emit('openHistory'))">
               <Icon name="history" :size="14" />
@@ -230,7 +230,7 @@ onBeforeUnmount(() => {
   transition: opacity 160ms ease, transform 160ms ease;
 }
 
-@media (max-width: 360px) {
+@media (max-width: 430px) {
   .header-actions-wide {
     display: none;
   }

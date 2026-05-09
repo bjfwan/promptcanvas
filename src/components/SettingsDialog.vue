@@ -6,6 +6,7 @@ import { customModelSentinel, qualityOptions } from '../presets'
 import { useProviderConfig } from '../composables/useProviderConfig'
 import { useDiscoveredModels } from '../composables/useDiscoveredModels'
 import { useFocusTrap } from '../composables/useFocusTrap'
+import { useBodyLock } from '../composables/useBodyLock'
 import { ApiRequestError, testProvider } from '../api'
 import type { GenerateImageRequest, ImageQuality } from '../types'
 
@@ -173,14 +174,13 @@ function rollSeed() {
 function handleKey(event: KeyboardEvent) {
   if (event.key === 'Escape') {
     event.preventDefault()
+    close()
   }
 }
 
 watch(
   () => props.open,
   (open) => {
-    if (typeof document === 'undefined') return
-    document.body.style.overflow = open ? 'hidden' : ''
     if (open) window.addEventListener('keydown', handleKey, { capture: true })
     else window.removeEventListener('keydown', handleKey, { capture: true })
   },
@@ -188,10 +188,10 @@ watch(
 )
 
 useFocusTrap(() => props.open, dialogRef)
+useBodyLock(() => props.open)
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleKey, { capture: true })
-  if (typeof document !== 'undefined') document.body.style.overflow = ''
 })
 </script>
 

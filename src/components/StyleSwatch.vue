@@ -13,7 +13,6 @@ const props = withDefaults(defineProps<Props>(), {
   active: false,
 })
 
-// 每种风格用一组色彩 + 几何符号承载视觉记忆
 const palettes: Record<ImageStyle, { fill: string; stroke: string; mark: string }> = {
   natural: { fill: '#dfe5d4', stroke: '#7c8b66', mark: 'M3 16c4-3 8 1 12-2s4-3 6-2' },
   poster: { fill: '#f4d8b6', stroke: '#9a3a1c', mark: 'M5 4h14v16H5z M9 8h6 M9 12h6 M9 16h4' },

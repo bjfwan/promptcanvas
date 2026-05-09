@@ -24,7 +24,6 @@ async function hydrate() {
       await saveProviderConfig(loaded)
     }
   } catch {
-    // ignore
   } finally {
     ready.value = true
   }

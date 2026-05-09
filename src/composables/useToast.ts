@@ -41,7 +41,6 @@ function push(text: string, options: { kind?: ToastKind; hint?: string; duration
 
   state.items.push(item)
 
-  // 限制最多 4 条同时显示
   while (state.items.length > 4) {
     const oldest = state.items.shift()
     if (oldest) {

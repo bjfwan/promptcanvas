@@ -1,9 +1,8 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import Icon from './Icon.vue'
 import StyleSwatch from './StyleSwatch.vue'
 import Select, { type SelectOption } from './Select.vue'
-import MagicEnhanceMenu from './MagicEnhanceMenu.vue'
 import { maxReferenceImages } from '../lib/imagesApi'
 import { customModelSentinel, styleOptions } from '../presets'
 import { useDiscoveredModels } from '../composables/useDiscoveredModels'
@@ -11,6 +10,8 @@ import { useVibration } from '../composables/useVibration'
 import { rafThrottle } from '../lib/rafThrottle'
 import type { ContinuationContext, ImageStyle, ReferenceImageAttachment } from '../types'
 import type { EnhanceResult } from '../lib/magicEnhance'
+
+const MagicEnhanceMenu = defineAsyncComponent(() => import('./MagicEnhanceMenu.vue'))
 
 interface Props {
   isGenerating: boolean
@@ -58,17 +59,7 @@ const customModelOpen = ref(false)
 const customModelInputRef = ref<HTMLInputElement | null>(null)
 const isMagicPulsing = ref(false)
 const magicMenuOpen = ref(false)
-const magicMenuRef = ref<HTMLElement | null>(null)
 let dockResizeObserver: ResizeObserver | null = null
-
-function onDocClick(e: MouseEvent) {
-  if (!magicMenuOpen.value) return
-  const target = e.target as Node
-  if (magicMenuRef.value?.contains(target)) return
-  magicMenuOpen.value = false
-}
-onMounted(() => document.addEventListener('click', onDocClick, true))
-onBeforeUnmount(() => document.removeEventListener('click', onDocClick, true))
 
 const discoveredModels = useDiscoveredModels()
 const { vibrate } = useVibration()
@@ -229,6 +220,7 @@ function send() {
 
 function magicEnhance() {
   vibrate('tap')
+  if (!magicMenuOpen.value) textareaRef.value?.blur()
   magicMenuOpen.value = !magicMenuOpen.value
 }
 
@@ -247,6 +239,7 @@ function onKeydown(event: KeyboardEvent) {
 }
 
 watch(prompt, () => {
+  if (!prompt.value.trim()) magicMenuOpen.value = false
   syncLayoutSoon()
 })
 
@@ -488,27 +481,27 @@ defineExpose({ focusInput })
             </span>
           </div>
 
-          <div ref="magicMenuRef" class="relative">
+          <div class="relative">
             <button
               v-if="promptCount > 0"
               type="button"
               class="chat-dock__magic-inner"
-              aria-label="魔法增强提示词"
+              aria-label="智能优化提示词"
+              :aria-expanded="magicMenuOpen"
               @click.stop="magicEnhance"
             >
               <Icon name="sparkle" :size="14" />
+              <span>优化</span>
             </button>
-            <Transition name="acc">
-              <MagicEnhanceMenu
-                v-if="magicMenuOpen"
-                :prompt="prompt"
-                :style="currentStyle"
-                :has-reference-images="hasReferenceImages"
-                compact
-                @enhance="handleEnhanceResult"
-                @close="magicMenuOpen = false"
-              />
-            </Transition>
+            <MagicEnhanceMenu
+              v-if="magicMenuOpen"
+              :prompt="prompt"
+              :image-style="props.currentStyle"
+              :has-reference-images="hasReferenceImages"
+              compact
+              @enhance="handleEnhanceResult"
+              @close="magicMenuOpen = false"
+            />
           </div>
 
           <button
@@ -637,7 +630,7 @@ defineExpose({ focusInput })
   font-family: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
   font-size: 16px;
   line-height: 1.5;
-  letter-spacing: -0.01em;
+  letter-spacing: 0;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
@@ -663,21 +656,33 @@ defineExpose({ focusInput })
 }
 
 .chat-dock__magic-inner {
-  display: inline-grid;
-  place-items: center;
-  width: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  min-width: 64px;
   height: 36px;
+  padding: 0 0.7rem;
   border-radius: 999px;
-  background: rgb(var(--color-cream));
-  border: 1px solid rgb(var(--color-line-strong) / 0.5);
-  color: rgb(var(--color-ink) / 0.7);
+  background: linear-gradient(135deg, rgb(var(--color-forest) / 0.14), rgb(var(--color-accent) / 0.1));
+  border: 1px solid rgb(var(--color-forest) / 0.3);
+  color: rgb(var(--color-forest));
+  font-size: 12px;
+  font-weight: 760;
   transition: all 160ms ease;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
+  box-shadow: 0 8px 18px -16px rgb(var(--color-forest) / 0.55);
+}
+
+.chat-dock__magic-inner[aria-expanded="true"] {
+  background: rgb(var(--color-ink));
+  border-color: rgb(var(--color-ink));
+  color: rgb(var(--color-paper));
 }
 
 .chat-dock__magic-inner:active {
-  transform: scale(0.9) rotate(-8deg);
+  transform: scale(0.94);
   background: rgb(var(--color-vellum));
 }
 
@@ -1054,9 +1059,19 @@ defineExpose({ focusInput })
   overflow: hidden;
 }
 
-@media (max-width: 390px) {
+@media (max-width: 360px) {
   .chat-dock__textarea {
     padding-bottom: 3.5rem;
+  }
+
+  .chat-dock__magic-inner {
+    min-width: 40px;
+    width: 40px;
+    padding: 0;
+  }
+
+  .chat-dock__magic-inner span {
+    display: none;
   }
 
   .model-chip-wrap :deep(.select-trigger) {

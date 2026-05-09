@@ -55,6 +55,7 @@ export interface PromptAnalysis {
   present: Set<EnhanceDimension>
   missing: EnhanceDimension[]
   subjectType: string
+  subjectLabel: string
   suggestedOrder: EnhanceDimension[]
   score: number
   language: LanguageMode
@@ -70,6 +71,7 @@ export interface EnhanceResult {
   enhanced: string
   addedParts: string[]
   dimensions: EnhanceDimension[]
+  dimensionLabels: string[]
   level: EnhanceLevel
   mode: EnhanceMode
   intent: EnhanceIntent
@@ -121,6 +123,7 @@ export const enhanceIntentMeta: Record<EnhanceIntent, EnhanceIntentMeta> = {
 
 const subjectDimensionPriority: Record<string, EnhanceDimension[]> = {
   person: ['lighting', 'lens', 'atmosphere', 'color', 'material', 'composition'],
+  animal: ['material', 'lighting', 'lens', 'atmosphere', 'composition', 'color'],
   landscape: ['composition', 'atmosphere', 'lighting', 'color', 'lens', 'material'],
   object: ['material', 'lighting', 'composition', 'color', 'lens', 'atmosphere'],
   abstract: ['color', 'composition', 'atmosphere', 'material', 'lighting', 'lens'],
@@ -131,6 +134,7 @@ const subjectDimensionPriority: Record<string, EnhanceDimension[]> = {
 
 const subjectLabels: Record<string, string> = {
   person: '人物',
+  animal: '动物',
   landscape: '风景',
   object: '物件',
   abstract: '抽象',
@@ -171,6 +175,16 @@ const lensKeywords = [
   '镜头', 'lens', '焦距', 'focal', '景深', 'depth of field', 'bokeh', '虚化',
   '35mm', '50mm', '85mm', '100mm', '24mm', '微距', 'macro', '广角', 'wide',
   '长焦', 'telephoto', 'f/', '光圈', 'aperture',
+]
+
+const qualityKeywords = [
+  '高清', '清晰', '锐利', '真实', '稳定', '细节', '无水印', '避免', '不要', '禁止',
+  'high quality', 'sharp', 'realistic', 'stable', 'detail', 'avoid', 'no watermark',
+]
+
+const structureKeywords = [
+  '主体', 'subject', 'main', '中心', '焦点', 'focus', '环境', '背景', 'foreground',
+  'background', '动作', 'pose', '位置', '比例', 'scale',
 ]
 
 const keywordMap: Record<EnhanceDimension, string[]> = {
@@ -277,6 +291,65 @@ const stabilityTags: Record<LanguageMode, string> = {
   en: 'clean subject edges, stable structure, avoid watermark, garbled text, distorted details',
 }
 
+const directorTags: Record<EnhanceIntent, BilingualText> = {
+  create: {
+    z: '画面以一个清晰主视觉为核心，背景信息服务主体，不喧宾夺主',
+    e: 'one clear hero visual, background information supports the subject without stealing focus',
+  },
+  edit: {
+    z: '只改变用户要求的区域，原图未提及区域保持不变，边缘、阴影、透视自然衔接',
+    e: 'change only the requested area, keep all unspecified regions unchanged, match edges, shadows, and perspective naturally',
+  },
+  retouch: {
+    z: '修饰幅度自然克制，保留真实纹理，不改变身份、结构和构图',
+    e: 'natural restrained retouching, preserve real texture, do not change identity, structure, or composition',
+  },
+  product: {
+    z: '商品信息优先，轮廓、比例、材质、反光与品牌调性全部可交付',
+    e: 'product information first, deliverable silhouette, proportion, material, reflection, and brand tone',
+  },
+  poster: {
+    z: '强化标题区、主体区、留白区的层级关系，适合后期加字与传播',
+    e: 'strengthen title zone, subject zone, and negative-space hierarchy for copy placement and campaign use',
+  },
+  portrait: {
+    z: '五官比例自然，身份特征稳定，服装、姿态、表情与光线统一',
+    e: 'natural facial proportions, stable identity features, clothing, pose, expression, and lighting aligned',
+  },
+  logo: {
+    z: '保持纯图形标识逻辑，强轮廓、少元素、可缩放，不做真实摄影或复杂场景',
+    e: 'pure graphic mark logic, strong silhouette, few elements, scalable, no realistic photo or complex scene',
+  },
+}
+
+const finishTags: Record<EnhanceMode, BilingualText> = {
+  balanced: {
+    z: '输出应像完整成片，而不是关键词堆叠',
+    e: 'the result should feel like a finished image, not a keyword pile',
+  },
+  faithful: {
+    z: '所有新增描述都必须服务原始语义，不改变主体数量、动作和核心关系',
+    e: 'all additions must serve the original meaning without changing subject count, action, or core relationships',
+  },
+  commercial: {
+    z: '画面干净、可用于封面或商品详情页，边缘锐利、噪点低、背景可控',
+    e: 'clean enough for cover or product detail use, sharp edges, low noise, controlled background',
+  },
+  cinematic: {
+    z: '镜头具有时间感和场面调度，光源、人物或物体运动方向明确',
+    e: 'camera has a sense of time and staging, with clear light source and movement direction',
+  },
+  experimental: {
+    z: '创意变化要有视觉逻辑，保持主色、形状和空间关系的可读性',
+    e: 'creative variation must have visual logic while keeping color, shape, and spatial relationships readable',
+  },
+}
+
+const rescueTags: Record<LanguageMode, string> = {
+  zh: '先保证主体识别、画面主次、光源方向和透视一致，再增加装饰细节',
+  en: 'prioritize subject recognition, visual hierarchy, light direction, and perspective consistency before adding decorative detail',
+}
+
 function promptContainsAny(prompt: string, keywords: string[]): boolean {
   const lower = prompt.toLowerCase()
   return keywords.some((kw) => lower.includes(kw.toLowerCase()))
@@ -289,7 +362,7 @@ function isChinese(prompt: string): boolean {
 }
 
 function toSK(s: string): SK {
-  if (['person', 'landscape', 'object', 'abstract', 'architecture', 'food'].includes(s)) return s as SK
+  if (['person', 'animal', 'landscape', 'object', 'abstract', 'architecture', 'food'].includes(s)) return s as SK
   return 'general'
 }
 
@@ -383,13 +456,25 @@ export function analyzePrompt(prompt: string, style: ImageStyle = 'raw'): Prompt
   const lengthScore = measureLengthScore(trimmed.length)
   const dimensionScore = Math.round((present.size / enhanceDimensions.length) * 100)
   const subjectScore = subjectType === 'general' ? (trimmed.length >= 12 ? 55 : 28) : 88
+  const hasQualityControl = promptContainsAny(trimmed, qualityKeywords)
+  const hasStructureControl = promptContainsAny(trimmed, structureKeywords)
   const controlScore = present.has('composition') && present.has('lighting')
-    ? 88
+    ? (hasStructureControl ? 94 : 86)
     : present.has('composition') || present.has('lighting')
-      ? 64
-      : 34
+      ? (hasStructureControl ? 72 : 62)
+      : (hasStructureControl ? 48 : 32)
+  const finishScore = clamp(
+    Math.round(
+      (hasQualityControl ? 82 : 42)
+      + (present.has('material') ? 8 : 0)
+      + (present.has('lens') ? 6 : 0)
+      + (trimmed.length >= 80 ? 4 : 0),
+    ),
+    0,
+    100,
+  )
   const score = clamp(
-    Math.round(lengthScore * 0.24 + dimensionScore * 0.34 + subjectScore * 0.2 + controlScore * 0.22),
+    Math.round(lengthScore * 0.2 + dimensionScore * 0.28 + subjectScore * 0.18 + controlScore * 0.2 + finishScore * 0.14),
     0,
     100,
   )
@@ -422,15 +507,24 @@ export function analyzePrompt(prompt: string, style: ImageStyle = 'raw'): Prompt
       state: stateFromScore(controlScore),
       hint: controlScore >= 78 ? '光位与构图约束明确' : '建议补光位或构图',
     },
+    {
+      id: 'finish',
+      label: '成片度',
+      score: finishScore,
+      state: stateFromScore(finishScore),
+      hint: hasQualityControl ? '质量边界明确' : '建议补质量与排除项',
+    },
   ]
   const strengths = [
     subjectType !== 'general' ? `${subjectLabels[subjectType]}主体` : '',
     ...Array.from(present).slice(0, 3).map(getDimensionLabel),
+    hasQualityControl ? '质量控制' : '',
   ].filter(Boolean)
   const issues = [
     trimmed.length < 8 ? '提示词过短，生成稳定性偏低' : '',
     missing.length ? `优先补 ${missing.slice(0, 3).map(getDimensionLabel).join('、')}` : '',
     score < 60 ? '画面约束不足，模型会自由发挥' : '',
+    !hasQualityControl ? '缺少质量、边缘、文字、水印等成片约束' : '',
     trimmed.length > 620 ? '提示词偏长，建议收紧层级' : '',
   ].filter(Boolean)
   const recommendedLevel: EnhanceLevel = score < 52 ? 'heavy' : score < 76 ? 'standard' : 'light'
@@ -439,6 +533,7 @@ export function analyzePrompt(prompt: string, style: ImageStyle = 'raw'): Prompt
     present,
     missing,
     subjectType,
+    subjectLabel: subjectLabels[subjectType] ?? subjectLabels.general,
     suggestedOrder: priority,
     score,
     language,
@@ -474,6 +569,7 @@ export function enhancePrompt(
       enhanced: '',
       addedParts: [],
       dimensions: [],
+      dimensionLabels: [],
       level,
       mode,
       intent,
@@ -501,11 +597,20 @@ export function enhancePrompt(
     if (styleTag) addedParts.push(styleTag)
   }
 
-  if (mode !== 'balanced' || level === 'heavy') {
+  if (level === 'standard' || level === 'heavy' || mode !== 'balanced') {
     addedParts.push(modeTags[mode][analysis.language === 'zh' ? 'z' : 'e'])
   }
 
+  if (level !== 'light') {
+    addedParts.push(directorTags[intent][analysis.language === 'zh' ? 'z' : 'e'])
+    addedParts.push(finishTags[mode][analysis.language === 'zh' ? 'z' : 'e'])
+  }
+
   addedParts.push(intentTags[intent][analysis.language === 'zh' ? 'z' : 'e'])
+
+  if (analysis.score < 58 || level === 'heavy') {
+    addedParts.push(rescueTags[analysis.language])
+  }
 
   if (level === 'heavy') {
     addedParts.push(stabilityTags[analysis.language])
@@ -519,6 +624,7 @@ export function enhancePrompt(
     enhanced,
     addedParts: cleanParts,
     dimensions: dims,
+    dimensionLabels: dims.map(getDimensionLabel),
     level,
     mode,
     intent,
@@ -549,21 +655,33 @@ export function createPromptVariants(
   const candidates: PromptVariant[] = [
     {
       id: 'recommended',
-      label: '推荐版',
+      label: '智能推荐',
       hint: `${enhanceIntentMeta[intent].label} · ${enhanceLevelMeta[analysis.recommendedLevel].label}`,
       result: enhancePrompt(prompt, style, analysis.recommendedLevel, undefined, mode, intent),
     },
     {
       id: 'faithful',
-      label: '保守版',
-      hint: '稳定还原',
+      label: '精准保真',
+      hint: '少发挥',
       result: enhancePrompt(prompt, style, 'light', undefined, 'faithful', intent),
     },
     {
+      id: 'delivery',
+      label: '成片交付',
+      hint: '商业完成度',
+      result: enhancePrompt(prompt, style, 'standard', undefined, 'commercial', intent),
+    },
+    {
       id: 'impact',
-      label: style === 'cinematic' ? '电影版' : '冲击版',
-      hint: style === 'cinematic' ? '叙事增强' : '视觉更强',
+      label: style === 'cinematic' ? '电影调度' : '视觉冲击',
+      hint: style === 'cinematic' ? '叙事增强' : '更强画面',
       result: enhancePrompt(prompt, style, 'heavy', undefined, style === 'cinematic' ? 'cinematic' : mode, intent),
+    },
+    {
+      id: 'bold',
+      label: '创意探索',
+      hint: '大胆但可控',
+      result: enhancePrompt(prompt, style, 'heavy', undefined, 'experimental', intent),
     },
   ]
   const seen = new Set<string>()

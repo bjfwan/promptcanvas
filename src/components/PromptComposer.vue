@@ -1,15 +1,16 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, ref, watch } from 'vue'
 import Icon from './Icon.vue'
 import StyleSwatch from './StyleSwatch.vue'
 import Select, { type SelectOption } from './Select.vue'
-import MagicEnhanceMenu from './MagicEnhanceMenu.vue'
 import { maxReferenceImages } from '../lib/imagesApi'
 import { customModelSentinel, sizeOptions, styleOptions } from '../presets'
 import { stylePrompts } from '../lib/imagesApi'
 import { useDiscoveredModels } from '../composables/useDiscoveredModels'
 import type { ContinuationContext, ImageSize, ImageStyle, ReferenceImageAttachment } from '../types'
 import type { EnhanceResult } from '../lib/magicEnhance'
+
+const MagicEnhanceMenu = defineAsyncComponent(() => import('./MagicEnhanceMenu.vue'))
 
 const sizeSelectOptions = computed<SelectOption<ImageSize>[]>(() =>
   sizeOptions.map((option) => ({ value: option.value, label: option.label, hint: option.hint })),
@@ -50,7 +51,7 @@ const props = withDefaults(defineProps<Props>(), {
 })
 
 const prompt = defineModel<string>('prompt', { required: true })
-const stl = defineModel<ImageStyle>('style', { required: true })
+const imageStyle = defineModel<ImageStyle>('imageStyle', { required: true })
 const size = defineModel<ImageSize>('size', { required: true })
 const count = defineModel<number>('count', { required: true })
 const modelChoice = defineModel<string>('modelChoice', { required: true })
@@ -74,20 +75,10 @@ const referenceInputRef = ref<HTMLInputElement | null>(null)
 const previewOpen = ref(false)
 const dragActive = ref(false)
 const magicMenuOpen = ref(false)
-const magicMenuRef = ref<HTMLElement | null>(null)
 let dragDepth = 0
 
-function onDocClick(e: MouseEvent) {
-  if (!magicMenuOpen.value) return
-  const target = e.target as Node
-  if (magicMenuRef.value?.contains(target)) return
-  magicMenuOpen.value = false
-}
-onMounted(() => document.addEventListener('click', onDocClick, true))
-onBeforeUnmount(() => document.removeEventListener('click', onDocClick, true))
-
-const activeStylePrompt = computed(() => stylePrompts[stl.value] ?? '')
-const isRawStyle = computed(() => stl.value === 'raw')
+const activeStylePrompt = computed(() => stylePrompts[imageStyle.value] ?? '')
+const isRawStyle = computed(() => imageStyle.value === 'raw')
 const hasReferenceImages = computed(() => props.referenceImages.length > 0)
 const canAddReferenceImages = computed(() => props.referenceImages.length < maxReferenceImages)
 
@@ -221,6 +212,10 @@ watch(
     }
   },
 )
+
+watch(prompt, () => {
+  if (!prompt.value.trim()) magicMenuOpen.value = false
+})
 </script>
 
 <template>
@@ -317,27 +312,26 @@ watch(
             <Icon :name="hasReferenceImages ? 'image' : 'upload'" :size="11" />
             <span>{{ hasReferenceImages ? `参考图 ${props.referenceImages.length}` : '参考图' }}</span>
           </button>
-          <div ref="magicMenuRef" class="relative">
+          <div class="relative">
             <button
               v-if="prompt.length"
               type="button"
-              class="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium text-forest/80 transition hover:bg-forest/10 hover:text-forest"
-              aria-label="魔法增强提示词"
+              class="inline-flex items-center gap-1.5 rounded-full border border-forest/20 bg-forest/10 px-2.5 py-1 text-[11px] font-semibold text-forest transition hover:border-forest/35 hover:bg-forest/15"
+              aria-label="智能优化提示词"
+              :aria-expanded="magicMenuOpen"
               @click.stop="magicMenuOpen = !magicMenuOpen"
             >
               <Icon name="sparkle" :size="11" />
-              <span>魔法</span>
+              <span>智能优化</span>
             </button>
-            <Transition name="acc">
-              <MagicEnhanceMenu
-                v-if="magicMenuOpen"
-                :prompt="prompt"
-                :style="stl"
-                :has-reference-images="hasReferenceImages"
-                @enhance="(result: EnhanceResult) => { emit('magic-enhance', result); magicMenuOpen = false }"
-                @close="magicMenuOpen = false"
-              />
-            </Transition>
+            <MagicEnhanceMenu
+              v-if="magicMenuOpen"
+              :prompt="prompt"
+              :image-style="imageStyle"
+              :has-reference-images="hasReferenceImages"
+              @enhance="(result: EnhanceResult) => { emit('magic-enhance', result); magicMenuOpen = false }"
+              @close="magicMenuOpen = false"
+            />
           </div>
           <button
             v-if="props.canUndoEnhance"
@@ -479,19 +473,19 @@ watch(
           type="button"
           class="group relative flex items-center gap-3 rounded-2xl border bg-cream p-2.5 text-left transition"
           :class="
-            stl === item.value
+            imageStyle === item.value
               ? 'border-ink bg-ink text-paper shadow-paper-2'
               : 'border-line text-ink hover:border-line-strong hover:bg-paper-soft'
           "
-          :aria-pressed="stl === item.value"
-          @click="stl = item.value"
+          :aria-pressed="imageStyle === item.value"
+          @click="imageStyle = item.value"
         >
-          <StyleSwatch :variant="item.value" :active="stl === item.value" />
+          <StyleSwatch :variant="item.value" :active="imageStyle === item.value" />
           <span class="min-w-0 flex-1">
             <span class="block text-[13px] font-medium leading-tight">{{ item.label }}</span>
             <span
               class="mt-0.5 block text-[11px] leading-snug"
-              :class="stl === item.value ? 'text-paper/65' : 'text-muted'"
+              :class="imageStyle === item.value ? 'text-paper/65' : 'text-muted'"
             >
               {{ item.accent }}
             </span>

@@ -109,10 +109,6 @@ async function buildEditFormData(payload: {
   formData.set('n', String(payload.count))
   formData.set('user', requestId)
 
-  // 移除非标准的 quality 和 outputFormat (response_format)
-  // OpenAI 官方编辑接口不支持 quality，response_format 只支持 url/b64_json
-  // 我们默认使用 url (即不传该参数)
-
   if (payload.model) {
     formData.set('model', payload.model)
   }
@@ -318,7 +314,6 @@ export async function generateImage(
       const err = error as Error
       const elapsedMs = Math.round(nowMs() - t0)
 
-      // 用户主动取消 → 抛专用错误码，由调用方处理
       if (err?.name === 'AbortError' || options?.signal?.aborted) {
         group.warn(`fetch aborted by user after ${elapsedMs}ms`)
         throw new ApiRequestError('已取消生成', 'ABORTED', requestId)

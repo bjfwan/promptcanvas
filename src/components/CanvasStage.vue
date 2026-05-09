@@ -65,7 +65,6 @@ const canvasStageLabel = computed(() => {
 })
 const canvasProgressStyle = computed(() => ({ '--progress': `${canvasProgress.value}%` }))
 
-// 估算预期完成时长（与 ChatBubble 算法保持一致），并据此显示剩余文案
 const canvasEstimatedDuration = computed(() => {
   let seconds = 11
   if (props.size !== '1024x1024') seconds += 2
@@ -395,7 +394,7 @@ function isImageReady(image: GeneratedImage, index: number) {
   display: block;
   font-family: 'IBM Plex Mono', monospace;
   font-weight: 200;
-  letter-spacing: -0.05em;
+  letter-spacing: 0;
   color: rgb(var(--color-ink));
   font-feature-settings: 'tnum';
 }
