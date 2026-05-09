@@ -30,6 +30,7 @@ function iconFor(kind: 'info' | 'success' | 'error'): IconName {
             'toast-card--info': item.kind === 'info',
             'toast-card--error text-accent': item.kind === 'error',
           }"
+          :style="{ '--toast-life': `${item.duration}ms` }"
           role="status"
         >
           <span
@@ -77,6 +78,16 @@ function iconFor(kind: 'info' | 'success' | 'error'): IconName {
   background: rgb(var(--color-blueprint));
 }
 
+.toast-card::after {
+  content: '';
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 1px;
+  background: linear-gradient(90deg, rgb(var(--color-forest)), rgb(var(--color-ochre)));
+  transform-origin: left center;
+  animation: toast-life var(--toast-life, 2400ms) linear forwards;
+}
+
 .toast-card--success {
   border-color: rgb(var(--color-forest) / 0.36);
 }
@@ -98,6 +109,19 @@ function iconFor(kind: 'info' | 'success' | 'error'): IconName {
   background: rgb(var(--color-accent));
 }
 
+.toast-card--error::after {
+  background: rgb(var(--color-accent));
+}
+
+@keyframes toast-life {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+
 .toast-enter-from {
   opacity: 0;
   transform: translateY(-10px) scale(0.985);
@@ -117,8 +141,10 @@ function iconFor(kind: 'info' | 'success' | 'error'): IconName {
 @media (prefers-reduced-motion: reduce) {
   .toast-enter-active,
   .toast-leave-active,
-  .toast-move {
+  .toast-move,
+  .toast-card::after {
     transition: none;
+    animation: none;
   }
 }
 </style>

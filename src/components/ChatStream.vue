@@ -135,10 +135,10 @@ defineExpose({ scrollToBottom, scrollToMessage })
         class="flex min-h-full flex-col items-center justify-center px-5 pb-8 pt-10 text-center"
       >
         <div
-          class="empty-studio-mark mb-5 grid h-14 w-14 place-items-center rounded-[1.35rem] border border-line-strong/60 bg-vellum text-ink shadow-inner-paper"
+          class="empty-studio-mark mb-5 grid h-14 w-14 place-items-center overflow-hidden rounded-[1.35rem] border border-line-strong/60 bg-vellum text-ink shadow-inner-paper"
           aria-hidden="true"
         >
-          <Icon name="sparkle" :size="20" />
+          <img src="/brand/promptcanvas-icon-96.png" alt="" width="56" height="56" decoding="async" />
         </div>
         <p class="font-display text-2xl italic tracking-tightish text-ink/85">画点什么呢？</p>
         <p class="mt-2 max-w-[26ch] text-[13px] leading-6 text-muted">
@@ -176,6 +176,13 @@ defineExpose({ scrollToBottom, scrollToMessage })
         >
           <ChatBubble
             :message="message"
+            v-memo="[
+              message.id,
+              message.role,
+              message.role === 'assistant' ? message.status : '',
+              message.role === 'assistant' ? message.elapsedSeconds ?? 0 : 0,
+              message.role === 'assistant' ? message.images?.length ?? 0 : message.referenceImages?.length ?? 0,
+            ]"
             @retry="(id) => emit('retry', id)"
             @open-image="(images, idx) => emit('open-image', images, idx)"
             @download="(image, idx) => emit('download', image, idx)"
@@ -231,6 +238,7 @@ defineExpose({ scrollToBottom, scrollToMessage })
 
 .chat-stream__item {
   --reveal-delay: 0ms;
+  contain: content;
 }
 
 .chat-stream__item--virtual {

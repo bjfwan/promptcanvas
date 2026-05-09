@@ -343,7 +343,7 @@ async function downloadCurrent() {
       <div
         v-if="lightbox.state.open"
         ref="lightboxRef"
-        class="fixed inset-0 z-lightbox flex flex-col bg-ink/90 text-paper backdrop-blur"
+        class="lightbox-shell fixed inset-0 z-lightbox flex flex-col text-paper backdrop-blur"
         role="dialog"
         aria-modal="true"
         aria-label="图片详情"
@@ -351,7 +351,9 @@ async function downloadCurrent() {
       >
         <header class="flex items-center justify-between px-4 pt-[max(env(safe-area-inset-top,0px),1rem)]" @click.stop>
           <div class="flex items-center gap-2 text-paper/85">
-            <span class="grid h-7 w-7 place-items-center rounded-full border border-paper/25 font-display text-sm">P</span>
+            <span class="grid h-8 w-8 place-items-center overflow-hidden rounded-xl border border-paper/20 bg-paper/10">
+              <img src="/brand/favicon.png" alt="" width="32" height="32" decoding="async" />
+            </span>
             <span class="font-mono text-[10px] uppercase tracking-[0.24em]">{{ counter || 'Canvas · 1' }}</span>
           </div>
           <div class="flex items-center gap-1.5">
@@ -465,6 +467,13 @@ async function downloadCurrent() {
 </template>
 
 <style scoped>
+.lightbox-shell {
+  background:
+    radial-gradient(circle at 18% 0%, rgb(47 70 84 / 0.34), transparent 34%),
+    radial-gradient(circle at 82% 100%, rgb(176 127 48 / 0.22), transparent 38%),
+    rgb(14 17 16 / 0.96);
+}
+
 .lb-fade-enter-from,
 .lb-fade-leave-to {
   opacity: 0;

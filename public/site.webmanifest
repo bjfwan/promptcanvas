@@ -1,0 +1,21 @@
+{
+  "name": "PromptCanvas",
+  "short_name": "PromptCanvas",
+  "description": "Atelier Ledger 风格的 AI 图像创作工作台",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f4f2ea",
+  "theme_color": "#f4f2ea",
+  "icons": [
+    {
+      "src": "/brand/promptcanvas-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/brand/promptcanvas-icon.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

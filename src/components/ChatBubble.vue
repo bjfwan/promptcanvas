@@ -980,8 +980,10 @@ function isImageReady(image: GeneratedImage, index: number) {
   max-width: min(280px, 86vw);
   padding: 0.35rem 0.7rem 0.35rem 0.4rem;
   border-radius: 16px;
-  border: 1px dashed rgb(var(--color-line-strong) / 0.85);
-  background: linear-gradient(180deg, rgb(var(--color-vellum) / 0.86), rgb(var(--color-cream) / 0.94));
+  border: 1px solid rgb(var(--color-forest) / 0.32);
+  background:
+    linear-gradient(90deg, rgb(var(--color-forest) / 0.08), transparent 42%),
+    linear-gradient(180deg, rgb(var(--color-vellum) / 0.9), rgb(var(--color-cream) / 0.86));
   color: rgb(var(--color-ink));
   cursor: pointer;
   text-align: left;
@@ -990,7 +992,7 @@ function isImageReady(image: GeneratedImage, index: number) {
 }
 
 .chat-continuation-chip:hover {
-  border-color: rgb(var(--color-accent) / 0.6);
+  border-color: rgb(var(--color-forest) / 0.62);
   background: linear-gradient(180deg, rgb(var(--color-vellum)), rgb(var(--color-cream)));
 }
 
@@ -1029,7 +1031,7 @@ function isImageReady(image: GeneratedImage, index: number) {
   font-weight: 600;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: rgb(var(--color-accent));
+  color: rgb(var(--color-forest));
 }
 
 .chat-continuation-chip__sub {
@@ -1156,7 +1158,9 @@ function isImageReady(image: GeneratedImage, index: number) {
 }
 
 .chat-image-fade {
-  transition: opacity 320ms ease;
+  transform: translateY(6px) scale(0.992);
+  transition: opacity 420ms var(--motion-snap), transform 520ms var(--motion-snap);
+  will-change: opacity, transform;
 }
 
 .chat-image-fade--loading {
@@ -1165,6 +1169,23 @@ function isImageReady(image: GeneratedImage, index: number) {
 
 .chat-image-fade--ready {
   opacity: 1;
+  transform: translateY(0) scale(1);
+  animation: chat-result-settle 620ms var(--motion-snap) both;
+}
+
+@keyframes chat-result-settle {
+  0% {
+    opacity: 0;
+    transform: translateY(8px) scale(0.99);
+  }
+  70% {
+    opacity: 1;
+    transform: translateY(-1px) scale(1.002);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1175,6 +1196,7 @@ function isImageReady(image: GeneratedImage, index: number) {
   .chat-image-fade {
     transition: none;
     animation: none;
+    transform: none;
   }
 }
 </style>

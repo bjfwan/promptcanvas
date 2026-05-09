@@ -91,6 +91,18 @@ const modelLabel = computed(() => {
 })
 
 const sendDisabled = computed(() => !props.isGenerating && !props.canGenerate)
+const inputPlaceholder = computed(() =>
+  props.continuation
+    ? '接着这张图改什么？'
+    : '今天画点什么…',
+)
+const sendLabel = computed(() =>
+  props.isGenerating
+    ? '取消生成'
+    : props.continuation
+      ? '发送续作提示词'
+      : '发送提示词生成图片',
+)
 
 const dockOuterStyle = computed(() => {
   if (!props.keyboardInset) return undefined
@@ -441,7 +453,7 @@ defineExpose({ focusInput })
       </div>
 
       <div
-        class="chat-dock__input relative z-30 mx-2.5 mb-2 bg-paper-soft border border-line transition-all focus-within:border-ink/30 focus-within:bg-paper sm:mx-3"
+        class="chat-dock__input relative z-30 mx-2.5 mb-2 bg-paper-soft border border-line focus-within:border-ink/30 focus-within:bg-paper sm:mx-3"
         :class="{ 'magic-pulse': isMagicPulsing }"
       >
         <textarea
@@ -449,7 +461,7 @@ defineExpose({ focusInput })
           v-model="prompt"
           rows="1"
           maxlength="1200"
-          placeholder="今天画点什么…"
+          :placeholder="inputPlaceholder"
           class="chat-dock__textarea w-full"
           :class="{ 'chat-dock__textarea--tall': tall }"
           autocomplete="off"
@@ -522,7 +534,7 @@ defineExpose({ focusInput })
               'chat-dock__send-inner--busy': isGenerating,
             }"
             :disabled="sendDisabled"
-            :aria-label="isGenerating ? '取消生成' : '发送提示词生成图片'"
+            :aria-label="sendLabel"
             @click.stop="send"
           >
             <Icon
@@ -552,7 +564,7 @@ defineExpose({ focusInput })
             </span>
             <button
               type="button"
-              class="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium text-muted transition-all hover:bg-paper-soft hover:text-ink active:scale-95"
+              class="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium text-muted transition hover:bg-paper-soft hover:text-ink active:scale-95"
               :disabled="props.referenceImages.length >= maxReferenceImages"
               @click.stop="openReferencePicker"
             >
@@ -1125,9 +1137,11 @@ defineExpose({ focusInput })
   gap: 0.5rem;
   padding: 0.45rem 0.5rem;
   border-radius: 18px;
-  border: 1px solid rgb(var(--color-accent) / 0.32);
-  background: linear-gradient(180deg, rgb(var(--color-accent) / 0.07), rgb(var(--color-accent) / 0.04));
-  box-shadow: 0 6px 18px -14px rgb(var(--color-accent) / 0.6);
+  border: 1px solid rgb(var(--color-forest) / 0.34);
+  background:
+    linear-gradient(90deg, rgb(var(--color-forest) / 0.1), transparent 42%),
+    rgb(var(--color-vellum) / 0.94);
+  box-shadow: 0 12px 28px -24px rgb(var(--color-forest) / 0.72), var(--shadow-inner-paper);
 }
 
 .chat-dock__continuation-target {
@@ -1179,7 +1193,7 @@ defineExpose({ focusInput })
   width: 14px;
   height: 14px;
   border-radius: 999px;
-  background: rgb(var(--color-accent));
+  background: rgb(var(--color-forest));
   color: rgb(var(--color-paper));
   border: 1.5px solid rgb(var(--color-vellum));
 }
@@ -1197,7 +1211,7 @@ defineExpose({ focusInput })
   font-weight: 600;
   letter-spacing: 0.22em;
   text-transform: uppercase;
-  color: rgb(var(--color-accent));
+  color: rgb(var(--color-forest));
 }
 
 .chat-dock__continuation-sub {
@@ -1234,7 +1248,7 @@ defineExpose({ focusInput })
 .chat-dock__continuation-cancel:hover {
   background: rgb(var(--color-paper));
   color: rgb(var(--color-accent));
-  border-color: rgb(var(--color-accent) / 0.4);
+  border-color: rgb(var(--color-forest) / 0.4);
 }
 
 .chat-dock__continuation-cancel:active {

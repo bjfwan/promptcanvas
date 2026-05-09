@@ -111,7 +111,7 @@ export function useGenerationFlow(deps: GenerationFlowDeps) {
           mimeType: image.mimeType,
           revisedPrompt: image.revisedPrompt,
         }))
-      deps.history.value = await prependHistory({
+      const historyItem: GenerationHistoryItem = {
         prompt: args.payload.prompt,
         style: args.payload.style,
         size: args.payload.size,
@@ -128,7 +128,7 @@ export function useGenerationFlow(deps: GenerationFlowDeps) {
         imageCount: result.images.length,
         referenceImageCount: args.payload.referenceImages?.length || undefined,
         images: persistableImages.length ? persistableImages : undefined,
-      })
+      }
 
       elapsed = computeElapsed()
       deps.elapsedSeconds.value = elapsed
@@ -145,6 +145,10 @@ export function useGenerationFlow(deps: GenerationFlowDeps) {
         `已生成 ${result.images.length} 张`,
         result.requestId ? `req ${result.requestId.slice(0, 8)}` : undefined,
       )
+
+      void prependHistory(historyItem).then((next) => {
+        deps.history.value = next
+      })
     } catch (error) {
       let message = '生成失败，请稍后重试。'
       let code: string | undefined

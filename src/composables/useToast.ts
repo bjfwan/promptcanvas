@@ -7,6 +7,7 @@ export interface ToastItem {
   text: string
   kind: ToastKind
   hint?: string
+  duration: number
 }
 
 interface ToastState {
@@ -32,11 +33,13 @@ function dismiss(id: number) {
 
 function push(text: string, options: { kind?: ToastKind; hint?: string; duration?: number } = {}) {
   const id = nextId++
+  const duration = options.duration ?? (options.kind === 'error' ? 4200 : 2400)
   const item: ToastItem = {
     id,
     text,
     kind: options.kind ?? 'info',
     hint: options.hint,
+    duration,
   }
 
   state.items.push(item)
@@ -51,8 +54,6 @@ function push(text: string, options: { kind?: ToastKind; hint?: string; duration
       }
     }
   }
-
-  const duration = options.duration ?? (item.kind === 'error' ? 4200 : 2400)
 
   if (duration > 0) {
     const timer = window.setTimeout(() => dismiss(id), duration)

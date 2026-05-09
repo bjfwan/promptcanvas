@@ -96,8 +96,15 @@ const promptTone = computed(() => {
 const generateLabel = computed(() => {
   if (!prompt.value.trim()) return '写下提示词以生成'
   if (props.isGenerating) return 'Composing · 点击取消'
+  if (props.continuation) return 'Continue frame'
   return 'Generate'
 })
+
+const promptPlaceholder = computed(() =>
+  props.continuation
+    ? '描述这张图下一步要改变什么：保留什么、替换什么、增加什么'
+    : '一张极简咖啡品牌海报，暖色调，自然光，留白充足',
+)
 
 function handleGenerateClick(event: Event) {
   if (props.isGenerating) {
@@ -246,10 +253,9 @@ watch(prompt, () => {
 
     <header v-if="layout === 'panel'" class="space-y-2">
       <p class="display-eyebrow">01 · Compose</p>
-      <h1 class="display-h1">写下你想看见的<span class="italic">画面</span></h1>
+      <h1 class="display-h1">构图草案</h1>
       <p class="text-[13px] leading-6 text-muted">
-        像写一段电影旁白：主体、光线、色调、镜头、情绪。
-        下方按你的表达选一个<span class="italic">提示词模板</span>可以一键塑造语气。
+        控制主体、光线、镜头、材质与情绪。模板只塑造语气，不替你决定画面。
       </p>
     </header>
 
@@ -370,7 +376,7 @@ watch(prompt, () => {
           :rows="layout === 'sheet' ? 5 : 6"
           maxlength="1200"
           class="prompt-field-textarea"
-          placeholder="一张极简咖啡品牌海报，暖色调，自然光，留白充足"
+          :placeholder="promptPlaceholder"
           autocomplete="off"
           spellcheck="false"
           @click.stop="promptRef?.focus()"
@@ -685,9 +691,11 @@ watch(prompt, () => {
   gap: 0.6rem;
   padding: 0.55rem 0.6rem;
   border-radius: 18px;
-  border: 1px solid rgb(var(--color-accent) / 0.32);
-  background: linear-gradient(180deg, rgb(var(--color-accent) / 0.06), rgb(var(--color-accent) / 0.03));
-  box-shadow: 0 6px 18px -14px rgb(var(--color-accent) / 0.55);
+  border: 1px solid rgb(var(--color-forest) / 0.34);
+  background:
+    linear-gradient(90deg, rgb(var(--color-forest) / 0.08), transparent 36%),
+    linear-gradient(180deg, rgb(var(--color-vellum) / 0.84), rgb(var(--color-cream) / 0.36));
+  box-shadow: 0 12px 26px -22px rgb(var(--color-forest) / 0.65), var(--shadow-inner-paper);
 }
 
 .composer-continuation__thumb {
@@ -719,7 +727,7 @@ watch(prompt, () => {
   width: 14px;
   height: 14px;
   border-radius: 999px;
-  background: rgb(var(--color-accent));
+  background: rgb(var(--color-forest));
   color: rgb(var(--color-paper));
   border: 1.5px solid rgb(var(--color-vellum));
 }
@@ -738,7 +746,7 @@ watch(prompt, () => {
   font-weight: 600;
   letter-spacing: 0.22em;
   text-transform: uppercase;
-  color: rgb(var(--color-accent));
+  color: rgb(var(--color-forest));
 }
 
 .composer-continuation__sub {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onMounted, ref, shallowRef, watch } from 'vue'
 import { resolveImageSource } from './api'
 import { customModelSentinel, qualityOptions, sizeOptions, styleOptions, stylePresetById } from './presets'
 import { clearDraft, clearHistory, hydrateHistoryImages, loadDraft, loadHistory } from './storage'
@@ -34,14 +34,23 @@ import { useGenerationFlow } from './composables/useGenerationFlow'
 import { useMediaQuery } from './composables/useMediaQuery'
 import type { EnhanceResult } from './lib/magicEnhance'
 
-const PromptComposer = defineAsyncComponent(() => import('./components/PromptComposer.vue'))
-const CanvasStage = defineAsyncComponent(() => import('./components/CanvasStage.vue'))
-const ChatStream = defineAsyncComponent(() => import('./components/ChatStream.vue'))
-const ChatDock = defineAsyncComponent(() => import('./components/ChatDock.vue'))
-const StyleSheet = defineAsyncComponent(() => import('./components/StyleSheet.vue'))
-const SettingsDialog = defineAsyncComponent(() => import('./components/SettingsDialog.vue'))
-const HistoryDialog = defineAsyncComponent(() => import('./components/HistoryDialog.vue'))
-const Lightbox = defineAsyncComponent(() => import('./components/Lightbox.vue'))
+const loadPromptComposer = () => import('./components/PromptComposer.vue')
+const loadCanvasStage = () => import('./components/CanvasStage.vue')
+const loadChatStream = () => import('./components/ChatStream.vue')
+const loadChatDock = () => import('./components/ChatDock.vue')
+const loadStyleSheet = () => import('./components/StyleSheet.vue')
+const loadSettingsDialog = () => import('./components/SettingsDialog.vue')
+const loadHistoryDialog = () => import('./components/HistoryDialog.vue')
+const loadLightbox = () => import('./components/Lightbox.vue')
+
+const PromptComposer = defineAsyncComponent(loadPromptComposer)
+const CanvasStage = defineAsyncComponent(loadCanvasStage)
+const ChatStream = defineAsyncComponent(loadChatStream)
+const ChatDock = defineAsyncComponent(loadChatDock)
+const StyleSheet = defineAsyncComponent(loadStyleSheet)
+const SettingsDialog = defineAsyncComponent(loadSettingsDialog)
+const HistoryDialog = defineAsyncComponent(loadHistoryDialog)
+const Lightbox = defineAsyncComponent(loadLightbox)
 
 const defaultPrompt = '一只穿着复古宇航服的橘猫，站在月球摄影棚里，像 1970 年代科幻电影海报'
 const defaultNegativePrompt = '低清晰度、模糊、水印、错误文字、畸形手指、画面杂乱'
@@ -57,13 +66,13 @@ const creativity = ref(7)
 const seed = ref('')
 const modelChoice = ref<string>('')
 const customModel = ref<string>('')
-const images = ref<GeneratedImage[]>([])
+const images = shallowRef<GeneratedImage[]>([])
 const activeImageIndex = ref(0)
 const isGenerating = ref(false)
 const errorMessage = ref('')
 const lastRequestId = ref('')
 const elapsedSeconds = ref(0)
-const history = ref<GenerationHistoryItem[]>(loadHistory())
+const history = shallowRef<GenerationHistoryItem[]>(loadHistory())
 
 const toast = useToast()
 const { theme, toggle: toggleTheme } = useTheme()
@@ -77,7 +86,7 @@ const styleSheetOpen = ref(false)
 const composerRef = ref<{ focusPrompt?: () => void } | null>(null)
 const chatDockRef = ref<{ focusInput?: () => void } | null>(null)
 const chatStreamRef = ref<{ scrollToMessage?: (id: string) => void; scrollToBottom?: (smooth?: boolean) => void } | null>(null)
-const messages = ref<ChatMessage[]>([])
+const messages = shallowRef<ChatMessage[]>([])
 const pendingContinuation = ref<ContinuationContext | null>(null)
 const mobileDockHeight = ref(180)
 
@@ -626,6 +635,23 @@ function handleChatDockLayoutChange(height: number) {
   mobileDockHeight.value = Math.max(0, Math.round(height))
 }
 
+function warmLazyComponents() {
+  const run = () => {
+    void Promise.all([
+      loadStyleSheet(),
+      loadSettingsDialog(),
+      loadHistoryDialog(),
+      loadLightbox(),
+    ])
+  }
+
+  if (typeof window.requestIdleCallback === 'function') {
+    window.requestIdleCallback(run, { timeout: 2800 })
+  } else {
+    globalThis.setTimeout(run, 1400)
+  }
+}
+
 watch(prompt, (value) => {
   if (lastEnhanceResult.value && value !== lastEnhanceResult.value.enhanced) {
     lastEnhanceResult.value = null
@@ -666,6 +692,7 @@ onMounted(() => {
   void hydrateHistoryImages(history.value).then((items) => {
     history.value = items
   })
+  warmLazyComponents()
 })
 </script>
 
@@ -691,9 +718,9 @@ onMounted(() => {
 
     <main
       v-if="isDesktop"
-      class="relative z-[2] mx-auto grid w-full max-w-[1560px] flex-1 grid-cols-[minmax(340px,420px)_minmax(0,1fr)] gap-8 px-10 pb-12 pt-8 xl:gap-10 xl:pt-10"
+      class="desktop-workbench relative z-[2] mx-auto grid w-full max-w-[1560px] flex-1 grid-cols-[minmax(360px,440px)_minmax(0,1fr)] gap-7 px-10 pb-10 pt-7 xl:gap-8"
     >
-      <section class="reveal" style="--reveal-delay: 40ms;">
+      <section class="studio-panel reveal touch-scroll-y" style="--reveal-delay: 40ms;">
         <PromptComposer
           ref="composerRef"
           v-model:prompt="prompt"
@@ -722,7 +749,7 @@ onMounted(() => {
         />
       </section>
 
-      <section id="canvas" class="reveal" style="--reveal-delay: 120ms;">
+      <section id="canvas" class="studio-stage reveal" style="--reveal-delay: 120ms;">
         <CanvasStage
           :images="images"
           :active-image-index="activeImageIndex"
@@ -753,7 +780,7 @@ onMounted(() => {
     </main>
 
     <footer
-      class="relative z-[2] hidden border-t border-line/70 py-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] text-center font-mono text-[10px] uppercase tracking-[0.24em] text-muted lg:block"
+      class="hidden"
     >
       <span class="inline-flex items-center justify-center gap-2">
         <span>crafted local · {{ new Date().getFullYear() }}</span>

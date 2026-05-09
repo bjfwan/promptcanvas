@@ -102,7 +102,7 @@ function isImageReady(image: GeneratedImage, index: number) {
     <header class="flex items-end justify-between gap-4">
       <div class="space-y-2">
         <p class="display-eyebrow">02 · Canvas</p>
-        <h2 class="display-h2">画布</h2>
+        <h2 class="display-h2">制版画布</h2>
       </div>
       <div class="flex flex-wrap items-center justify-end gap-1.5">
         <span class="chip">{{ styleLabel }}</span>
@@ -222,8 +222,8 @@ function isImageReady(image: GeneratedImage, index: number) {
             loading="eager"
             fetchpriority="high"
             decoding="async"
-            class="max-h-full max-w-full rounded-xl object-contain opacity-0 shadow-paper-1 transition-opacity duration-[320ms] will-change-[opacity]"
-            :class="isImageReady(activeImage, activeImageIndex) ? 'opacity-100' : 'opacity-0'"
+            class="result-image max-h-full max-w-full rounded-xl object-contain shadow-paper-1"
+            :class="isImageReady(activeImage, activeImageIndex) ? 'result-image--ready' : 'result-image--loading'"
             @load="markImageReady(activeImage, activeImageIndex)"
             @error="markImageReady(activeImage, activeImageIndex)"
           />
@@ -345,10 +345,10 @@ function isImageReady(image: GeneratedImage, index: number) {
       <div class="absolute inset-0 grid place-items-center text-center">
         <div class="max-w-md px-6">
           <div
-            class="mx-auto mb-5 grid h-12 w-12 place-items-center rounded-full border border-line-strong/60 bg-vellum text-ink shadow-inner-paper"
+            class="mx-auto mb-5 grid h-14 w-14 place-items-center overflow-hidden rounded-[1.15rem] border border-line-strong/60 bg-vellum text-ink shadow-inner-paper"
             aria-hidden="true"
           >
-            <Icon name="frame" :size="20" />
+            <img src="/brand/promptcanvas-icon-96.png" alt="" width="56" height="56" decoding="async" />
           </div>
           <p class="font-display text-2xl italic tracking-tightish text-ink/85 sm:text-3xl">空白画布</p>
           <p class="mt-3 text-[13px] leading-6 text-muted">
@@ -770,6 +770,38 @@ function isImageReady(image: GeneratedImage, index: number) {
   animation-delay: 0.28s;
 }
 
+.result-image {
+  opacity: 0;
+  transform: translateY(8px) scale(0.992);
+  transition: opacity 420ms var(--motion-snap), transform 520ms var(--motion-snap);
+  will-change: opacity, transform;
+}
+
+.result-image--ready {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  animation: result-settle 720ms var(--motion-snap) both;
+}
+
+.result-image--loading {
+  opacity: 0;
+}
+
+@keyframes result-settle {
+  0% {
+    opacity: 0;
+    transform: translateY(10px) scale(0.988);
+  }
+  62% {
+    opacity: 1;
+    transform: translateY(-1px) scale(1.002);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
 @keyframes canvas-image-loader {
   0%,
   100% {
@@ -785,10 +817,11 @@ function isImageReady(image: GeneratedImage, index: number) {
 
 @media (prefers-reduced-motion: reduce) {
   .canvas-image-placeholder__loader span,
-  .canvas-frame img,
+  .result-image,
   .canvas-progress span {
     animation: none;
     transition: none;
+    transform: none;
   }
 }
 </style>

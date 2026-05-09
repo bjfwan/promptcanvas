@@ -1,4 +1,4 @@
-import { onUnmounted, ref, type Ref } from 'vue'
+import { onUnmounted, shallowRef, type Ref } from 'vue'
 import {
   allowedReferenceImageMimeTypes,
   maxReferenceImageSizeBytes,
@@ -23,7 +23,7 @@ function resolveReferenceMimeType(file: File): string {
 }
 
 export function useReferenceImages(deps: { toast: Toast }) {
-  const items: Ref<ReferenceImageAttachment[]> = ref([])
+  const items: Ref<ReferenceImageAttachment[]> = shallowRef([])
   const ownedPreviewUrls = new Set<string>()
 
   function createAttachment(file: File): ReferenceImageAttachment {

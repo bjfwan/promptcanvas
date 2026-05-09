@@ -77,18 +77,15 @@ onBeforeUnmount(() => {
       class="mx-auto flex w-full max-w-[1560px] items-center justify-between gap-2 px-3 py-2.5 sm:gap-4 sm:px-6 lg:px-10 lg:py-4"
     >
       <div class="flex min-w-0 items-center gap-2.5 sm:gap-3">
-        <span
-          class="grid h-10 w-10 shrink-0 place-items-center rounded-[1.05rem] border border-line-strong bg-vellum font-display text-base text-ink shadow-inner-paper"
-          aria-hidden="true"
-        >
-          <span class="-mt-0.5 italic">P</span>
+        <span class="brand-mark" aria-hidden="true">
+          <img src="/brand/promptcanvas-icon-96.png" alt="" width="40" height="40" decoding="async" />
         </span>
         <div class="min-w-0 leading-tight">
           <p class="truncate font-display text-[18px] tracking-tightish">
             Prompt<span class="italic text-accent">Canvas</span>
           </p>
           <p class="mt-0.5 hidden font-mono text-[10px] uppercase tracking-[0.22em] text-muted sm:block">
-            local image studio
+            atelier image studio
           </p>
         </div>
       </div>
@@ -198,6 +195,25 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.brand-mark {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  flex-shrink: 0;
+  border-radius: 14px;
+  border: 1px solid rgb(var(--color-line-strong) / 0.82);
+  background: rgb(var(--color-vellum));
+  box-shadow: var(--shadow-inner-paper), var(--shadow-paper-1);
+  overflow: hidden;
+}
+
+.brand-mark img {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
 .header-menu-item {
   display: flex;
   width: 100%;
