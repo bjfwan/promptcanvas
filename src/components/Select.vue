@@ -361,7 +361,7 @@ onBeforeUnmount(() => {
   width: 100%;
   gap: 0.5rem;
   padding: 0 2.25rem 0 0.875rem;
-  border-radius: 0.625rem;
+  border-radius: var(--radius-field);
   border: 1px solid rgb(var(--color-line));
   background: rgb(var(--color-cream) / 0.65);
   color: rgb(var(--color-ink));
@@ -377,12 +377,12 @@ onBeforeUnmount(() => {
 
 .select-trigger:focus-visible {
   outline: none;
-  border-color: rgb(var(--color-ink));
+  border-color: rgb(var(--color-forest));
   box-shadow: var(--focus-ring);
 }
 
 .select-trigger.is-open {
-  border-color: rgb(var(--color-ink));
+  border-color: rgb(var(--color-forest));
   background: rgb(var(--color-paper));
   box-shadow: 0 1px 0 rgb(var(--color-ink) / 0.04), 0 0 0 3px rgb(var(--color-ink) / 0.08);
 }
@@ -455,7 +455,7 @@ onBeforeUnmount(() => {
 }
 
 .select-popover {
-  border-radius: 0.875rem;
+  border-radius: 14px;
   background: rgb(var(--color-cream) / 0.98);
   border: 1px solid rgb(var(--color-line-strong));
   box-shadow: var(--shadow-paper-3);
@@ -510,7 +510,7 @@ onBeforeUnmount(() => {
 }
 
 .select-option[data-selected] {
-  background: rgb(var(--color-ink));
+  background: linear-gradient(135deg, rgb(var(--color-ink)), rgb(var(--color-blueprint)));
   color: rgb(var(--color-paper));
 }
 

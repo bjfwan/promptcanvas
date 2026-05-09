@@ -52,6 +52,7 @@ export interface GeneratedImage {
   b64Json?: string | null
   mimeType?: string | null
   revisedPrompt?: string | null
+  storageKey?: string | null
 }
 
 export interface GenerateImageResponse {

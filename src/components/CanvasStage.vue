@@ -153,9 +153,18 @@ function isImageReady(image: GeneratedImage, index: number) {
         </div>
 
         <div class="grid place-items-center">
-          <div class="chat-pending-manifest">
-            <span class="chat-pending-manifest__value text-4xl sm:text-5xl">{{ canvasProgress }}%</span>
-            <span class="chat-pending-manifest__label mt-1 text-[11px]">{{ canvasStageLabel }}</span>
+          <div class="atelier-process">
+            <div class="atelier-process__plate" aria-hidden="true">
+              <span></span>
+              <span></span>
+              <span></span>
+              <span></span>
+            </div>
+            <div class="atelier-process__readout">
+              <span>Composing frame</span>
+              <strong>{{ canvasStageLabel }}</strong>
+              <em>{{ elapsedLabel }} · {{ canvasProgress }}%</em>
+            </div>
           </div>
         </div>
 
@@ -392,8 +401,9 @@ function isImageReady(image: GeneratedImage, index: number) {
 <style scoped>
 .chat-pending-bg {
   background:
-    radial-gradient(circle at 30% 20%, rgb(var(--color-vellum) / 0.8) 0%, transparent 50%),
-    radial-gradient(circle at 70% 80%, rgb(var(--color-cream) / 0.6) 0%, transparent 50%),
+    linear-gradient(125deg, rgb(var(--color-paper-soft) / 0.72), transparent 42%),
+    linear-gradient(245deg, rgb(var(--color-cream) / 0.72), transparent 48%),
+    repeating-linear-gradient(90deg, rgb(var(--color-ink) / 0.035) 0 1px, transparent 1px 22px),
     rgb(var(--color-paper-soft));
   animation: pending-bg-shift 8s ease-in-out infinite alternate;
 }
@@ -473,6 +483,124 @@ function isImageReady(image: GeneratedImage, index: number) {
   letter-spacing: 0.3em;
   color: rgb(var(--color-muted));
   opacity: 0.6;
+}
+
+.atelier-process {
+  display: grid;
+  justify-items: center;
+  gap: 1.15rem;
+}
+
+.atelier-process__plate {
+  position: relative;
+  width: min(44vw, 210px);
+  aspect-ratio: 1;
+  border-radius: 18px;
+  border: 1px solid rgb(var(--color-line-strong) / 0.48);
+  background:
+    linear-gradient(135deg, rgb(var(--color-vellum) / 0.62), rgb(var(--color-paper) / 0.28)),
+    repeating-linear-gradient(0deg, transparent 0 18px, rgb(var(--color-ink) / 0.045) 18px 19px),
+    repeating-linear-gradient(90deg, transparent 0 18px, rgb(var(--color-ink) / 0.045) 18px 19px);
+  box-shadow: var(--shadow-paper-2), inset 0 0 0 1px rgb(var(--color-paper) / 0.5);
+  overflow: hidden;
+}
+
+.atelier-process__plate::before,
+.atelier-process__plate::after {
+  content: '';
+  position: absolute;
+  inset: 12%;
+  border: 1px solid rgb(var(--color-ink) / 0.16);
+  border-radius: 999px;
+  animation: atelier-register 2.8s var(--motion-soft) infinite;
+}
+
+.atelier-process__plate::after {
+  inset: 25%;
+  border-radius: 14px;
+  animation-delay: 0.34s;
+}
+
+.atelier-process__plate span {
+  position: absolute;
+  width: 34%;
+  height: 1px;
+  background: rgb(var(--color-accent) / 0.62);
+  opacity: 0.72;
+  animation: atelier-mark 2.4s var(--motion-soft) infinite;
+}
+
+.atelier-process__plate span:nth-child(1) {
+  left: 10%;
+  top: 18%;
+}
+
+.atelier-process__plate span:nth-child(2) {
+  right: 10%;
+  top: 36%;
+  background: rgb(var(--color-forest) / 0.62);
+  animation-delay: 0.16s;
+}
+
+.atelier-process__plate span:nth-child(3) {
+  left: 16%;
+  bottom: 34%;
+  background: rgb(var(--color-blueprint) / 0.58);
+  animation-delay: 0.32s;
+}
+
+.atelier-process__plate span:nth-child(4) {
+  right: 16%;
+  bottom: 18%;
+  background: rgb(var(--color-ochre) / 0.62);
+  animation-delay: 0.48s;
+}
+
+.atelier-process__readout {
+  display: grid;
+  justify-items: center;
+  gap: 0.2rem;
+  text-align: center;
+}
+
+.atelier-process__readout span,
+.atelier-process__readout em {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgb(var(--color-muted));
+  font-style: normal;
+}
+
+.atelier-process__readout strong {
+  font-family: 'Fraunces', Georgia, serif;
+  font-size: 1.75rem;
+  font-weight: 520;
+  letter-spacing: 0;
+  color: rgb(var(--color-ink));
+}
+
+@keyframes atelier-register {
+  0%, 100% {
+    opacity: 0.28;
+    transform: scale(0.98);
+  }
+  50% {
+    opacity: 0.72;
+    transform: scale(1.025);
+  }
+}
+
+@keyframes atelier-mark {
+  0%, 100% {
+    transform: translateX(-3px);
+    opacity: 0.32;
+  }
+  50% {
+    transform: translateX(3px);
+    opacity: 0.86;
+  }
 }
 
 .chat-pending-bar {
@@ -568,6 +696,9 @@ function isImageReady(image: GeneratedImage, index: number) {
 
 @media (prefers-reduced-motion: reduce) {
   .chat-pending-bg,
+  .atelier-process__plate::before,
+  .atelier-process__plate::after,
+  .atelier-process__plate span,
   .canvas-pending__remain-dot,
   .canvas-pending-layers span::after {
     animation: none;

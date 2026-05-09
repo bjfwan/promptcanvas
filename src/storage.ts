@@ -1,10 +1,22 @@
 import { decryptString, encryptString, isEncrypted } from './lib/crypto'
-import type { GenerationHistoryItem, ProviderConfig } from './types'
+import type { GeneratedImage, GenerationHistoryItem, ProviderConfig } from './types'
 
 const historyKey = 'promptcanvas:generation-history'
 const draftKey = 'promptcanvas:draft-v1'
 const providerKey = 'promptcanvas:provider-v1'
-const maxHistoryItems = 8
+const maxHistoryItems = 12
+const imageDbName = 'promptcanvas-history-images'
+const imageStoreName = 'images'
+
+interface HistoryImageRecord {
+  key: string
+  source: string
+  mimeType: string | null
+  revisedPrompt: string | null
+  createdAt: string
+}
+
+let imageDbPromise: Promise<IDBDatabase> | null = null
 
 export interface DraftPayload {
   prompt?: string
@@ -72,15 +84,109 @@ export function loadHistory(): GenerationHistoryItem[] {
   }
 }
 
+function canUseIndexedDb() {
+  return typeof indexedDB !== 'undefined'
+}
+
+function openImageDb(): Promise<IDBDatabase> {
+  if (!canUseIndexedDb()) {
+    return Promise.reject(new Error('IndexedDB unavailable'))
+  }
+
+  if (imageDbPromise) return imageDbPromise
+
+  imageDbPromise = new Promise((resolve, reject) => {
+    const request = indexedDB.open(imageDbName, 1)
+
+    request.onupgradeneeded = () => {
+      const db = request.result
+      if (!db.objectStoreNames.contains(imageStoreName)) {
+        db.createObjectStore(imageStoreName, { keyPath: 'key' })
+      }
+    }
+
+    request.onsuccess = () => resolve(request.result)
+    request.onerror = () => reject(request.error || new Error('IndexedDB open failed'))
+    request.onblocked = () => reject(new Error('IndexedDB blocked'))
+  })
+
+  return imageDbPromise
+}
+
+async function withImageStore<T>(
+  mode: IDBTransactionMode,
+  task: (store: IDBObjectStore) => IDBRequest<T> | void,
+): Promise<T | undefined> {
+  const db = await openImageDb()
+
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(imageStoreName, mode)
+    const store = tx.objectStore(imageStoreName)
+    const request = task(store)
+    let result: T | undefined
+
+    if (request) {
+      request.onsuccess = () => {
+        result = request.result
+      }
+      request.onerror = () => reject(request.error || new Error('IndexedDB request failed'))
+    }
+
+    tx.oncomplete = () => resolve(result)
+    tx.onerror = () => reject(tx.error || new Error('IndexedDB transaction failed'))
+    tx.onabort = () => reject(tx.error || new Error('IndexedDB transaction aborted'))
+  })
+}
+
+function dataUrlFromBase64(image: GeneratedImage) {
+  if (!image.b64Json) return ''
+  return `data:${image.mimeType || 'image/png'};base64,${image.b64Json}`
+}
+
+async function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '')
+    reader.onerror = () => reject(reader.error || new Error('Blob read failed'))
+    reader.readAsDataURL(blob)
+  })
+}
+
+async function resolvePersistableSource(image: GeneratedImage): Promise<string> {
+  const inlineSource = dataUrlFromBase64(image)
+  if (inlineSource) return inlineSource
+
+  const source = image.url || ''
+  if (!source) return ''
+  if (source.startsWith('data:')) return source
+
+  if (/^(blob|https?):/i.test(source)) {
+    try {
+      const response = await fetch(source, { cache: 'force-cache' })
+      if (!response.ok) return ''
+      return await blobToDataUrl(await response.blob())
+    } catch {
+      return ''
+    }
+  }
+
+  return ''
+}
+
+function historyImageKey(item: GenerationHistoryItem, image: GeneratedImage, index: number) {
+  return image.storageKey || `${item.id}:${image.id || index}`
+}
+
 function normalizeHistoryItem(item: GenerationHistoryItem): GenerationHistoryItem {
   const images = item.images
-    ?.filter((image) => image.url || image.b64Json)
-    .map((image) => ({
+    ?.filter((image) => image.url || image.b64Json || image.storageKey)
+    .map((image, index) => ({
       id: image.id,
-      url: image.url || null,
-      b64Json: image.b64Json || null,
+      url: image.url && !/^(data|blob):/i.test(image.url) ? image.url : null,
+      b64Json: null,
       mimeType: image.mimeType || null,
       revisedPrompt: image.revisedPrompt || null,
+      storageKey: historyImageKey(item, image, index),
     }))
 
   return {
@@ -105,13 +211,7 @@ function trimImages(item: GenerationHistoryItem, count: number): GenerationHisto
 
 function persistHistory(items: GenerationHistoryItem[]): GenerationHistoryItem[] {
   const normalized = items.slice(0, maxHistoryItems).map(normalizeHistoryItem)
-  const attempts = [
-    normalized,
-    normalized.map((item, index) => (index < 2 ? trimImages(item, 2) : withoutImages(item))),
-    normalized.map((item, index) => (index === 0 ? trimImages(item, 1) : withoutImages(item))),
-    normalized.map(withoutImages),
-    normalized.slice(0, 1).map(withoutImages),
-  ]
+  const attempts = [normalized, normalized.map((item) => trimImages(item, 2)), normalized.map(withoutImages)]
 
   for (const candidate of attempts) {
     try {
@@ -127,13 +227,97 @@ export function saveHistory(items: GenerationHistoryItem[]) {
   persistHistory(items)
 }
 
-export function prependHistory(item: GenerationHistoryItem) {
-  return persistHistory([item, ...loadHistory()])
+async function writeHistoryImages(item: GenerationHistoryItem) {
+  if (!item.images?.length) return
+
+  await Promise.all(
+    item.images.map(async (image, index) => {
+      const source = await resolvePersistableSource(image)
+      if (!source) return
+
+      const record: HistoryImageRecord = {
+        key: historyImageKey(item, image, index),
+        source,
+        mimeType: image.mimeType || null,
+        revisedPrompt: image.revisedPrompt || null,
+        createdAt: item.createdAt,
+      }
+
+      await withImageStore('readwrite', (store) => store.put(record))
+    }),
+  )
+}
+
+async function pruneHistoryImages(items: GenerationHistoryItem[]) {
+  const keep = new Set(
+    items.flatMap((item) =>
+      (item.images ?? [])
+        .map((image, index) => historyImageKey(item, image, index))
+        .filter(Boolean),
+    ),
+  )
+
+  try {
+    const keys = await withImageStore<IDBValidKey[]>('readonly', (store) => store.getAllKeys())
+    if (!keys?.length) return
+
+    await Promise.all(
+      keys
+        .map((key) => String(key))
+        .filter((key) => !keep.has(key))
+        .map((key) => withImageStore('readwrite', (store) => store.delete(key))),
+    )
+  } catch {}
+}
+
+export async function hydrateHistoryImages(items: GenerationHistoryItem[]) {
+  if (!items.length) return items
+
+  const hydrated = await Promise.all(
+    items.map(async (item) => {
+      if (!item.images?.length) return item
+
+      const images = await Promise.all(
+        item.images.map(async (image, index) => {
+          if (image.url || image.b64Json) return image
+
+          const key = historyImageKey(item, image, index)
+
+          try {
+            const record = await withImageStore<HistoryImageRecord>('readonly', (store) => store.get(key))
+            if (!record?.source) return image
+
+            return {
+              ...image,
+              url: record.source,
+              mimeType: image.mimeType || record.mimeType,
+              revisedPrompt: image.revisedPrompt || record.revisedPrompt,
+              storageKey: key,
+            }
+          } catch {
+            return image
+          }
+        }),
+      )
+
+      return { ...item, images }
+    }),
+  )
+
+  return hydrated
+}
+
+export async function prependHistory(item: GenerationHistoryItem) {
+  const next = persistHistory([item, ...loadHistory()])
+  await writeHistoryImages(item).catch(() => undefined)
+  await pruneHistoryImages(next)
+  return hydrateHistoryImages(next)
 }
 
 export function clearHistory() {
   try {
     localStorage.removeItem(historyKey)
+    void withImageStore('readwrite', (store) => store.clear()).catch(() => undefined)
   } catch {}
 }
 

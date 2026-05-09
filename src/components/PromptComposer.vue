@@ -362,21 +362,21 @@ watch(prompt, () => {
           </button>
         </div>
       </div>
-      <div class="relative" @click="promptRef?.focus()">
+      <div class="prompt-field-shell" @click="promptRef?.focus()">
         <textarea
           id="prompt-input"
           ref="promptRef"
           v-model="prompt"
           :rows="layout === 'sheet' ? 5 : 6"
           maxlength="1200"
-          class="field-textarea pb-12 pr-3"
+          class="prompt-field-textarea"
           placeholder="一张极简咖啡品牌海报，暖色调，自然光，留白充足"
           autocomplete="off"
           spellcheck="false"
           @click.stop="promptRef?.focus()"
         ></textarea>
-        <div class="pointer-events-none absolute inset-x-2 bottom-2 flex items-end justify-between gap-2">
-          <span class="pointer-events-auto inline-flex items-center gap-1 rounded-full bg-paper/85 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em] text-muted backdrop-blur">
+        <div class="prompt-field-tools">
+          <span class="inline-flex items-center gap-1 font-mono text-[10px] uppercase tracking-[0.16em] text-muted">
             <Icon name="layers" :size="10" />
             模型
           </span>
@@ -386,7 +386,6 @@ watch(prompt, () => {
             variant="chip"
             align="end"
             aria-label="选择生成模型"
-            class="pointer-events-auto"
             :placeholder="modelChipLabel"
           />
         </div>
@@ -621,6 +620,47 @@ watch(prompt, () => {
 </template>
 
 <style scoped>
+.prompt-field-shell {
+  overflow: hidden;
+  border-radius: calc(var(--radius-panel) + 2px);
+  border: 1px solid rgb(var(--color-line));
+  background: rgb(var(--color-vellum) / 0.76);
+  box-shadow: var(--shadow-inner-paper);
+  transition: border-color 180ms var(--motion-soft), background 180ms var(--motion-soft), box-shadow 180ms var(--motion-soft);
+}
+
+.prompt-field-shell:focus-within {
+  border-color: rgb(var(--color-forest));
+  background: rgb(var(--color-vellum));
+  box-shadow: var(--focus-ring);
+}
+
+.prompt-field-textarea {
+  width: 100%;
+  resize: none;
+  border: 0;
+  background: transparent;
+  padding: 0.9rem 1rem 0.75rem;
+  color: rgb(var(--color-ink));
+  outline: none;
+  font-size: 15px;
+  line-height: 1.7;
+}
+
+.prompt-field-textarea::placeholder {
+  color: rgb(var(--color-muted) / 0.62);
+}
+
+.prompt-field-tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border-top: 1px solid rgb(var(--color-line) / 0.72);
+  background: linear-gradient(180deg, rgb(var(--color-paper-soft) / 0.28), rgb(var(--color-cream) / 0.34));
+  padding: 0.5rem 0.62rem;
+}
+
 .acc-enter-from,
 .acc-leave-to {
   opacity: 0;

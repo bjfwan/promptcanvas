@@ -2,7 +2,7 @@
 import { computed, defineAsyncComponent, nextTick, onMounted, ref, watch } from 'vue'
 import { resolveImageSource } from './api'
 import { customModelSentinel, qualityOptions, sizeOptions, styleOptions, stylePresetById } from './presets'
-import { clearDraft, clearHistory, loadDraft, loadHistory } from './storage'
+import { clearDraft, clearHistory, hydrateHistoryImages, loadDraft, loadHistory } from './storage'
 import type {
   ChatMessage,
   ChatUserMessage,
@@ -468,6 +468,7 @@ function historyMessages(item: GenerationHistoryItem): ChatMessage[] {
 }
 
 async function restoreHistory(item: GenerationHistoryItem) {
+  item = (await hydrateHistoryImages([item]))[0] || item
   prompt.value = item.prompt
   templateAnchorPrompt = item.prompt
   if (style.value !== item.style) {
@@ -662,6 +663,9 @@ watch(isDesktop, (desktop) => {
 
 onMounted(() => {
   void refreshHealth({ silent: true })
+  void hydrateHistoryImages(history.value).then((items) => {
+    history.value = items
+  })
 })
 </script>
 

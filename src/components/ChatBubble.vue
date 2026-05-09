@@ -270,9 +270,14 @@ function isImageReady(image: GeneratedImage, index: number) {
             </div>
 
             <div class="pointer-events-none absolute inset-0 z-10 grid place-items-center px-4" aria-hidden="true">
-              <div class="chat-pending-manifest">
-                <span class="chat-pending-manifest__value">{{ pendingPercentLabel }}</span>
-                <span class="chat-pending-manifest__label">{{ pendingStageLabel }}</span>
+              <div class="chat-pending-atelier">
+                <span class="chat-pending-atelier__plate">
+                  <i></i>
+                  <i></i>
+                  <i></i>
+                </span>
+                <span class="chat-pending-atelier__label">{{ pendingStageLabel }}</span>
+                <span class="chat-pending-atelier__meta">{{ pendingPercentLabel }}</span>
               </div>
             </div>
 
@@ -479,8 +484,9 @@ function isImageReady(image: GeneratedImage, index: number) {
 
 .chat-pending-bg {
   background: 
-    radial-gradient(circle at 30% 20%, rgb(var(--color-vellum) / 0.8) 0%, transparent 50%),
-    radial-gradient(circle at 70% 80%, rgb(var(--color-cream) / 0.6) 0%, transparent 50%),
+    linear-gradient(125deg, rgb(var(--color-paper-soft) / 0.72), transparent 42%),
+    linear-gradient(245deg, rgb(var(--color-cream) / 0.72), transparent 48%),
+    repeating-linear-gradient(90deg, rgb(var(--color-ink) / 0.035) 0 1px, transparent 1px 18px),
     rgb(var(--color-paper-soft));
   animation: pending-bg-shift 8s ease-in-out infinite alternate;
 }
@@ -556,6 +562,97 @@ function isImageReady(image: GeneratedImage, index: number) {
   letter-spacing: 0.3em;
   color: rgb(var(--color-muted));
   opacity: 0.6;
+}
+
+.chat-pending-atelier {
+  display: grid;
+  justify-items: center;
+  gap: 0.35rem;
+}
+
+.chat-pending-atelier__plate {
+  position: relative;
+  display: block;
+  width: 78px;
+  aspect-ratio: 1;
+  border-radius: 15px;
+  border: 1px solid rgb(var(--color-line-strong) / 0.5);
+  background:
+    linear-gradient(135deg, rgb(var(--color-vellum) / 0.66), rgb(var(--color-paper) / 0.28)),
+    repeating-linear-gradient(0deg, transparent 0 13px, rgb(var(--color-ink) / 0.05) 13px 14px),
+    repeating-linear-gradient(90deg, transparent 0 13px, rgb(var(--color-ink) / 0.05) 13px 14px);
+  box-shadow: var(--shadow-paper-1), inset 0 0 0 1px rgb(var(--color-paper) / 0.5);
+}
+
+.chat-pending-atelier__plate::before {
+  content: '';
+  position: absolute;
+  inset: 16%;
+  border: 1px solid rgb(var(--color-ink) / 0.16);
+  border-radius: 999px;
+  animation: chat-register 2.4s var(--motion-soft) infinite;
+}
+
+.chat-pending-atelier__plate i {
+  position: absolute;
+  left: 18%;
+  right: 18%;
+  height: 1px;
+  background: rgb(var(--color-accent) / 0.64);
+  animation: chat-mark 2s var(--motion-soft) infinite;
+}
+
+.chat-pending-atelier__plate i:nth-child(1) {
+  top: 27%;
+}
+
+.chat-pending-atelier__plate i:nth-child(2) {
+  top: 51%;
+  background: rgb(var(--color-forest) / 0.66);
+  animation-delay: 0.16s;
+}
+
+.chat-pending-atelier__plate i:nth-child(3) {
+  top: 72%;
+  background: rgb(var(--color-ochre) / 0.68);
+  animation-delay: 0.32s;
+}
+
+.chat-pending-atelier__label {
+  font-family: 'Fraunces', Georgia, serif;
+  font-size: 18px;
+  line-height: 1.1;
+  color: rgb(var(--color-ink));
+}
+
+.chat-pending-atelier__meta {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 9px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgb(var(--color-muted));
+}
+
+@keyframes chat-register {
+  0%, 100% {
+    opacity: 0.28;
+    transform: scale(0.98);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(1.04);
+  }
+}
+
+@keyframes chat-mark {
+  0%, 100% {
+    opacity: 0.32;
+    transform: translateX(-2px);
+  }
+  50% {
+    opacity: 0.86;
+    transform: translateX(2px);
+  }
 }
 
 .chat-pending-bar {
@@ -660,6 +757,8 @@ function isImageReady(image: GeneratedImage, index: number) {
 
 @media (prefers-reduced-motion: reduce) {
   .chat-pending-bg,
+  .chat-pending-atelier__plate::before,
+  .chat-pending-atelier__plate i,
   .chat-pending-footer__remain-dot,
   .chat-pending-layers span::after {
     animation: none;

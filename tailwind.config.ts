@@ -21,6 +21,7 @@ export default {
         accent: 'rgb(var(--color-accent) / <alpha-value>)',
         forest: 'rgb(var(--color-forest) / <alpha-value>)',
         ochre: 'rgb(var(--color-ochre) / <alpha-value>)',
+        blueprint: 'rgb(var(--color-blueprint) / <alpha-value>)',
       },
       letterSpacing: {
         tightish: '0',

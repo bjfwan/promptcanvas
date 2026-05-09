@@ -441,7 +441,7 @@ defineExpose({ focusInput })
       </div>
 
       <div
-        class="chat-dock__input relative z-30 mx-2.5 mb-2 rounded-[22px] bg-paper-soft border border-line transition-all focus-within:border-ink/30 focus-within:bg-paper sm:mx-3"
+        class="chat-dock__input relative z-30 mx-2.5 mb-2 bg-paper-soft border border-line transition-all focus-within:border-ink/30 focus-within:bg-paper sm:mx-3"
         :class="{ 'magic-pulse': isMagicPulsing }"
       >
         <textarea
@@ -464,8 +464,8 @@ defineExpose({ focusInput })
           @keydown="onKeydown"
         ></textarea>
 
-        <div class="absolute bottom-1.5 right-1.5 flex items-center gap-1.5 z-40">
-          <div class="chat-dock__indicators mr-1 hidden sm:flex items-center">
+        <div class="chat-dock__composer-actions">
+          <div class="chat-dock__indicators mr-auto flex items-center">
             <span
               v-if="isGenerating"
               class="inline-flex items-center gap-1 whitespace-nowrap px-1 font-mono text-[9px] uppercase tracking-[0.15em] text-muted"
@@ -619,9 +619,9 @@ defineExpose({ focusInput })
   position: relative;
   z-index: 1;
   width: 100%;
-  min-height: 46px;
+  min-height: 52px;
   max-height: 280px;
-  padding: 0.75rem 1rem 3.25rem 1rem;
+  padding: 0.8rem 1rem 0.45rem 1rem;
   resize: none;
   background: transparent;
   border: none;
@@ -653,6 +653,19 @@ defineExpose({ focusInput })
   -webkit-tap-highlight-color: transparent;
   transition: all 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
   box-shadow: 0 1px 2px rgb(var(--color-ink) / 0.05);
+  border-radius: 18px;
+  overflow: hidden;
+}
+
+.chat-dock__composer-actions {
+  position: relative;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  border-top: 1px solid rgb(var(--color-line) / 0.72);
+  background: linear-gradient(180deg, rgb(var(--color-vellum) / 0.42), rgb(var(--color-cream) / 0.46));
+  padding: 0.45rem;
 }
 
 .chat-dock__magic-inner {
@@ -739,11 +752,10 @@ defineExpose({ focusInput })
 .chat-dock__send-inner--busy::after {
   content: '';
   position: absolute;
-  inset: -2px;
+  inset: -4px;
   border-radius: 999px;
-  border: 2px solid transparent;
-  border-top-color: rgb(var(--color-paper));
-  animation: spin 1s linear infinite;
+  border: 1px solid rgb(var(--color-paper) / 0.48);
+  animation: send-hold 1.4s var(--motion-soft) infinite;
 }
 
 .chat-dock__send-inner--busy:hover {
@@ -755,9 +767,15 @@ defineExpose({ focusInput })
   z-index: 1;
 }
 
-@keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+@keyframes send-hold {
+  0%, 100% {
+    opacity: 0.38;
+    transform: scale(0.96);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.08);
+  }
 }
 
 .chat-dock__input:focus-within {
@@ -1061,7 +1079,7 @@ defineExpose({ focusInput })
 
 @media (max-width: 360px) {
   .chat-dock__textarea {
-    padding-bottom: 3.5rem;
+    padding-bottom: 0.5rem;
   }
 
   .chat-dock__magic-inner {
@@ -1243,6 +1261,7 @@ defineExpose({ focusInput })
 
 @media (prefers-reduced-motion: reduce) {
   .chat-dock__send-inner,
+  .chat-dock__send-inner--busy::after,
   .asset-chip,
   .style-chip,
   .chat-dock-attachments-enter-active,
@@ -1252,6 +1271,7 @@ defineExpose({ focusInput })
   .chat-dock-continuation-enter-active,
   .chat-dock-continuation-leave-active {
     transition: none;
+    animation: none;
   }
 }
 </style>

@@ -24,10 +24,11 @@ function iconFor(kind: 'info' | 'success' | 'error'): IconName {
         <div
           v-for="item in toast.items"
           :key="item.id"
-          class="pointer-events-auto flex items-start gap-2.5 rounded-2xl border bg-vellum/95 px-3.5 py-3 text-[13px] font-medium text-ink shadow-paper-3 backdrop-blur"
+          class="toast-card pointer-events-auto flex items-start gap-2.5 border bg-vellum/95 px-3.5 py-3 text-[13px] font-medium text-ink shadow-paper-3 backdrop-blur"
           :class="{
-            'border-line': item.kind !== 'error',
-            'border-accent/40 text-accent': item.kind === 'error',
+            'toast-card--success': item.kind === 'success',
+            'toast-card--info': item.kind === 'info',
+            'toast-card--error text-accent': item.kind === 'error',
           }"
           role="status"
         >
@@ -62,20 +63,55 @@ function iconFor(kind: 'info' | 'success' | 'error'): IconName {
 </template>
 
 <style scoped>
+.toast-card {
+  position: relative;
+  overflow: hidden;
+  border-radius: 14px;
+}
+
+.toast-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: rgb(var(--color-blueprint));
+}
+
+.toast-card--success {
+  border-color: rgb(var(--color-forest) / 0.36);
+}
+
+.toast-card--success::before {
+  background: rgb(var(--color-forest));
+}
+
+.toast-card--info {
+  border-color: rgb(var(--color-line-strong) / 0.7);
+}
+
+.toast-card--error {
+  border-color: rgb(var(--color-accent) / 0.42);
+  background: rgb(var(--color-accent) / 0.08);
+}
+
+.toast-card--error::before {
+  background: rgb(var(--color-accent));
+}
+
 .toast-enter-from {
   opacity: 0;
-  transform: translateY(-12px) scale(0.97);
+  transform: translateY(-10px) scale(0.985);
 }
 .toast-leave-to {
   opacity: 0;
-  transform: translateY(-8px) scale(0.97);
+  transform: translateY(-8px) scale(0.985);
 }
 .toast-enter-active,
 .toast-leave-active {
-  transition: transform 0.32s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.24s ease-out;
+  transition: transform 0.34s var(--motion-snap), opacity 0.22s ease-out;
 }
 .toast-move {
-  transition: transform 0.32s cubic-bezier(0.2, 0.8, 0.2, 1);
+  transition: transform 0.34s var(--motion-snap);
 }
 
 @media (prefers-reduced-motion: reduce) {

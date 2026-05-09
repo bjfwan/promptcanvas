@@ -111,7 +111,7 @@ export function useGenerationFlow(deps: GenerationFlowDeps) {
           mimeType: image.mimeType,
           revisedPrompt: image.revisedPrompt,
         }))
-      deps.history.value = prependHistory({
+      deps.history.value = await prependHistory({
         prompt: args.payload.prompt,
         style: args.payload.style,
         size: args.payload.size,

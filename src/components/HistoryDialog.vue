@@ -42,6 +42,11 @@ function formatDate(value: string) {
   }).format(new Date(value))
 }
 
+function hideBrokenImage(event: Event) {
+  const image = event.currentTarget as HTMLImageElement | null
+  if (image) image.hidden = true
+}
+
 function applyAndClose(item: GenerationHistoryItem) {
   emit('restore', item)
   close()
@@ -149,9 +154,12 @@ onBeforeUnmount(() => {
                   >
                     <div class="shrink-0">
                       <div
-                        v-if="item.images && item.images.length"
+                        v-if="item.images && item.images.length && resolveImageSource(item.images[0])"
                         class="relative h-20 w-20 overflow-hidden rounded-xl border border-line bg-paper-soft sm:h-24 sm:w-24"
                       >
+                        <span class="absolute inset-0 grid place-items-center text-muted" aria-hidden="true">
+                          <Icon name="frame" :size="18" />
+                        </span>
                         <img
                           :src="resolveImageSource(item.images[0])"
                           alt=""
@@ -159,12 +167,19 @@ onBeforeUnmount(() => {
                           decoding="async"
                           class="h-full w-full object-cover"
                           referrerpolicy="no-referrer"
+                          @error="hideBrokenImage"
                         />
                         <span
                           v-if="item.imageCount > 1"
                           class="absolute bottom-1 right-1 rounded-full bg-ink/75 px-1.5 py-px font-mono text-[9px] text-paper"
                         >
                           ×{{ item.imageCount }}
+                        </span>
+                        <span
+                          v-if="item.images[0].storageKey"
+                          class="absolute left-1 top-1 rounded-full bg-vellum/90 px-1.5 py-px font-mono text-[8px] uppercase tracking-[0.12em] text-forest shadow-paper-1"
+                        >
+                          saved
                         </span>
                       </div>
                       <div
@@ -202,7 +217,7 @@ onBeforeUnmount(() => {
                 v-else
                 class="rounded-2xl border border-dashed border-line bg-cream/40 px-4 py-6 text-center text-[12px] leading-5 text-muted"
               >
-                生成成功后，最近 8 条参数会保存在浏览器本地。
+                生成成功后，最近 12 条参数和可缓存图片会保存在浏览器本地。
               </p>
             </div>
           </div>

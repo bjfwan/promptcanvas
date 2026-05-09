@@ -4,42 +4,48 @@
 
 @layer base {
   :root {
-    font-size: clamp(0.9375rem, 0.875rem + 0.4vw, 1rem);
+    font-size: 16px;
     color-scheme: light;
-    --color-ink: 24 28 28;
-    --color-paper: 246 247 242;
-    --color-paper-soft: 228 235 229;
-    --color-cream: 239 235 222;
-    --color-vellum: 254 252 244;
-    --color-muted: 92 102 96;
-    --color-line: 203 209 196;
-    --color-line-strong: 142 155 143;
-    --color-accent: 190 76 50;
-    --color-forest: 45 122 101;
-    --color-ochre: 174 126 45;
-    --shadow-paper-1: 0 1px 0 rgb(var(--color-ink) / 0.04), 0 4px 12px -8px rgb(var(--color-ink) / 0.16);
-    --shadow-paper-2: 0 12px 32px -8px rgb(var(--color-ink) / 0.12), 0 4px 12px -4px rgb(var(--color-ink) / 0.08);
-    --shadow-paper-3: 0 24px 48px -12px rgb(var(--color-ink) / 0.18), 0 8px 16px -6px rgb(var(--color-ink) / 0.12);
-    --shadow-inner-paper: inset 0 1px 0 rgb(255 255 255 / 0.62), inset 0 -1px 0 rgb(var(--color-ink) / 0.04);
-    --focus-ring: 0 0 0 2px rgb(var(--color-paper)), 0 0 0 4px rgb(var(--color-ink) / 0.08);
+    --color-ink: 22 25 24;
+    --color-paper: 244 242 234;
+    --color-paper-soft: 224 232 224;
+    --color-cream: 232 228 216;
+    --color-vellum: 253 251 243;
+    --color-muted: 85 94 88;
+    --color-line: 195 202 189;
+    --color-line-strong: 120 136 121;
+    --color-accent: 158 54 42;
+    --color-forest: 38 111 94;
+    --color-ochre: 176 127 48;
+    --color-blueprint: 47 70 84;
+    --shadow-paper-1: 0 1px 0 rgb(255 255 255 / 0.72), 0 6px 18px -14px rgb(var(--color-ink) / 0.2);
+    --shadow-paper-2: 0 1px 0 rgb(255 255 255 / 0.64), 0 16px 36px -26px rgb(var(--color-ink) / 0.32), 0 7px 18px -16px rgb(var(--color-ink) / 0.18);
+    --shadow-paper-3: 0 1px 0 rgb(255 255 255 / 0.58), 0 30px 68px -38px rgb(var(--color-ink) / 0.42), 0 14px 34px -28px rgb(var(--color-ink) / 0.28);
+    --shadow-inner-paper: inset 0 1px 0 rgb(255 255 255 / 0.72), inset 0 -1px 0 rgb(var(--color-ink) / 0.05);
+    --focus-ring: 0 0 0 2px rgb(var(--color-paper)), 0 0 0 4px rgb(var(--color-forest) / 0.22);
+    --radius-field: 12px;
+    --radius-panel: 16px;
+    --motion-snap: cubic-bezier(0.16, 1, 0.3, 1);
+    --motion-soft: cubic-bezier(0.2, 0.8, 0.2, 1);
   }
 
   :root.theme-night {
     color-scheme: dark;
-    --color-ink: 246 245 237;
-    --color-paper: 15 18 18;
-    --color-paper-soft: 27 34 31;
-    --color-cream: 32 36 32;
-    --color-vellum: 38 42 38;
-    --color-muted: 176 181 169;
-    --color-line: 69 78 70;
-    --color-line-strong: 106 124 110;
-    --color-accent: 244 124 92;
-    --color-forest: 105 201 163;
-    --color-ochre: 225 178 92;
-    --shadow-paper-1: 0 1px 0 rgb(255 255 255 / 0.04), 0 10px 24px -18px rgb(0 0 0 / 0.74);
-    --shadow-paper-2: 0 1px 0 rgb(255 255 255 / 0.05), 0 18px 36px -22px rgb(0 0 0 / 0.82);
-    --shadow-paper-3: 0 1px 0 rgb(255 255 255 / 0.06), 0 34px 68px -26px rgb(0 0 0 / 0.9), 0 14px 28px -18px rgb(0 0 0 / 0.78);
+    --color-ink: 242 241 232;
+    --color-paper: 14 17 16;
+    --color-paper-soft: 25 33 30;
+    --color-cream: 30 35 31;
+    --color-vellum: 37 42 37;
+    --color-muted: 172 180 168;
+    --color-line: 66 78 69;
+    --color-line-strong: 111 129 111;
+    --color-accent: 235 112 86;
+    --color-forest: 105 202 162;
+    --color-ochre: 221 174 88;
+    --color-blueprint: 116 151 169;
+    --shadow-paper-1: 0 1px 0 rgb(255 255 255 / 0.04), 0 10px 26px -20px rgb(0 0 0 / 0.76);
+    --shadow-paper-2: 0 1px 0 rgb(255 255 255 / 0.06), 0 24px 48px -32px rgb(0 0 0 / 0.86);
+    --shadow-paper-3: 0 1px 0 rgb(255 255 255 / 0.07), 0 44px 88px -42px rgb(0 0 0 / 0.92), 0 18px 38px -30px rgb(0 0 0 / 0.82);
     --shadow-inner-paper: inset 0 1px 0 rgb(255 255 255 / 0.08), inset 0 -1px 0 rgb(0 0 0 / 0.26);
     --focus-ring: 0 0 0 3px rgb(var(--color-accent) / 0.22);
   }
@@ -80,12 +86,6 @@
 
   #app {
     min-height: 100dvh;
-  }
-
-  @media (orientation: landscape) and (max-height: 540px) {
-    :root {
-      font-size: clamp(0.875rem, 0.8125rem + 0.25vw, 0.9375rem);
-    }
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -155,8 +155,10 @@
 
   .field-select,
   .field-input {
-    @apply w-full rounded-[0.625rem] border border-line bg-cream/70 px-3.5 py-2.5 text-base font-medium text-ink outline-none transition placeholder:text-muted/60 hover:border-line-strong focus:border-ink focus:bg-paper sm:text-sm;
-    box-shadow: none;
+    @apply w-full border border-line px-3.5 py-2.5 text-base font-medium text-ink outline-none transition placeholder:text-muted/60 hover:border-line-strong focus:border-forest focus:bg-vellum sm:text-sm;
+    border-radius: var(--radius-field);
+    background: rgb(var(--color-vellum) / 0.72);
+    box-shadow: var(--shadow-inner-paper);
   }
 
   .field-select:focus,
@@ -165,7 +167,10 @@
   }
 
   .field-textarea {
-    @apply w-full resize-none rounded-2xl border border-line bg-cream/70 px-4 py-3 text-base leading-relaxed text-ink outline-none transition placeholder:text-muted/60 hover:border-line-strong focus:border-ink focus:bg-paper sm:text-[15px];
+    @apply w-full resize-none border border-line px-4 py-3 text-base leading-relaxed text-ink outline-none transition placeholder:text-muted/60 hover:border-line-strong focus:border-forest focus:bg-vellum sm:text-[15px];
+    border-radius: var(--radius-panel);
+    background: rgb(var(--color-vellum) / 0.72);
+    box-shadow: var(--shadow-inner-paper);
   }
 
   .field-textarea:focus {
@@ -177,19 +182,32 @@
   }
 
   .surface-1 {
-    @apply rounded-2xl border border-line bg-vellum/80;
+    @apply border border-line;
+    border-radius: var(--radius-panel);
+    background: rgb(var(--color-vellum) / 0.82);
+    box-shadow: var(--shadow-inner-paper);
   }
 
   .surface-2 {
-    @apply rounded-3xl border border-line bg-vellum shadow-paper-2;
+    @apply border border-line bg-vellum shadow-paper-2;
+    border-radius: calc(var(--radius-panel) + 4px);
   }
 
   .btn-primary {
-    @apply inline-flex items-center justify-center gap-2 rounded-2xl bg-ink text-paper transition hover:bg-ink/95 active:translate-y-px disabled:cursor-not-allowed disabled:bg-ink/35 disabled:text-paper/70;
+    @apply inline-flex items-center justify-center gap-2 bg-ink text-paper transition active:translate-y-px disabled:cursor-not-allowed disabled:bg-ink/35 disabled:text-paper/70;
+    border-radius: 14px;
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.12), 0 12px 26px -20px rgb(var(--color-ink) / 0.64);
+    transition-timing-function: var(--motion-soft);
+  }
+
+  .btn-primary:hover {
+    background: linear-gradient(135deg, rgb(var(--color-ink)), rgb(var(--color-blueprint)));
   }
 
   .btn-secondary {
-    @apply inline-flex items-center justify-center gap-2 rounded-full border border-line bg-vellum px-4 py-2.5 text-[13px] font-medium text-ink transition hover:border-line-strong hover:bg-cream;
+    @apply inline-flex items-center justify-center gap-2 border border-line bg-vellum px-4 py-2.5 text-[13px] font-medium text-ink transition hover:border-line-strong hover:bg-paper-soft;
+    border-radius: 12px;
+    box-shadow: var(--shadow-inner-paper);
   }
 
   .btn-quiet {
@@ -198,7 +216,9 @@
 
   .icon-btn,
   .icon-btn-sm {
-    @apply inline-grid place-items-center rounded-full border border-line bg-vellum text-ink transition hover:-translate-y-px hover:border-line-strong hover:bg-cream active:translate-y-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/15;
+    @apply inline-grid place-items-center border border-line bg-vellum text-ink transition hover:-translate-y-px hover:border-line-strong hover:bg-paper-soft active:translate-y-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-forest/20;
+    border-radius: 12px;
+    box-shadow: var(--shadow-inner-paper);
   }
 
   .icon-btn {
@@ -239,11 +259,14 @@
 
   .paper-bg {
     background-color: rgb(var(--color-paper));
-    background-image: url("data:image/svg+xml;utf8,%3Csvg viewBox='0 0 280 280' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch' seed='4'/%3E%3CfeColorMatrix values='0 0 0 0 0.09 0 0 0 0 0.075 0 0 0 0 0.06 0 0 0 0.07 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    background-image:
+      linear-gradient(115deg, rgb(var(--color-paper-soft) / 0.28), transparent 34%, rgb(var(--color-cream) / 0.28) 68%, transparent),
+      repeating-linear-gradient(90deg, rgb(var(--color-ink) / 0.018) 0 1px, transparent 1px 17px),
+      url("data:image/svg+xml;utf8,%3Csvg viewBox='0 0 280 280' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch' seed='4'/%3E%3CfeColorMatrix values='0 0 0 0 0.09 0 0 0 0 0.075 0 0 0 0 0.06 0 0 0 0.055 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   }
 
   .reveal {
-    animation: reveal-up 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+    animation: reveal-up 0.62s var(--motion-snap) both;
     animation-delay: var(--reveal-delay, 0ms);
   }
 
@@ -279,7 +302,7 @@
 
   .canvas-frame {
     width: 100%;
-    border-radius: 28px;
+    border-radius: 20px;
     overflow: hidden;
     position: relative;
     margin-inline: auto;
