@@ -236,8 +236,8 @@ onBeforeUnmount(() => {
                   <span
                     class="inline-flex items-center gap-1 rounded-full px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em]"
                     :class="provider.isConfigured.value
-                      ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
-                      : 'bg-amber-500/10 text-amber-700 dark:text-amber-300'"
+                      ? 'bg-forest/12 text-forest'
+                      : 'bg-ochre/12 text-ochre'"
                   >
                     <Icon :name="provider.isConfigured.value ? 'check' : 'warning'" :size="11" />
                     <span>{{ provider.isConfigured.value ? '已配置' : '未配置' }}</span>
@@ -349,8 +349,8 @@ onBeforeUnmount(() => {
                   class="mt-3 rounded-xl border px-3 py-2 text-[11px] leading-[1.6]"
                   :class="{
                     'border-line bg-paper-soft/60 text-muted': testStatus === 'testing',
-                    'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300': testStatus === 'success',
-                    'border-amber-500/40 bg-amber-500/[0.08] text-amber-700 dark:text-amber-300': testStatus === 'partial',
+                    'border-forest/35 bg-forest/10 text-forest': testStatus === 'success',
+                    'border-ochre/40 bg-ochre/[0.08] text-ochre': testStatus === 'partial',
                     'border-accent/40 bg-accent/[0.08] text-accent': testStatus === 'error',
                   }"
                   role="status"
@@ -481,7 +481,7 @@ onBeforeUnmount(() => {
                   min="1"
                   max="10"
                   step="1"
-                  class="w-full accent-ink"
+                  class="settings-range w-full"
                   aria-label="创意强度"
                 />
                 <div class="mt-1 flex justify-between font-mono text-[10px] uppercase tracking-[0.16em] text-muted">
@@ -519,6 +519,45 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.settings-range {
+  height: 28px;
+  appearance: none;
+  background: transparent;
+}
+
+.settings-range::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgb(var(--color-forest)), rgb(var(--color-ochre)));
+  box-shadow: inset 0 1px 0 rgb(var(--color-ink) / 0.08);
+}
+
+.settings-range::-webkit-slider-thumb {
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  margin-top: -7px;
+  border-radius: 999px;
+  border: 1px solid rgb(var(--color-line-strong));
+  background: rgb(var(--color-ivory));
+  box-shadow: var(--shadow-paper-2);
+}
+
+.settings-range::-moz-range-track {
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgb(var(--color-forest)), rgb(var(--color-ochre)));
+}
+
+.settings-range::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  border: 1px solid rgb(var(--color-line-strong));
+  background: rgb(var(--color-ivory));
+  box-shadow: var(--shadow-paper-2);
+}
+
 .dlg-fade-enter-from,
 .dlg-fade-leave-to {
   opacity: 0;

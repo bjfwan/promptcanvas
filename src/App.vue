@@ -521,9 +521,12 @@ async function restoreHistory(item: GenerationHistoryItem) {
     images.value = []
     activeImageIndex.value = 0
     lastRequestId.value = item.requestId || ''
+    const hadImages = item.imageCount > 0
     toast.info(
-      '已恢复历史参数',
-      item.referenceImageCount
+      hadImages ? '图片缓存已失效' : '已恢复历史参数',
+      hadImages
+        ? '已恢复提示词和参数，可重新生成'
+        : item.referenceImageCount
         ? '该历史的参考图不会保存在本地，请重新上传后再生成'
         : '该历史未保存图片，重新生成可再得一次',
     )
@@ -666,6 +669,7 @@ watch(style, (newValue, oldValue) => {
   }
   const preset = stylePresetById.get(newValue)
   if (!preset) return
+  const canReplacePrompt = !prompt.value.trim() || prompt.value === templateAnchorPrompt
   if (newValue === 'raw') {
     toast.info('已切换为「不套模板」', '直接发送你的原始提示词，不附加风格指引')
     return
@@ -674,10 +678,14 @@ watch(style, (newValue, oldValue) => {
     toast.info('已切换提示词模板', `${preset.label} · ${preset.accent}`)
     return
   }
-  prompt.value = preset.examplePrompt
-  templateAnchorPrompt = preset.examplePrompt
-  if (preset.defaultSize) size.value = preset.defaultSize
-  toast.info('已切换提示词模板', `${preset.label} · 输入框已更新`)
+  if (canReplacePrompt) {
+    prompt.value = preset.examplePrompt
+    templateAnchorPrompt = preset.examplePrompt
+    if (preset.defaultSize) size.value = preset.defaultSize
+    toast.info('已切换提示词模板', `${preset.label} · 输入框已更新`)
+  } else {
+    toast.info('已切换画面气质', `${preset.label} · 保留你已写的提示词`)
+  }
 })
 
 watch(isDesktop, (desktop) => {

@@ -5,12 +5,7 @@ import StyleSwatch from './StyleSwatch.vue'
 import { useFocusTrap } from '../composables/useFocusTrap'
 import { useBodyLock } from '../composables/useBodyLock'
 import { styleOptions } from '../presets'
-import { stylePrompts } from '../lib/imagesApi'
 import type { ImageStyle } from '../types'
-
-function styleHint(value: ImageStyle): string {
-  return stylePrompts[value] ?? ''
-}
 
 interface Props {
   open: boolean
@@ -82,7 +77,7 @@ onBeforeUnmount(() => {
         aria-label="选择画面风格"
         @click.stop
       >
-        <header class="relative flex items-start justify-between gap-3 px-5 pt-5">
+        <header class="style-sheet__header relative flex items-start justify-between gap-3 px-5 pt-5">
           <div class="absolute inset-x-0 top-2 grid place-items-center">
             <span class="h-1.5 w-10 rounded-full bg-line-strong/60"></span>
           </div>
@@ -104,56 +99,46 @@ onBeforeUnmount(() => {
         </header>
 
         <div class="touch-scroll-y flex-1 overflow-y-auto px-5 pb-[max(env(safe-area-inset-bottom,0px),1.25rem)] pt-4">
-          <ul class="grid grid-cols-1 gap-2.5 min-[420px]:grid-cols-2">
+          <ul class="style-sheet__grid">
             <li v-for="item in styleOptions" :key="item.value">
               <button
                 type="button"
-                class="group relative flex w-full items-center gap-3 rounded-2xl border bg-cream p-2.5 text-left transition"
-                :class="
-                  current === item.value
-                    ? 'border-ink bg-ink text-paper shadow-paper-2'
-                    : 'border-line text-ink hover:-translate-y-px hover:border-line-strong hover:bg-paper-soft hover:shadow-paper-1'
-                "
+                class="style-mode-card"
+                :class="{ 'style-mode-card--active': current === item.value }"
                 :aria-pressed="current === item.value"
                 @click="pick(item.value)"
               >
-                <StyleSwatch :variant="item.value" :active="current === item.value" :size="40" />
-                <span class="min-w-0 flex-1">
-                  <span class="flex items-center gap-1">
-                    <span class="block text-[13px] font-medium leading-tight">{{ item.label }}</span>
+                <span class="style-mode-card__rail" aria-hidden="true"></span>
+                <StyleSwatch :variant="item.value" :active="current === item.value" :size="42" />
+                <span class="style-mode-card__body">
+                  <span class="style-mode-card__top">
+                    <span class="style-mode-card__title">{{ item.label }}</span>
                     <Icon
                       v-if="current === item.value"
                       name="check"
                       :size="12"
-                      class="text-paper/90"
+                      class="style-mode-card__check"
                     />
                   </span>
-                  <span
-                    class="mt-0.5 block text-[10px] uppercase tracking-[0.16em]"
-                    :class="current === item.value ? 'text-paper/55' : 'text-muted/85'"
-                  >
-                    {{ item.accent }}
-                  </span>
+                  <span class="style-mode-card__accent">{{ item.accent }} · {{ item.description }}</span>
                   <span
                     v-if="item.value === 'raw'"
-                    class="sheet-style-preview mt-1.5 text-[11px] leading-[1.4]"
-                    :class="current === item.value ? 'text-paper/75' : 'text-forest'"
+                    class="style-mode-card__preview sheet-style-preview"
                   >
-                    ✓ 不附加任何风格指引，原样发送
+                    不附加任何风格指引，原样发送
                   </span>
                   <span
                     v-else
-                    class="sheet-style-preview mt-1.5 block text-[11px] leading-[1.4]"
-                    :class="current === item.value ? 'text-paper/65' : 'text-muted/85'"
+                    class="style-mode-card__preview sheet-style-preview"
                   >
-                    {{ styleHint(item.value) }}
+                    {{ item.examplePrompt || item.description }}
                   </span>
                 </span>
               </button>
             </li>
           </ul>
 
-          <p class="mt-5 text-[11px] leading-5 text-muted">
+          <p class="style-sheet__note mt-5 text-[11px] leading-5 text-muted">
             选风格只切换画面气质，不会替换你已经写好的提示词。如需更多参数（尺寸、数量、Seed 等），请在顶部进入设置。
           </p>
         </div>
@@ -165,6 +150,153 @@ onBeforeUnmount(() => {
 <style scoped>
 .style-sheet {
   max-height: min(84dvh, 720px);
+  background:
+    linear-gradient(180deg, rgb(var(--color-ivory) / 0.74), rgb(var(--color-vellum) / 0.96)),
+    rgb(var(--color-paper));
+}
+
+.style-sheet__header {
+  background:
+    linear-gradient(180deg, rgb(var(--color-ivory) / 0.52), transparent),
+    linear-gradient(90deg, rgb(var(--color-sage) / 0.12), transparent 46%);
+}
+
+.style-sheet__grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.62rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+@media (min-width: 420px) {
+  .style-sheet__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.style-mode-card {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.72rem;
+  min-height: 104px;
+  width: 100%;
+  overflow: hidden;
+  border-radius: 18px;
+  border: 1px solid rgb(var(--color-line));
+  background:
+    linear-gradient(135deg, rgb(var(--color-ivory) / 0.72), rgb(var(--color-vellum) / 0.48)),
+    rgb(var(--color-cream) / 0.2);
+  padding: 0.76rem 0.82rem 0.76rem 0.95rem;
+  color: rgb(var(--color-ink));
+  text-align: left;
+  box-shadow: var(--shadow-inner-paper);
+  transition: transform 170ms var(--motion-press), border-color 170ms var(--motion-soft), background-color 170ms var(--motion-soft), box-shadow 190ms var(--motion-soft), color 170ms var(--motion-soft);
+}
+
+.style-mode-card:hover {
+  transform: translateY(-1px);
+  border-color: rgb(var(--color-line-strong));
+  background: rgb(var(--color-ivory) / 0.82);
+  box-shadow: var(--shadow-paper-1), var(--shadow-inner-paper);
+}
+
+.style-mode-card--active {
+  border-color: rgb(var(--color-ink));
+  background:
+    linear-gradient(135deg, rgb(var(--color-ink)), rgb(var(--color-blueprint))),
+    rgb(var(--color-ink));
+  color: rgb(var(--color-paper));
+  box-shadow: var(--shadow-paper-2);
+}
+
+.style-mode-card__rail {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: rgb(var(--color-forest));
+  opacity: 0.75;
+}
+
+.style-sheet__grid li:nth-child(2n) .style-mode-card__rail {
+  background: rgb(var(--color-accent));
+}
+
+.style-sheet__grid li:nth-child(3n) .style-mode-card__rail {
+  background: rgb(var(--color-ochre));
+}
+
+.style-sheet__grid li:nth-child(4n) .style-mode-card__rail {
+  background: rgb(var(--color-blueprint));
+}
+
+.style-mode-card--active .style-mode-card__rail {
+  width: 4px;
+  background: rgb(var(--color-ochre));
+  opacity: 1;
+}
+
+.style-mode-card__body {
+  display: grid;
+  min-width: 0;
+  gap: 0.24rem;
+}
+
+.style-mode-card__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  gap: 0.4rem;
+}
+
+.style-mode-card__title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 740;
+  line-height: 1.1;
+}
+
+.style-mode-card__check {
+  color: rgb(var(--color-paper) / 0.9);
+}
+
+.style-mode-card__accent {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 9px;
+  font-weight: 620;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgb(var(--color-muted));
+}
+
+.style-mode-card--active .style-mode-card__accent {
+  color: rgb(var(--color-paper) / 0.6);
+}
+
+.style-mode-card__preview {
+  margin-top: 0.2rem;
+  display: block;
+  color: rgb(var(--color-muted));
+}
+
+.style-mode-card--active .style-mode-card__preview {
+  color: rgb(var(--color-paper) / 0.72);
+}
+
+.style-sheet__note {
+  border-radius: 14px;
+  border: 1px solid rgb(var(--color-line) / 0.72);
+  background: rgb(var(--color-ivory) / 0.42);
+  padding: 0.75rem 0.85rem;
 }
 
 .sheet-style-preview {
@@ -200,6 +332,7 @@ onBeforeUnmount(() => {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .style-mode-card,
   .style-scrim-enter-active,
   .style-scrim-leave-active,
   .style-sheet-enter-active,

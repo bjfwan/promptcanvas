@@ -300,7 +300,8 @@ export async function hydrateHistoryImages(items: GenerationHistoryItem[]) {
         }),
       )
 
-      return { ...item, images }
+      const usableImages = images.filter((image) => image.url || image.b64Json)
+      return { ...item, images: usableImages.length ? usableImages : undefined }
     }),
   )
 

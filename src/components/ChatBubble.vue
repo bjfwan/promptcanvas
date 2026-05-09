@@ -483,6 +483,9 @@ function isImageReady(image: GeneratedImage, index: number) {
 }
 
 .chat-pending-bg {
+  contain: paint;
+  transform: translateZ(0);
+  will-change: transform;
   background: 
     linear-gradient(125deg, rgb(var(--color-paper-soft) / 0.72), transparent 42%),
     linear-gradient(245deg, rgb(var(--color-cream) / 0.72), transparent 48%),
@@ -500,6 +503,8 @@ function isImageReady(image: GeneratedImage, index: number) {
   gap: 0.45rem;
   opacity: 0.48;
   transform: perspective(700px) rotateX(6deg);
+  contain: paint;
+  will-change: transform;
 }
 
 .chat-pending-layers span {
@@ -582,6 +587,8 @@ function isImageReady(image: GeneratedImage, index: number) {
     repeating-linear-gradient(0deg, transparent 0 13px, rgb(var(--color-ink) / 0.05) 13px 14px),
     repeating-linear-gradient(90deg, transparent 0 13px, rgb(var(--color-ink) / 0.05) 13px 14px);
   box-shadow: var(--shadow-paper-1), inset 0 0 0 1px rgb(var(--color-paper) / 0.5);
+  contain: paint;
+  transform: translateZ(0);
 }
 
 .chat-pending-atelier__plate::before {

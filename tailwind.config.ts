@@ -22,6 +22,9 @@ export default {
         forest: 'rgb(var(--color-forest) / <alpha-value>)',
         ochre: 'rgb(var(--color-ochre) / <alpha-value>)',
         blueprint: 'rgb(var(--color-blueprint) / <alpha-value>)',
+        sage: 'rgb(var(--color-sage) / <alpha-value>)',
+        clay: 'rgb(var(--color-clay) / <alpha-value>)',
+        ivory: 'rgb(var(--color-ivory) / <alpha-value>)',
       },
       letterSpacing: {
         tightish: '0',

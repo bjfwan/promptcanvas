@@ -259,28 +259,28 @@ function isImageReady(image: GeneratedImage, index: number) {
         </div>
       </div>
 
-      <div class="grid grid-cols-2 gap-2 sm:grid-cols-5">
-        <button type="button" class="btn-secondary rounded-xl px-3 py-3 sm:py-2.5 sm:text-xs" @click="emit('remix', activeImage, activeImageIndex)">
+      <div class="canvas-action-grid">
+        <button type="button" class="canvas-action canvas-action--primary" @click="emit('remix', activeImage, activeImageIndex)">
           <Icon name="sparkle" :size="14" />
           接着画
         </button>
-        <button type="button" class="btn-secondary rounded-xl px-3 py-3 sm:py-2.5 sm:text-xs" @click="emit('download', activeImage, activeImageIndex)">
+        <button type="button" class="canvas-action" @click="emit('download', activeImage, activeImageIndex)">
           <Icon name="download" :size="14" />
           下载
         </button>
-        <button type="button" class="btn-secondary rounded-xl px-3 py-3 sm:py-2.5 sm:text-xs" @click="emit('open-lightbox', activeImageIndex)">
+        <button type="button" class="canvas-action" @click="emit('open-lightbox', activeImageIndex)">
           <Icon name="zoomIn" :size="14" />
           放大
         </button>
         <button
           type="button"
-          class="btn-secondary rounded-xl px-3 py-3 sm:py-2.5 sm:text-xs"
+          class="canvas-action"
           @click="emit('copy', activeImage.revisedPrompt || promptPreview, '已复制提示词')"
         >
           <Icon name="copy" :size="14" />
           复制提示词
         </button>
-        <button type="button" class="btn-secondary rounded-xl px-3 py-3 sm:py-2.5 sm:text-xs" @click="emit('export')">
+        <button type="button" class="canvas-action" @click="emit('export')">
           <Icon name="share" :size="14" />
           导出参数
         </button>
@@ -363,7 +363,7 @@ function isImageReady(image: GeneratedImage, index: number) {
               v-for="item in quickPrompts"
               :key="item.title"
               type="button"
-              class="rounded-2xl border border-line bg-vellum/80 px-3 py-2.5 text-left transition hover:-translate-y-px hover:border-line-strong hover:bg-cream hover:shadow-paper-1"
+              class="canvas-prompt-card"
               @click="emit('pick-prompt', item.prompt)"
             >
               <span class="block font-mono text-[10px] uppercase tracking-[0.18em] text-muted">{{ item.title }}</span>
@@ -400,12 +400,111 @@ function isImageReady(image: GeneratedImage, index: number) {
 
 <style scoped>
 .chat-pending-bg {
+  contain: paint;
+  transform: translateZ(0);
+  will-change: transform;
   background:
     linear-gradient(125deg, rgb(var(--color-paper-soft) / 0.72), transparent 42%),
     linear-gradient(245deg, rgb(var(--color-cream) / 0.72), transparent 48%),
     repeating-linear-gradient(90deg, rgb(var(--color-ink) / 0.035) 0 1px, transparent 1px 22px),
     rgb(var(--color-paper-soft));
   animation: pending-bg-shift 8s ease-in-out infinite alternate;
+}
+
+.canvas-action-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+@media (min-width: 640px) {
+  .canvas-action-grid {
+    grid-template-columns: minmax(8rem, 1.25fr) repeat(4, minmax(0, 1fr));
+  }
+}
+
+.canvas-action {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  min-height: 44px;
+  border-radius: 13px;
+  border: 1px solid rgb(var(--color-line));
+  background: rgb(var(--color-ivory) / 0.6);
+  color: rgb(var(--color-ink));
+  font-size: 12px;
+  font-weight: 720;
+  box-shadow: var(--shadow-inner-paper);
+  transition: transform 160ms var(--motion-press), background-color 160ms var(--motion-soft), border-color 160ms var(--motion-soft), box-shadow 180ms var(--motion-soft), color 160ms var(--motion-soft);
+}
+
+.canvas-action:hover {
+  transform: translateY(-1px);
+  border-color: rgb(var(--color-line-strong));
+  background: rgb(var(--color-vellum));
+  box-shadow: var(--shadow-paper-1), var(--shadow-inner-paper);
+}
+
+.canvas-action:active {
+  transform: translateY(0);
+}
+
+.canvas-action--primary {
+  border-color: rgb(var(--color-ink));
+  background:
+    linear-gradient(135deg, rgb(var(--color-ink)), rgb(var(--color-blueprint))),
+    rgb(var(--color-ink));
+  color: rgb(var(--color-paper));
+  box-shadow: var(--shadow-paper-2);
+}
+
+.canvas-action--primary:hover {
+  border-color: rgb(var(--color-ink));
+  background:
+    linear-gradient(135deg, rgb(var(--color-ink)), rgb(var(--color-forest))),
+    rgb(var(--color-ink));
+}
+
+.canvas-prompt-card {
+  position: relative;
+  display: block;
+  min-height: 128px;
+  overflow: hidden;
+  border-radius: 17px;
+  border: 1px solid rgb(var(--color-line));
+  background:
+    linear-gradient(135deg, rgb(var(--color-ivory) / 0.7), rgb(var(--color-vellum) / 0.44)),
+    rgb(var(--color-cream) / 0.26);
+  padding: 0.75rem;
+  text-align: left;
+  box-shadow: var(--shadow-inner-paper);
+  transition: transform 160ms var(--motion-press), background-color 160ms var(--motion-soft), border-color 160ms var(--motion-soft), box-shadow 180ms var(--motion-soft);
+}
+
+.canvas-prompt-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: rgb(var(--color-forest));
+  opacity: 0.7;
+}
+
+.canvas-prompt-card:nth-child(2n)::before {
+  background: rgb(var(--color-accent));
+}
+
+.canvas-prompt-card:nth-child(3n)::before {
+  background: rgb(var(--color-ochre));
+}
+
+.canvas-prompt-card:hover {
+  transform: translateY(-1px);
+  border-color: rgb(var(--color-line-strong));
+  background: rgb(var(--color-ivory) / 0.78);
+  box-shadow: var(--shadow-paper-1), var(--shadow-inner-paper);
 }
 
 .canvas-pending-layers {
@@ -417,6 +516,8 @@ function isImageReady(image: GeneratedImage, index: number) {
   gap: 0.6rem;
   opacity: 0.5;
   transform: perspective(900px) rotateX(7deg);
+  contain: paint;
+  will-change: transform;
 }
 
 .canvas-pending-layers span {
@@ -503,6 +604,8 @@ function isImageReady(image: GeneratedImage, index: number) {
     repeating-linear-gradient(90deg, transparent 0 18px, rgb(var(--color-ink) / 0.045) 18px 19px);
   box-shadow: var(--shadow-paper-2), inset 0 0 0 1px rgb(var(--color-paper) / 0.5);
   overflow: hidden;
+  contain: paint;
+  transform: translateZ(0);
 }
 
 .atelier-process__plate::before,
@@ -705,6 +808,11 @@ function isImageReady(image: GeneratedImage, index: number) {
   }
 
   .chat-pending-bar::after {
+    transition: none;
+  }
+
+  .canvas-action,
+  .canvas-prompt-card {
     transition: none;
   }
 }

@@ -363,16 +363,17 @@ onBeforeUnmount(() => {
   padding: 0 2.25rem 0 0.875rem;
   border-radius: var(--radius-field);
   border: 1px solid rgb(var(--color-line));
-  background: rgb(var(--color-cream) / 0.65);
+  background: rgb(var(--color-ivory) / 0.58);
   color: rgb(var(--color-ink));
   text-align: left;
   cursor: pointer;
-  transition: border-color 160ms ease, background-color 160ms ease, box-shadow 180ms ease, transform 160ms ease;
+  box-shadow: var(--shadow-inner-paper);
+  transition: border-color 160ms var(--motion-soft), background-color 160ms var(--motion-soft), box-shadow 180ms var(--motion-soft), transform 160ms var(--motion-press), color 160ms var(--motion-soft);
 }
 
 .select-trigger:hover {
   border-color: rgb(var(--color-line-strong));
-  background: rgb(var(--color-cream));
+  background: rgb(var(--color-ivory) / 0.82);
 }
 
 .select-trigger:focus-visible {
@@ -383,8 +384,8 @@ onBeforeUnmount(() => {
 
 .select-trigger.is-open {
   border-color: rgb(var(--color-forest));
-  background: rgb(var(--color-paper));
-  box-shadow: 0 1px 0 rgb(var(--color-ink) / 0.04), 0 0 0 3px rgb(var(--color-ink) / 0.08);
+  background: rgb(var(--color-vellum));
+  box-shadow: var(--focus-ring);
 }
 
 .select-trigger.is-placeholder {
@@ -397,14 +398,14 @@ onBeforeUnmount(() => {
   max-width: 100%;
   border-radius: 999px;
   padding: 0 1.75rem 0 0.625rem;
-  background: rgb(var(--color-vellum) / 0.85);
+  background: rgb(var(--color-ivory) / 0.66);
   border-color: rgb(var(--color-line-strong));
   font-weight: 500;
   letter-spacing: 0.01em;
 }
 
 .select-trigger--chip:hover {
-  background: rgb(var(--color-cream));
+  background: rgb(var(--color-vellum));
   border-color: rgb(var(--color-ink));
 }
 
@@ -456,7 +457,9 @@ onBeforeUnmount(() => {
 
 .select-popover {
   border-radius: 14px;
-  background: rgb(var(--color-cream) / 0.98);
+  background:
+    linear-gradient(180deg, rgb(var(--color-ivory) / 0.96), rgb(var(--color-vellum) / 0.96)),
+    rgb(var(--color-vellum));
   border: 1px solid rgb(var(--color-line-strong));
   box-shadow: var(--shadow-paper-3);
   overflow: hidden;

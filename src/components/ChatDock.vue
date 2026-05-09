@@ -60,6 +60,8 @@ const customModelInputRef = ref<HTMLInputElement | null>(null)
 const isMagicPulsing = ref(false)
 const magicMenuOpen = ref(false)
 let dockResizeObserver: ResizeObserver | null = null
+let lastReportedHeight = 0
+let layoutFrame = 0
 
 const discoveredModels = useDiscoveredModels()
 const { vibrate } = useVibration()
@@ -148,13 +150,20 @@ function effectiveViewportHeight() {
 function reportLayout() {
   const el = dockRef.value
   if (!el) return
-  emit('layout-change', Math.round(el.offsetHeight))
+  const nextHeight = Math.round(el.offsetHeight)
+  if (Math.abs(nextHeight - lastReportedHeight) <= 1) return
+  lastReportedHeight = nextHeight
+  emit('layout-change', nextHeight)
 }
 
 function syncLayoutSoon() {
   nextTick(() => {
-    autosize()
-    reportLayout()
+    if (layoutFrame) window.cancelAnimationFrame(layoutFrame)
+    layoutFrame = window.requestAnimationFrame(() => {
+      layoutFrame = 0
+      autosize()
+      reportLayout()
+    })
   })
 }
 
@@ -302,6 +311,10 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  if (layoutFrame) {
+    window.cancelAnimationFrame(layoutFrame)
+    layoutFrame = 0
+  }
   dockResizeObserver?.disconnect()
   dockResizeObserver = null
   window.removeEventListener('resize', throttledLayoutSync)
@@ -372,7 +385,7 @@ defineExpose({ focusInput })
     </div>
 
     <div
-      class="relative mx-2.5 rounded-[26px] border border-line-strong/70 bg-vellum/95 shadow-paper-3 backdrop-blur sm:mx-3 sm:rounded-[28px]"
+      class="chat-dock__shell relative mx-2.5 rounded-[26px] border border-line-strong/70 bg-vellum/95 shadow-paper-3 backdrop-blur sm:mx-3 sm:rounded-[28px]"
       :class="{ 'chat-dock__shell--focused': focused }"
     >
       <input
@@ -407,7 +420,7 @@ defineExpose({ focusInput })
         </div>
       </Transition>
 
-      <div class="flex items-center gap-1.5 px-3 pb-1.5 pt-2.5 relative z-20">
+      <div class="chat-dock__modebar relative z-20">
         <button
           type="button"
           class="chat-dock__action-btn shrink-0"
@@ -453,7 +466,7 @@ defineExpose({ focusInput })
       </div>
 
       <div
-        class="chat-dock__input relative z-30 mx-2.5 mb-2 bg-paper-soft border border-line focus-within:border-ink/30 focus-within:bg-paper sm:mx-3"
+        class="chat-dock__input relative z-30 mx-2.5 mb-2 border border-line bg-paper-soft focus-within:border-ink/30 focus-within:bg-paper sm:mx-3"
         :class="{ 'magic-pulse': isMagicPulsing }"
       >
         <textarea
@@ -610,7 +623,28 @@ defineExpose({ focusInput })
   --chat-dock-radius: 28px;
   transition: bottom 220ms cubic-bezier(0.2, 0.8, 0.2, 1),
     padding-bottom 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
-  will-change: bottom;
+  will-change: transform;
+}
+
+.chat-dock__shell {
+  background:
+    linear-gradient(180deg, rgb(var(--color-ivory) / 0.84), rgb(var(--color-vellum) / 0.9)),
+    rgb(var(--color-vellum));
+  contain: layout paint style;
+}
+
+.chat-dock__modebar {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.68rem 0.78rem 0.46rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.chat-dock__modebar::-webkit-scrollbar {
+  display: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -652,8 +686,7 @@ defineExpose({ focusInput })
   -webkit-user-select: text;
   -webkit-tap-highlight-color: transparent;
   cursor: text;
-  transition: max-height 220ms cubic-bezier(0.2, 0.8, 0.2, 1),
-    height 140ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  transition: color 160ms var(--motion-soft), background-color 160ms var(--motion-soft);
 }
 
 .chat-dock__textarea::-webkit-scrollbar {
@@ -663,8 +696,8 @@ defineExpose({ focusInput })
 .chat-dock__input {
   cursor: text;
   -webkit-tap-highlight-color: transparent;
-  transition: all 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
-  box-shadow: 0 1px 2px rgb(var(--color-ink) / 0.05);
+  transition: border-color 180ms var(--motion-soft), background-color 180ms var(--motion-soft), box-shadow 200ms var(--motion-soft);
+  box-shadow: var(--shadow-inner-paper);
   border-radius: 18px;
   overflow: hidden;
 }
@@ -676,8 +709,10 @@ defineExpose({ focusInput })
   align-items: center;
   gap: 0.45rem;
   border-top: 1px solid rgb(var(--color-line) / 0.72);
-  background: linear-gradient(180deg, rgb(var(--color-vellum) / 0.42), rgb(var(--color-cream) / 0.46));
-  padding: 0.45rem;
+  background:
+    linear-gradient(180deg, rgb(var(--color-vellum) / 0.36), rgb(var(--color-cream) / 0.34)),
+    rgb(var(--color-ivory) / 0.32);
+  padding: 0.5rem;
 }
 
 .chat-dock__magic-inner {
@@ -694,7 +729,7 @@ defineExpose({ focusInput })
   color: rgb(var(--color-forest));
   font-size: 12px;
   font-weight: 760;
-  transition: all 160ms ease;
+  transition: transform 150ms var(--motion-press), background-color 150ms var(--motion-soft), color 150ms var(--motion-soft), border-color 150ms var(--motion-soft), box-shadow 170ms var(--motion-soft);
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
   box-shadow: 0 8px 18px -16px rgb(var(--color-forest) / 0.55);
@@ -721,7 +756,7 @@ defineExpose({ focusInput })
   color: rgb(var(--color-accent));
   border: 1px solid rgb(var(--color-accent) / 0.2);
   cursor: pointer;
-  transition: all 140ms ease;
+  transition: transform 140ms var(--motion-press), background-color 140ms var(--motion-soft), color 140ms var(--motion-soft);
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -740,7 +775,7 @@ defineExpose({ focusInput })
   background: rgb(var(--color-ink) / 0.04);
   color: rgb(var(--color-ink) / 0.2);
   border: 1px solid transparent;
-  transition: all 0.24s cubic-bezier(0.2, 0.8, 0.2, 1);
+  transition: transform 170ms var(--motion-press), background-color 170ms var(--motion-soft), color 170ms var(--motion-soft), box-shadow 190ms var(--motion-soft);
   cursor: not-allowed;
 }
 
@@ -748,7 +783,7 @@ defineExpose({ focusInput })
   background: rgb(var(--color-ink));
   color: rgb(var(--color-paper));
   cursor: pointer;
-  box-shadow: 0 4px 12px rgb(var(--color-ink) / 0.2);
+  box-shadow: 0 10px 22px -16px rgb(var(--color-ink) / 0.65);
 }
 
 .chat-dock__send-inner--ready:active {
@@ -819,10 +854,10 @@ defineExpose({ focusInput })
   width: 32px;
   height: 32px;
   border-radius: 999px;
-  background: rgb(var(--color-cream));
+  background: rgb(var(--color-ivory) / 0.66);
   border: 1px solid rgb(var(--color-line-strong) / 0.6);
   color: rgb(var(--color-muted));
-  transition: all 160ms ease;
+  transition: transform 150ms var(--motion-press), background-color 150ms var(--motion-soft), color 150ms var(--motion-soft), border-color 150ms var(--motion-soft);
   cursor: pointer;
 }
 
@@ -873,7 +908,7 @@ defineExpose({ focusInput })
   max-width: clamp(6.75rem, 33vw, 10.5rem);
   border-radius: 999px;
   padding: 0 1.7rem 0 0.7rem;
-  background: rgb(var(--color-cream));
+  background: rgb(var(--color-ivory) / 0.68);
   border-color: rgb(var(--color-line-strong));
   font-size: 12px;
   font-weight: 500;
@@ -910,7 +945,7 @@ defineExpose({ focusInput })
   height: 34px;
   padding: 0 0.7rem 0 0.45rem;
   border-radius: 999px;
-  background: rgb(var(--color-cream));
+  background: rgb(var(--color-ivory) / 0.68);
   border: 1px solid rgb(var(--color-line-strong));
   color: rgb(var(--color-ink));
   font-size: 12px;
@@ -945,7 +980,7 @@ defineExpose({ focusInput })
   height: 34px;
   padding: 0 0.7rem;
   border-radius: 999px;
-  background: rgb(var(--color-cream));
+  background: rgb(var(--color-ivory) / 0.68);
   border: 1px solid rgb(var(--color-line-strong));
   color: rgb(var(--color-ink));
   font-size: 12px;

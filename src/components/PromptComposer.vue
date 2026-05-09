@@ -303,70 +303,12 @@ watch(prompt, () => {
         </div>
       </Transition>
 
-      <div class="flex items-center justify-between">
+      <div class="flex items-center justify-between gap-3">
         <label for="prompt-input" class="label inline-flex items-center gap-1.5">
           <Icon name="pencil" :size="12" />
           <span>提示词</span>
         </label>
-        <div class="flex items-center gap-1">
-          <button
-            type="button"
-            class="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium text-muted transition hover:bg-paper-soft hover:text-ink"
-            :disabled="props.referenceImages.length >= maxReferenceImages"
-            @click="openReferencePicker"
-          >
-            <Icon :name="hasReferenceImages ? 'image' : 'upload'" :size="11" />
-            <span>{{ hasReferenceImages ? `参考图 ${props.referenceImages.length}` : '参考图' }}</span>
-          </button>
-          <div class="relative">
-            <button
-              v-if="prompt.length"
-              type="button"
-              class="inline-flex items-center gap-1.5 rounded-full border border-forest/20 bg-forest/10 px-2.5 py-1 text-[11px] font-semibold text-forest transition hover:border-forest/35 hover:bg-forest/15"
-              aria-label="智能优化提示词"
-              :aria-expanded="magicMenuOpen"
-              @click.stop="magicMenuOpen = !magicMenuOpen"
-            >
-              <Icon name="sparkle" :size="11" />
-              <span>智能优化</span>
-            </button>
-            <MagicEnhanceMenu
-              v-if="magicMenuOpen"
-              :prompt="prompt"
-              :image-style="imageStyle"
-              :has-reference-images="hasReferenceImages"
-              @enhance="(result: EnhanceResult) => { emit('magic-enhance', result); magicMenuOpen = false }"
-              @close="magicMenuOpen = false"
-            />
-          </div>
-          <button
-            v-if="props.canUndoEnhance"
-            type="button"
-            class="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium text-accent/70 transition hover:bg-accent/10 hover:text-accent"
-            @click="emit('undo-enhance')"
-          >
-            <Icon name="reset" :size="11" />
-            <span>撤销魔法</span>
-          </button>
-          <button
-            v-if="prompt.length"
-            type="button"
-            class="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium text-muted transition hover:bg-paper-soft hover:text-ink"
-            @click="emit('copy', prompt, '已复制提示词')"
-          >
-            <Icon name="copy" :size="11" />
-            <span>复制</span>
-          </button>
-          <button
-            v-if="prompt.length"
-            type="button"
-            class="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium text-muted transition hover:bg-paper-soft hover:text-ink"
-            @click="clearPrompt"
-          >
-            <Icon name="eraser" :size="11" />
-            <span>清空</span>
-          </button>
-        </div>
+        <p class="font-mono text-[10px] tabular-nums text-muted">{{ promptCount }} / 1200</p>
       </div>
       <div class="prompt-field-shell" @click="promptRef?.focus()">
         <textarea
@@ -382,18 +324,81 @@ watch(prompt, () => {
           @click.stop="promptRef?.focus()"
         ></textarea>
         <div class="prompt-field-tools">
-          <span class="inline-flex items-center gap-1 font-mono text-[10px] uppercase tracking-[0.16em] text-muted">
-            <Icon name="layers" :size="10" />
-            模型
+          <span class="prompt-model-chip">
+            <span class="inline-flex items-center gap-1 font-mono text-[10px] uppercase tracking-[0.16em] text-muted">
+              <Icon name="layers" :size="10" />
+              模型
+            </span>
+            <Select
+              v-model="modelChoice"
+              :options="modelChipOptions"
+              variant="chip"
+              align="end"
+              aria-label="选择生成模型"
+              :placeholder="modelChipLabel"
+            />
           </span>
-          <Select
-            v-model="modelChoice"
-            :options="modelChipOptions"
-            variant="chip"
-            align="end"
-            aria-label="选择生成模型"
-            :placeholder="modelChipLabel"
-          />
+          <span class="prompt-action-strip" aria-label="提示词操作">
+            <button
+              type="button"
+              class="prompt-tool-btn"
+              :disabled="props.referenceImages.length >= maxReferenceImages"
+              @click.stop="openReferencePicker"
+            >
+              <Icon :name="hasReferenceImages ? 'image' : 'upload'" :size="12" />
+              <span>{{ hasReferenceImages ? `参考 ${props.referenceImages.length}` : '参考图' }}</span>
+            </button>
+            <span class="relative">
+              <button
+                v-if="prompt.length"
+                type="button"
+                class="prompt-tool-btn prompt-tool-btn--accent"
+                aria-label="智能优化提示词"
+                :aria-expanded="magicMenuOpen"
+                @click.stop="magicMenuOpen = !magicMenuOpen"
+              >
+                <Icon name="sparkle" :size="12" />
+                <span>优化</span>
+              </button>
+              <MagicEnhanceMenu
+                v-if="magicMenuOpen"
+                :prompt="prompt"
+                :image-style="imageStyle"
+                :has-reference-images="hasReferenceImages"
+                @enhance="(result: EnhanceResult) => { emit('magic-enhance', result); magicMenuOpen = false }"
+                @close="magicMenuOpen = false"
+              />
+            </span>
+            <button
+              v-if="props.canUndoEnhance"
+              type="button"
+              class="prompt-tool-btn prompt-tool-btn--danger"
+              @click.stop="emit('undo-enhance')"
+            >
+              <Icon name="reset" :size="12" />
+              <span>撤销</span>
+            </button>
+            <button
+              v-if="prompt.length"
+              type="button"
+              class="prompt-tool-btn prompt-tool-btn--icon"
+              aria-label="复制提示词"
+              @click.stop="emit('copy', prompt, '已复制提示词')"
+            >
+              <Icon name="copy" :size="12" />
+              <span>复制</span>
+            </button>
+            <button
+              v-if="prompt.length"
+              type="button"
+              class="prompt-tool-btn prompt-tool-btn--icon"
+              aria-label="清空提示词"
+              @click.stop="clearPrompt"
+            >
+              <Icon name="eraser" :size="12" />
+              <span>清空</span>
+            </button>
+          </span>
         </div>
       </div>
       <div
@@ -448,7 +453,6 @@ watch(prompt, () => {
           <span class="font-mono uppercase tracking-[0.2em]" :class="promptTone.tone">{{ promptTone.label }}</span>
           <span class="font-mono text-muted/70">~{{ promptTokens }} tokens</span>
         </p>
-        <p class="font-mono text-[10px] tabular-nums text-muted">{{ promptCount }} / 1200</p>
       </div>
       <p class="text-[10px] leading-snug text-muted">
         需要负面提示词、Seed、质量等高级参数？
@@ -471,29 +475,25 @@ watch(prompt, () => {
         </label>
         <span class="font-mono text-[10px] uppercase tracking-[0.18em] text-muted">{{ styleOptions.length }} 预设</span>
       </div>
-      <div class="grid grid-cols-2 gap-2">
+      <div class="style-grid">
         <button
           v-for="item in styleOptions"
           :key="item.value"
           type="button"
-          class="group relative flex items-center gap-3 rounded-2xl border bg-cream p-2.5 text-left transition"
-          :class="
-            imageStyle === item.value
-              ? 'border-ink bg-ink text-paper shadow-paper-2'
-              : 'border-line text-ink hover:border-line-strong hover:bg-paper-soft'
-          "
+          class="style-card"
+          :class="{ 'style-card--active': imageStyle === item.value }"
           :aria-pressed="imageStyle === item.value"
           @click="imageStyle = item.value"
         >
-          <StyleSwatch :variant="item.value" :active="imageStyle === item.value" />
-          <span class="min-w-0 flex-1">
-            <span class="block text-[13px] font-medium leading-tight">{{ item.label }}</span>
-            <span
-              class="mt-0.5 block text-[11px] leading-snug"
-              :class="imageStyle === item.value ? 'text-paper/65' : 'text-muted'"
-            >
-              {{ item.accent }}
+          <span class="style-card__rail" aria-hidden="true"></span>
+          <StyleSwatch :variant="item.value" :active="imageStyle === item.value" :size="34" />
+          <span class="style-card__body">
+            <span class="style-card__top">
+              <span class="style-card__title">{{ item.label }}</span>
+              <Icon v-if="imageStyle === item.value" name="check" :size="12" />
             </span>
+            <span class="style-card__accent">{{ item.accent }}</span>
+            <span class="style-card__desc">{{ item.description }}</span>
           </span>
         </button>
       </div>
@@ -630,7 +630,7 @@ watch(prompt, () => {
   overflow: hidden;
   border-radius: calc(var(--radius-panel) + 2px);
   border: 1px solid rgb(var(--color-line));
-  background: rgb(var(--color-vellum) / 0.76);
+  background: rgb(var(--color-ivory) / 0.72);
   box-shadow: var(--shadow-inner-paper);
   transition: border-color 180ms var(--motion-soft), background 180ms var(--motion-soft), box-shadow 180ms var(--motion-soft);
 }
@@ -658,13 +658,211 @@ watch(prompt, () => {
 }
 
 .prompt-field-tools {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.7rem;
+  border-top: 1px solid rgb(var(--color-line) / 0.72);
+  background:
+    linear-gradient(180deg, rgb(var(--color-vellum) / 0.48), rgb(var(--color-cream) / 0.34)),
+    rgb(var(--color-paper-soft) / 0.18);
+  padding: 0.58rem 0.62rem;
+}
+
+.prompt-model-chip,
+.prompt-action-strip {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  gap: 0.55rem;
+}
+
+.prompt-model-chip {
+  white-space: nowrap;
+}
+
+.prompt-action-strip {
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.prompt-tool-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  min-height: 30px;
+  padding: 0 0.65rem;
+  border-radius: 999px;
+  border: 1px solid rgb(var(--color-line) / 0.88);
+  background: rgb(var(--color-vellum) / 0.62);
+  color: rgb(var(--color-muted));
+  font-size: 11px;
+  font-weight: 680;
+  white-space: nowrap;
+  transition: transform 150ms var(--motion-press), background-color 150ms var(--motion-soft), color 150ms var(--motion-soft), border-color 150ms var(--motion-soft), box-shadow 170ms var(--motion-soft);
+}
+
+.prompt-tool-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  border-color: rgb(var(--color-line-strong));
+  background: rgb(var(--color-ivory) / 0.82);
+  color: rgb(var(--color-ink));
+  box-shadow: var(--shadow-paper-1);
+}
+
+.prompt-tool-btn:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.prompt-tool-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.prompt-tool-btn--accent {
+  border-color: rgb(var(--color-forest) / 0.36);
+  background: rgb(var(--color-forest) / 0.12);
+  color: rgb(var(--color-forest));
+}
+
+.prompt-tool-btn--accent[aria-expanded="true"] {
+  border-color: rgb(var(--color-ink));
+  background: rgb(var(--color-ink));
+  color: rgb(var(--color-paper));
+}
+
+.prompt-tool-btn--danger {
+  border-color: rgb(var(--color-accent) / 0.28);
+  background: rgb(var(--color-accent) / 0.08);
+  color: rgb(var(--color-accent));
+}
+
+.prompt-tool-btn--icon {
+  width: 32px;
+  padding: 0;
+}
+
+.prompt-tool-btn--icon span {
+  display: none;
+}
+
+.style-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.style-card {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.65rem;
+  min-height: 82px;
+  overflow: hidden;
+  border-radius: 17px;
+  border: 1px solid rgb(var(--color-line));
+  background:
+    linear-gradient(135deg, rgb(var(--color-ivory) / 0.62), rgb(var(--color-vellum) / 0.42)),
+    rgb(var(--color-cream) / 0.28);
+  padding: 0.62rem 0.7rem 0.62rem 0.82rem;
+  color: rgb(var(--color-ink));
+  text-align: left;
+  box-shadow: var(--shadow-inner-paper);
+  transition: transform 170ms var(--motion-press), border-color 170ms var(--motion-soft), background-color 170ms var(--motion-soft), box-shadow 190ms var(--motion-soft), color 170ms var(--motion-soft);
+}
+
+.style-card:hover {
+  transform: translateY(-1px);
+  border-color: rgb(var(--color-line-strong));
+  background: rgb(var(--color-ivory) / 0.78);
+  box-shadow: var(--shadow-paper-1), var(--shadow-inner-paper);
+}
+
+.style-card--active {
+  border-color: rgb(var(--color-ink));
+  background:
+    linear-gradient(135deg, rgb(var(--color-ink)), rgb(var(--color-blueprint))),
+    rgb(var(--color-ink));
+  color: rgb(var(--color-paper));
+  box-shadow: var(--shadow-paper-2);
+}
+
+.style-card__rail {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: rgb(var(--color-forest));
+  opacity: 0.72;
+}
+
+.style-card:nth-child(2n) .style-card__rail {
+  background: rgb(var(--color-accent));
+}
+
+.style-card:nth-child(3n) .style-card__rail {
+  background: rgb(var(--color-ochre));
+}
+
+.style-card:nth-child(4n) .style-card__rail {
+  background: rgb(var(--color-blueprint));
+}
+
+.style-card--active .style-card__rail {
+  width: 4px;
+  background: rgb(var(--color-ochre));
+  opacity: 1;
+}
+
+.style-card__body {
+  display: grid;
+  min-width: 0;
+  gap: 0.16rem;
+}
+
+.style-card__top {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.75rem;
-  border-top: 1px solid rgb(var(--color-line) / 0.72);
-  background: linear-gradient(180deg, rgb(var(--color-paper-soft) / 0.28), rgb(var(--color-cream) / 0.34));
-  padding: 0.5rem 0.62rem;
+  min-width: 0;
+  gap: 0.35rem;
+}
+
+.style-card__title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 720;
+  line-height: 1.15;
+}
+
+.style-card__accent {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 9px;
+  font-weight: 620;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgb(var(--color-muted));
+}
+
+.style-card--active .style-card__accent {
+  color: rgb(var(--color-paper) / 0.62);
+}
+
+.style-card__desc {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  line-height: 1.35;
+  color: rgb(var(--color-muted));
+}
+
+.style-card--active .style-card__desc {
+  color: rgb(var(--color-paper) / 0.72);
 }
 
 .acc-enter-from,
@@ -812,12 +1010,28 @@ watch(prompt, () => {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .prompt-tool-btn,
+  .style-card,
   .acc-enter-active,
   .acc-leave-active,
   .composer-continuation-enter-active,
   .composer-continuation-leave-active,
   .composer-continuation__cancel {
     transition: none;
+  }
+}
+
+@media (max-width: 720px) {
+  .prompt-field-tools {
+    grid-template-columns: 1fr;
+  }
+
+  .prompt-action-strip {
+    justify-content: flex-start;
+  }
+
+  .style-grid {
+    grid-template-columns: 1fr;
   }
 }
 </style>
