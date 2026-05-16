@@ -16,7 +16,7 @@ function iconFor(kind: 'info' | 'success' | 'error'): IconName {
   <Teleport to="body">
     <div
       class="pointer-events-none fixed inset-x-0 z-toast flex flex-col items-center gap-2 px-4"
-      :style="{ top: 'calc(env(safe-area-inset-top, 0px) + 4.5rem)' }"
+      :style="{ top: 'calc(env(safe-area-inset-top, 0px) + 4rem)' }"
       aria-live="polite"
       aria-atomic="true"
     >

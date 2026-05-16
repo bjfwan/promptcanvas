@@ -109,7 +109,7 @@ onBeforeUnmount(() => {
                 @click="pick(item.value)"
               >
                 <span class="style-mode-card__rail" aria-hidden="true"></span>
-                <StyleSwatch :variant="item.value" :active="current === item.value" :size="42" />
+                <StyleSwatch :variant="item.value" :active="current === item.value" :size="48" />
                 <span class="style-mode-card__body">
                   <span class="style-mode-card__top">
                     <span class="style-mode-card__title">{{ item.label }}</span>
@@ -181,8 +181,8 @@ onBeforeUnmount(() => {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
-  gap: 0.72rem;
-  min-height: 104px;
+  gap: 0.85rem;
+  min-height: 116px;
   width: 100%;
   overflow: hidden;
   border-radius: 18px;
@@ -190,7 +190,7 @@ onBeforeUnmount(() => {
   background:
     linear-gradient(135deg, rgb(var(--color-ivory) / 0.72), rgb(var(--color-vellum) / 0.48)),
     rgb(var(--color-cream) / 0.2);
-  padding: 0.76rem 0.82rem 0.76rem 0.95rem;
+  padding: 0.85rem 0.92rem 0.85rem 1.05rem;
   color: rgb(var(--color-ink));
   text-align: left;
   box-shadow: var(--shadow-inner-paper);

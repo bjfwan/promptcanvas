@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import Icon from './Icon.vue'
+import DevelopingFrame from './DevelopingFrame.vue'
 import { resolveImageSource } from '../api'
 import { styleOptions } from '../presets'
 import type { ChatAssistantMessage, ChatMessage, GeneratedImage } from '../types'
@@ -19,6 +20,7 @@ const emit = defineEmits<{
   (e: 'remix', image: GeneratedImage, prompt: string, imageIndex: number): void
   (e: 'scroll-to-message', id: string): void
   (e: 'abort', id: string): void
+  (e: 'import-prompt', text: string): void
 }>()
 
 function openImage(index: number) {
@@ -51,6 +53,13 @@ const timeLabel = computed(() => {
 const assistantMessage = computed<ChatAssistantMessage | null>(() =>
   props.message.role === 'assistant' ? (props.message as ChatAssistantMessage) : null,
 )
+
+const importablePrompt = computed(() => {
+  const am = assistantMessage.value
+  if (!am || am.status !== 'success') return ''
+  const revised = am.images?.find((image) => image.revisedPrompt?.trim())?.revisedPrompt?.trim()
+  return revised || (am.content || '').trim()
+})
 
 function pendingSizeLabel(size: ChatAssistantMessage['meta']['size']) {
   if (size === '1024x1536') return '竖图'
@@ -137,8 +146,10 @@ const previewFrameClass = computed(() => {
 const assistantImageGridClass = computed(() => {
   if (props.message.role !== 'assistant') return ''
   const total = props.message.images?.length ?? 0
-  if (total <= 1) return 'grid-cols-1'
-  return 'grid-cols-2'
+  if (total <= 1) return 'chat-mosaic chat-mosaic--1'
+  if (total === 2) return 'chat-mosaic chat-mosaic--2'
+  if (total === 3) return 'chat-mosaic chat-mosaic--3'
+  return 'chat-mosaic chat-mosaic--4'
 })
 
 const revealedImageKeys = ref<Record<string, boolean>>({})
@@ -250,57 +261,21 @@ function isImageReady(image: GeneratedImage, index: number) {
         role="status"
         aria-live="polite"
       >
-          <div class="chat-pending-frame relative w-full overflow-hidden rounded-2xl" :class="previewFrameClass">
-            <div class="chat-pending-bg absolute inset-0"></div>
-            <div class="chat-pending-layers" aria-hidden="true">
-              <span></span>
-              <span></span>
-              <span></span>
-              <span></span>
-            </div>
-
-            <div
-              class="pointer-events-none absolute inset-x-3 top-3 z-10 flex items-center justify-between text-[10px] font-mono uppercase tracking-[0.22em] text-muted/60"
-            >
-              <div class="flex items-center gap-2">
-                <span class="flex h-1.5 w-1.5 rounded-full bg-ink/20 animate-pulse"></span>
-                <span>{{ pendingStageLabel }}</span>
-              </div>
-              <span class="tabular-nums">{{ typeof message.elapsedSeconds === 'number' ? String(message.elapsedSeconds).padStart(2, '0') + 's' : '' }}</span>
-            </div>
-
-            <div class="pointer-events-none absolute inset-0 z-10 grid place-items-center px-4" aria-hidden="true">
-              <div class="chat-pending-atelier">
-                <span class="chat-pending-atelier__plate">
-                  <i></i>
-                  <i></i>
-                  <i></i>
-                </span>
-                <span class="chat-pending-atelier__label">{{ pendingStageLabel }}</span>
-                <span class="chat-pending-atelier__meta">{{ pendingPercentLabel }}</span>
-              </div>
-            </div>
-
-            <div class="pointer-events-none absolute inset-x-4 bottom-4 z-10" aria-hidden="true">
-              <div class="chat-pending-bar" :style="{ '--progress': pendingProgress + '%' }"></div>
-            </div>
-          </div>
-
-          <div class="chat-pending-footer">
-            <span class="chat-pending-footer__remain" aria-live="polite">
-              <span class="chat-pending-footer__remain-dot" aria-hidden="true"></span>
-              <span>{{ pendingRemainingLabel }}</span>
-            </span>
-            <span class="chat-pending-footer__meta">{{ pendingMetaLabel }}</span>
-            <button
-              type="button"
-              class="chat-pending-footer__cancel"
-              aria-label="取消这次生成"
-              @click="emit('abort', message.id)"
-            >
-              <Icon name="close" :size="11" />
-              <span>取消</span>
-            </button>
+          <div
+            class="chat-pending-frame relative w-full overflow-hidden rounded-2xl"
+            :class="previewFrameClass"
+          >
+            <DevelopingFrame
+              :progress="pendingProgress"
+              :elapsed-seconds="message.elapsedSeconds ?? 0"
+              :stage="pendingStageLabel"
+              :remaining-label="pendingRemainingLabel"
+              :meta-label="pendingMetaLabel"
+              :prompt-preview="message.content"
+              :ring-size="148"
+              compact
+              @cancel="emit('abort', message.id)"
+            />
           </div>
       </div>
 
@@ -350,13 +325,14 @@ function isImageReady(image: GeneratedImage, index: number) {
       >
         <div
           v-if="(message.images?.length ?? 0) > 0"
-          class="grid gap-2"
+          class="chat-mosaic-wrap"
           :class="assistantImageGridClass"
         >
           <div
             v-for="(image, index) in message.images"
             :key="image.id || index"
-            class="chat-image-card group"
+            class="chat-image-card group chat-mosaic__cell"
+            :data-cell="index"
           >
             <button
               type="button"
@@ -439,6 +415,16 @@ function isImageReady(image: GeneratedImage, index: number) {
             <Icon name="copy" :size="12" />
             <span>复制提示词</span>
           </button>
+          <button
+            v-if="importablePrompt"
+            type="button"
+            class="chat-action-chip chat-action-chip--quiet"
+            aria-label="导入到 Composer 并解析槽位"
+            @click="emit('import-prompt', importablePrompt)"
+          >
+            <Icon name="upload" :size="12" />
+            <span>导入到 Composer</span>
+          </button>
           <span class="ml-auto font-mono text-[10px] uppercase tracking-[0.18em] text-muted">
             <span v-if="typeof message.elapsedSeconds === 'number'">{{ message.elapsedSeconds }}s</span>
             <span v-if="message.requestId" class="ml-1.5">· {{ message.requestId.slice(0, 8) }}</span>
@@ -480,310 +466,6 @@ function isImageReady(image: GeneratedImage, index: number) {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.chat-pending-bg {
-  contain: paint;
-  transform: translateZ(0);
-  will-change: transform;
-  background: 
-    linear-gradient(125deg, rgb(var(--color-paper-soft) / 0.72), transparent 42%),
-    linear-gradient(245deg, rgb(var(--color-cream) / 0.72), transparent 48%),
-    repeating-linear-gradient(90deg, rgb(var(--color-ink) / 0.035) 0 1px, transparent 1px 18px),
-    rgb(var(--color-paper-soft));
-  animation: pending-bg-shift 8s ease-in-out infinite alternate;
-}
-
-.chat-pending-layers {
-  position: absolute;
-  inset: 3rem 1.25rem 3.1rem;
-  display: grid;
-  grid-template-columns: 0.9fr 1.15fr;
-  grid-template-rows: 0.7fr 1fr 0.55fr;
-  gap: 0.45rem;
-  opacity: 0.48;
-  transform: perspective(700px) rotateX(6deg);
-  contain: paint;
-  will-change: transform;
-}
-
-.chat-pending-layers span {
-  position: relative;
-  overflow: hidden;
-  border-radius: 16px;
-  border: 1px solid rgb(var(--color-line-strong) / 0.22);
-  background: rgb(var(--color-paper) / 0.34);
-}
-
-.chat-pending-layers span::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(110deg, transparent 0%, rgb(var(--color-paper) / 0.44) 45%, transparent 70%);
-  transform: translateX(-120%);
-  animation: chat-layer-sweep 2.35s ease-in-out infinite;
-}
-
-.chat-pending-layers span:nth-child(1) {
-  grid-column: 1 / 3;
-}
-
-.chat-pending-layers span:nth-child(2) {
-  grid-column: 1 / 2;
-  grid-row: 2 / 4;
-  border-radius: 16px 999px 999px 16px;
-}
-
-.chat-pending-layers span:nth-child(3) {
-  grid-column: 2 / 3;
-  grid-row: 2 / 3;
-  border-radius: 999px;
-}
-
-.chat-pending-layers span:nth-child(4) {
-  grid-column: 2 / 3;
-  grid-row: 3 / 4;
-}
-
-.chat-pending-manifest {
-  text-align: center;
-}
-
-.chat-pending-manifest__value {
-  display: block;
-  font-family: 'IBM Plex Mono', monospace;
-  font-size: 28px;
-  font-weight: 200;
-  letter-spacing: 0;
-  color: rgb(var(--color-ink));
-  font-feature-settings: 'tnum';
-}
-
-.chat-pending-manifest__label {
-  display: block;
-  margin-top: -2px;
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.3em;
-  color: rgb(var(--color-muted));
-  opacity: 0.6;
-}
-
-.chat-pending-atelier {
-  display: grid;
-  justify-items: center;
-  gap: 0.35rem;
-}
-
-.chat-pending-atelier__plate {
-  position: relative;
-  display: block;
-  width: 78px;
-  aspect-ratio: 1;
-  border-radius: 15px;
-  border: 1px solid rgb(var(--color-line-strong) / 0.5);
-  background:
-    linear-gradient(135deg, rgb(var(--color-vellum) / 0.66), rgb(var(--color-paper) / 0.28)),
-    repeating-linear-gradient(0deg, transparent 0 13px, rgb(var(--color-ink) / 0.05) 13px 14px),
-    repeating-linear-gradient(90deg, transparent 0 13px, rgb(var(--color-ink) / 0.05) 13px 14px);
-  box-shadow: var(--shadow-paper-1), inset 0 0 0 1px rgb(var(--color-paper) / 0.5);
-  contain: paint;
-  transform: translateZ(0);
-}
-
-.chat-pending-atelier__plate::before {
-  content: '';
-  position: absolute;
-  inset: 16%;
-  border: 1px solid rgb(var(--color-ink) / 0.16);
-  border-radius: 999px;
-  animation: chat-register 2.4s var(--motion-soft) infinite;
-}
-
-.chat-pending-atelier__plate i {
-  position: absolute;
-  left: 18%;
-  right: 18%;
-  height: 1px;
-  background: rgb(var(--color-accent) / 0.64);
-  animation: chat-mark 2s var(--motion-soft) infinite;
-}
-
-.chat-pending-atelier__plate i:nth-child(1) {
-  top: 27%;
-}
-
-.chat-pending-atelier__plate i:nth-child(2) {
-  top: 51%;
-  background: rgb(var(--color-forest) / 0.66);
-  animation-delay: 0.16s;
-}
-
-.chat-pending-atelier__plate i:nth-child(3) {
-  top: 72%;
-  background: rgb(var(--color-ochre) / 0.68);
-  animation-delay: 0.32s;
-}
-
-.chat-pending-atelier__label {
-  font-family: 'Fraunces', Georgia, serif;
-  font-size: 18px;
-  line-height: 1.1;
-  color: rgb(var(--color-ink));
-}
-
-.chat-pending-atelier__meta {
-  font-family: 'JetBrains Mono', ui-monospace, monospace;
-  font-size: 9px;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: rgb(var(--color-muted));
-}
-
-@keyframes chat-register {
-  0%, 100% {
-    opacity: 0.28;
-    transform: scale(0.98);
-  }
-  50% {
-    opacity: 0.7;
-    transform: scale(1.04);
-  }
-}
-
-@keyframes chat-mark {
-  0%, 100% {
-    opacity: 0.32;
-    transform: translateX(-2px);
-  }
-  50% {
-    opacity: 0.86;
-    transform: translateX(2px);
-  }
-}
-
-.chat-pending-bar {
-  height: 1px;
-  background: rgb(var(--color-line-strong) / 0.2);
-  width: 100%;
-  position: relative;
-  overflow: hidden;
-}
-
-.chat-pending-bar::after {
-  content: '';
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: var(--progress, 0%);
-  background: rgb(var(--color-ink));
-  transition: width 0.8s cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-
-.chat-pending-footer {
-  margin-top: 0.7rem;
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  padding: 0 0.25rem;
-  font-family: 'IBM Plex Mono', monospace;
-  font-size: 10px;
-  letter-spacing: 0.06em;
-  color: rgb(var(--color-muted));
-}
-
-.chat-pending-footer__remain {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  color: rgb(var(--color-ink) / 0.85);
-  font-feature-settings: 'tnum';
-}
-
-.chat-pending-footer__remain-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 999px;
-  background: rgb(var(--color-forest));
-  box-shadow: 0 0 0 0 rgb(var(--color-forest) / 0.5);
-  animation: chat-pending-pulse 1.6s ease-in-out infinite;
-}
-
-@keyframes chat-pending-pulse {
-  0%, 100% {
-    transform: scale(0.85);
-    box-shadow: 0 0 0 0 rgb(var(--color-forest) / 0.5);
-  }
-  50% {
-    transform: scale(1.05);
-    box-shadow: 0 0 0 6px rgb(var(--color-forest) / 0);
-  }
-}
-
-.chat-pending-footer__meta {
-  flex: 1;
-  text-align: right;
-  text-transform: uppercase;
-  font-size: 9px;
-  letter-spacing: 0.18em;
-  opacity: 0.65;
-}
-
-.chat-pending-footer__cancel {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.28rem;
-  padding: 0.3rem 0.6rem;
-  border-radius: 999px;
-  border: 1px solid rgb(var(--color-line) / 0.8);
-  background: rgb(var(--color-cream));
-  color: rgb(var(--color-muted));
-  font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 0.04em;
-  cursor: pointer;
-  transition: color 140ms ease, border-color 140ms ease, background 140ms ease, transform 140ms ease;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.chat-pending-footer__cancel::before {
-  content: '';
-  position: absolute;
-  inset: -6px;
-}
-
-.chat-pending-footer__cancel:hover {
-  color: rgb(var(--color-accent));
-  border-color: rgb(var(--color-accent) / 0.5);
-  background: rgb(var(--color-accent) / 0.07);
-}
-
-.chat-pending-footer__cancel:active {
-  transform: scale(0.97);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .chat-pending-bg,
-  .chat-pending-atelier__plate::before,
-  .chat-pending-atelier__plate i,
-  .chat-pending-footer__remain-dot,
-  .chat-pending-layers span::after {
-    animation: none;
-  }
-
-  .chat-pending-bar::after {
-    transition: none;
-  }
-}
-
-@keyframes pending-bg-shift {
-  0% { transform: scale(1) rotate(0deg); }
-  100% { transform: scale(1.1) rotate(2deg); }
-}
-
-@keyframes chat-layer-sweep {
-  0% { transform: translateX(-120%); }
-  56%, 100% { transform: translateX(120%); }
 }
 
 .chat-image-placeholder {
@@ -1166,8 +848,9 @@ function isImageReady(image: GeneratedImage, index: number) {
 
 .chat-image-fade {
   transform: translateY(6px) scale(0.992);
-  transition: opacity 420ms var(--motion-snap), transform 520ms var(--motion-snap);
-  will-change: opacity, transform;
+  filter: blur(8px);
+  transition: opacity 420ms var(--motion-snap), transform 520ms var(--motion-snap), filter 200ms var(--motion-snap);
+  will-change: opacity, transform, filter;
 }
 
 .chat-image-fade--loading {
@@ -1177,6 +860,7 @@ function isImageReady(image: GeneratedImage, index: number) {
 .chat-image-fade--ready {
   opacity: 1;
   transform: translateY(0) scale(1);
+  filter: blur(0);
   animation: chat-result-settle 620ms var(--motion-snap) both;
 }
 
@@ -1204,6 +888,115 @@ function isImageReady(image: GeneratedImage, index: number) {
     transition: none;
     animation: none;
     transform: none;
+  }
+}
+
+/* ---------- Multi-image mosaic ---------- */
+
+.chat-mosaic-wrap {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.chat-mosaic--1 {
+  grid-template-columns: 1fr;
+}
+
+.chat-mosaic--2 {
+  grid-template-columns: 1fr 1fr;
+}
+
+.chat-mosaic--3 {
+  /* big image left, two stacked right — magazine feel */
+  grid-template-columns: 1.45fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  aspect-ratio: 4 / 3;
+}
+
+.chat-mosaic--3 > .chat-mosaic__cell:nth-child(1) {
+  grid-column: 1 / 2;
+  grid-row: 1 / 3;
+}
+.chat-mosaic--3 > .chat-mosaic__cell:nth-child(2) {
+  grid-column: 2 / 3;
+  grid-row: 1 / 2;
+}
+.chat-mosaic--3 > .chat-mosaic__cell:nth-child(3) {
+  grid-column: 2 / 3;
+  grid-row: 2 / 3;
+}
+
+.chat-mosaic--4 {
+  grid-template-columns: 1.4fr 1fr;
+  grid-template-rows: 1fr 1fr 1fr;
+  aspect-ratio: 5 / 4;
+}
+
+.chat-mosaic--4 > .chat-mosaic__cell:nth-child(1) {
+  grid-column: 1 / 2;
+  grid-row: 1 / 4;
+}
+.chat-mosaic--4 > .chat-mosaic__cell:nth-child(2) {
+  grid-column: 2 / 3;
+  grid-row: 1 / 2;
+}
+.chat-mosaic--4 > .chat-mosaic__cell:nth-child(3) {
+  grid-column: 2 / 3;
+  grid-row: 2 / 3;
+}
+.chat-mosaic--4 > .chat-mosaic__cell:nth-child(4) {
+  grid-column: 2 / 3;
+  grid-row: 3 / 4;
+}
+
+/* When the cell is in a mosaic ≥ 2, drop the per-cell aspect-ratio override
+ * so the cell fills its grid track instead of forcing 1:1 / 2:3 / 3:2.
+ * The ":not()" guarantees we only override single-row mosaics. */
+.chat-mosaic--2 > .chat-mosaic__cell .chat-image-card__surface,
+.chat-mosaic--3 > .chat-mosaic__cell .chat-image-card__surface,
+.chat-mosaic--4 > .chat-mosaic__cell .chat-image-card__surface {
+  aspect-ratio: auto;
+  height: 100%;
+}
+
+.chat-mosaic--3 > .chat-mosaic__cell,
+.chat-mosaic--4 > .chat-mosaic__cell {
+  height: 100%;
+  min-height: 0;
+}
+
+.chat-mosaic--3 > .chat-mosaic__cell .chat-image-card__surface img,
+.chat-mosaic--4 > .chat-mosaic__cell .chat-image-card__surface img,
+.chat-mosaic--2 > .chat-mosaic__cell .chat-image-card__surface img {
+  object-fit: cover;
+}
+
+.chat-mosaic--2 > .chat-mosaic__cell {
+  aspect-ratio: 3 / 4;
+}
+
+@media (max-width: 380px) {
+  .chat-mosaic--4 {
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 1fr 1fr;
+    aspect-ratio: 1;
+  }
+
+  .chat-mosaic--4 > .chat-mosaic__cell:nth-child(1) {
+    grid-column: 1 / 2;
+    grid-row: 1 / 2;
+  }
+  .chat-mosaic--4 > .chat-mosaic__cell:nth-child(3) {
+    grid-column: 1 / 2;
+    grid-row: 2 / 3;
+  }
+  .chat-mosaic--4 > .chat-mosaic__cell:nth-child(2) {
+    grid-column: 2 / 3;
+    grid-row: 1 / 2;
+  }
+  .chat-mosaic--4 > .chat-mosaic__cell:nth-child(4) {
+    grid-column: 2 / 3;
+    grid-row: 2 / 3;
   }
 }
 </style>

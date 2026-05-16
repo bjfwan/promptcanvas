@@ -1,4 +1,6 @@
 import { snapshotProviderConfig } from './composables/useProviderConfig'
+import { loadBrandKit } from './lib/brandKit'
+import { loadHistory } from './storage'
 import {
   buildPrompt,
   ensurePngBlob,
@@ -243,7 +245,15 @@ export async function generateImage(
     }
 
     const validated = validation.value
-    const promptText = buildPrompt(validated)
+    const brandKit = loadBrandKit()
+    const sessionHistory = loadHistory()
+    const promptText = buildPrompt(validated, {
+      brandKit,
+      history: sessionHistory,
+      modelName: validated.model,
+      hasReferenceImages: validated.referenceImages.length > 0,
+      count: validated.count,
+    })
     const hasReferenceImages = validated.referenceImages.length > 0
     const upstreamRequest: Record<string, unknown> = {
       prompt: promptText,

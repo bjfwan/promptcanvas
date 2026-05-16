@@ -2,6 +2,7 @@ import { onUnmounted, type Ref } from 'vue'
 import { ApiRequestError, PROVIDER_NOT_CONFIGURED, generateImage } from '../api'
 import { payloadToMeta } from '../lib/chatMessage'
 import { createId } from '../lib/id'
+import { recordGenerationToPreference } from '../lib/preferenceLearner'
 import { prependHistory } from '../storage'
 import type {
   ChatAssistantMessage,
@@ -216,5 +217,15 @@ export function useGenerationFlow(deps: GenerationFlowDeps) {
     }
   })
 
-  return { runGeneration, abortGeneration }
+  async function runABTest(args: {
+    payloadA: GenerateImageRequest
+    payloadB: GenerateImageRequest
+    userMessageId: string
+  }): Promise<void> {
+    deps.toast.info('A/B 双轨生成', '先发原始 prompt，再发优化版本')
+    await runGeneration({ payload: args.payloadA, userMessageId: args.userMessageId })
+    await runGeneration({ payload: args.payloadB, userMessageId: args.userMessageId })
+  }
+
+  return { runGeneration, abortGeneration, runABTest }
 }

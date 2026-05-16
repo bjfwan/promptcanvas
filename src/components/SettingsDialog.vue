@@ -8,6 +8,9 @@ import { useDiscoveredModels } from '../composables/useDiscoveredModels'
 import { useFocusTrap } from '../composables/useFocusTrap'
 import { useBodyLock } from '../composables/useBodyLock'
 import { ApiRequestError, testProvider } from '../api'
+import { loadBrandKit, saveBrandKit, brandKitHasContent } from '../lib/brandKit'
+import { useI18n, type LocalePreference } from '../lib/i18n'
+import type { BrandKit } from '../lib/promptDoc'
 import type { GenerateImageRequest, ImageQuality } from '../types'
 
 type OutputFormat = NonNullable<GenerateImageRequest['outputFormat']>
@@ -36,6 +39,7 @@ const customModel = defineModel<string>('customModel', { required: true })
 
 const provider = useProviderConfig()
 const discoveredModels = useDiscoveredModels()
+const i18n = useI18n()
 const showApiKey = ref(false)
 const dialogRef = ref<HTMLElement | null>(null)
 
@@ -43,6 +47,14 @@ type TestStatus = 'idle' | 'testing' | 'success' | 'partial' | 'error'
 const testStatus = ref<TestStatus>('idle')
 const testMessage = ref('')
 const testHint = ref('')
+
+const brandKitDraft = ref<BrandKit>(loadBrandKit())
+
+function persistBrandKit() {
+  saveBrandKit(brandKitDraft.value)
+}
+
+const brandKitMeaningful = computed(() => brandKitHasContent(brandKitDraft.value))
 
 function handleResetProvider() {
   provider.reset()
@@ -152,6 +164,12 @@ const qualitySelectOptions = computed<SelectOption<ImageQuality>[]>(() =>
   qualityOptions.map((option) => ({ value: option.value, label: option.label })),
 )
 
+const localeSelectOptions = computed<SelectOption<LocalePreference>[]>(() => [
+  { value: 'auto', label: i18n.t('locale.auto') },
+  { value: 'zh-CN', label: i18n.t('locale.zh-CN') },
+  { value: 'en', label: i18n.t('locale.en') },
+])
+
 const modelSelectOptions = computed<SelectOption<string>[]>(() =>
   discoveredModels.mergedModelOptions.value.map((option) => ({
     value: option.value,
@@ -248,28 +266,20 @@ onBeforeUnmount(() => {
                   凭据只保存在你浏览器的 localStorage，刷新后仍在；不会写入任何服务端数据库。Network 面板里仍可见，截图分享请遮蔽。
                 </p>
 
-                <div class="space-y-3">
-                  <div>
-                    <label class="label mb-1.5 inline-flex items-center gap-1.5" for="set-proxy-url">
-                      <Icon name="share" :size="12" />
-                      <span>反代 URL</span>
-                      <span class="font-mono text-[9px] uppercase tracking-[0.16em] text-muted">可选</span>
-                    </label>
-                    <input
-                      id="set-proxy-url"
-                      v-model="provider.state.proxyUrl"
-                      type="url"
-                      class="field-input font-mono text-[12px]"
-                      placeholder="https://your-proxy.onrender.com（不填 = 浏览器直连）"
-                      autocomplete="off"
-                      spellcheck="false"
-                      maxlength="200"
-                    />
-                    <p class="mt-1 text-[10px] leading-[1.5] text-muted">
-                      填了代理的话，请求先走代理再走中转站。适用于：中转站不开 CORS、或网关 60s 超时（中转站出图&gt;60s 会被切）。代理代码在仓库 <code class="font-mono">proxy/</code> 目录。
-                    </p>
-                  </div>
+                <div class="mb-3 flex items-start gap-2 rounded-xl border border-line/70 bg-paper-soft/40 px-3 py-2 text-[11px] leading-[1.55]">
+                  <span class="mt-0.5 inline-grid h-5 w-5 place-items-center rounded-full bg-forest/12 text-forest">
+                    <Icon name="share" :size="11" />
+                  </span>
+                  <span class="min-w-0 flex-1">
+                    <span class="font-medium text-ink">已启用内置反代</span>
+                    <span class="ml-1 text-muted">透明转发，不持久化任何凭据</span>
+                    <span class="mt-0.5 block font-mono text-[10px] uppercase tracking-[0.16em] text-muted/80">
+                      proxy.likeyou.qzz.io
+                    </span>
+                  </span>
+                </div>
 
+                <div class="space-y-3">
                   <div>
                     <label class="label mb-1.5 inline-flex items-center gap-1.5" for="set-base-url">
                       <Icon name="link" :size="12" />
@@ -376,6 +386,117 @@ onBeforeUnmount(() => {
                 </div>
               </section>
 
+              <section
+                class="rounded-2xl border border-line bg-paper-soft/40 p-4"
+              >
+                <div class="mb-3 flex items-center justify-between gap-2">
+                  <div class="flex flex-col">
+                    <span class="display-eyebrow text-[10px]">Brand Kit · 我的画风</span>
+                    <span class="mt-1 text-[13px] font-medium text-ink">每次生成自动注入</span>
+                  </div>
+                  <label class="brand-toggle inline-flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      v-model="brandKitDraft.enabled"
+                      @change="persistBrandKit"
+                    />
+                    <span class="font-mono text-[10px] uppercase tracking-[0.16em]">
+                      {{ brandKitDraft.enabled ? '已启用' : '关闭' }}
+                    </span>
+                  </label>
+                </div>
+
+                <p class="mb-3 text-[11px] leading-[1.6] text-muted">
+                  填进来的内容会作为上下文注入提示词工程引擎，所有生成都会照做。所有数据只保存在本机 localStorage。
+                </p>
+
+                <div class="space-y-3">
+                  <div>
+                    <label class="label mb-1.5 inline-flex items-center gap-1.5" for="brand-always">
+                      <Icon name="check" :size="12" />
+                      <span>始终包含</span>
+                    </label>
+                    <textarea
+                      id="brand-always"
+                      v-model="brandKitDraft.alwaysInclude"
+                      rows="2"
+                      maxlength="400"
+                      class="field-textarea text-[12px]"
+                      placeholder="画面只用奶白、铁锈橙、雾蓝；人像保留毛孔与雀斑"
+                      @blur="persistBrandKit"
+                    ></textarea>
+                  </div>
+
+                  <div>
+                    <label class="label mb-1.5 inline-flex items-center gap-1.5" for="brand-never">
+                      <Icon name="eyeOff" :size="12" />
+                      <span>永远避免</span>
+                    </label>
+                    <textarea
+                      id="brand-never"
+                      v-model="brandKitDraft.neverInclude"
+                      rows="2"
+                      maxlength="400"
+                      class="field-textarea text-[12px]"
+                      placeholder="不要 HDR；不要塑料皮肤；不出现品牌 logo"
+                      @blur="persistBrandKit"
+                    ></textarea>
+                  </div>
+
+                  <div class="grid gap-3 sm:grid-cols-3">
+                    <div>
+                      <label class="label mb-1.5 inline-flex items-center gap-1.5" for="brand-palette">
+                        <Icon name="palette" :size="12" />
+                        <span>常用色板</span>
+                      </label>
+                      <input
+                        id="brand-palette"
+                        v-model="brandKitDraft.signaturePalette"
+                        type="text"
+                        class="field-input text-[12px]"
+                        placeholder="低饱和奶油"
+                        maxlength="80"
+                        @blur="persistBrandKit"
+                      />
+                    </div>
+                    <div>
+                      <label class="label mb-1.5 inline-flex items-center gap-1.5" for="brand-camera">
+                        <Icon name="camera" :size="12" />
+                        <span>常用镜头</span>
+                      </label>
+                      <input
+                        id="brand-camera"
+                        v-model="brandKitDraft.signatureCamera"
+                        type="text"
+                        class="field-input text-[12px]"
+                        placeholder="50mm f/2"
+                        maxlength="80"
+                        @blur="persistBrandKit"
+                      />
+                    </div>
+                    <div>
+                      <label class="label mb-1.5 inline-flex items-center gap-1.5" for="brand-lighting">
+                        <Icon name="sun" :size="12" />
+                        <span>常用光位</span>
+                      </label>
+                      <input
+                        id="brand-lighting"
+                        v-model="brandKitDraft.signatureLighting"
+                        type="text"
+                        class="field-input text-[12px]"
+                        placeholder="窗光左 30°"
+                        maxlength="80"
+                        @blur="persistBrandKit"
+                      />
+                    </div>
+                  </div>
+
+                  <div v-if="brandKitMeaningful" class="text-[10px] text-muted">
+                    已启用：{{ brandKitDraft.enabled ? '会注入到每次生成' : '已保存但未启用，开启上方开关后生效' }}
+                  </div>
+                </div>
+              </section>
+
               <section>
                 <label class="label mb-2 inline-flex items-center gap-1.5" for="set-neg">
                   <Icon name="eyeOff" :size="12" />
@@ -439,6 +560,23 @@ onBeforeUnmount(() => {
                     aria-label="选择输出格式"
                   />
                 </div>
+              </section>
+
+              <section>
+                <label class="label mb-2 inline-flex items-center gap-1.5" for="set-locale">
+                  <Icon name="command" :size="12" />
+                  <span>界面语言 · Interface language</span>
+                </label>
+                <Select
+                  id="set-locale"
+                  :model-value="i18n.preference.value"
+                  :options="localeSelectOptions"
+                  aria-label="选择界面语言"
+                  @update:model-value="(value) => i18n.setLocale(value)"
+                />
+                <p class="mt-1 text-[10px] leading-[1.5] text-muted">
+                  {{ i18n.preference.value === 'auto' ? `当前：${i18n.locale.value === 'zh-CN' ? '简体中文' : 'English'}（跟随系统）` : '已锁定语言，关闭设置即可生效。' }}
+                </p>
               </section>
 
               <section>
@@ -556,6 +694,40 @@ onBeforeUnmount(() => {
   border: 1px solid rgb(var(--color-line-strong));
   background: rgb(var(--color-ivory));
   box-shadow: var(--shadow-paper-2);
+}
+
+.brand-toggle input[type='checkbox'] {
+  appearance: none;
+  width: 32px;
+  height: 18px;
+  border-radius: 999px;
+  border: 1px solid rgb(var(--color-line));
+  background: rgb(var(--color-paper-soft));
+  position: relative;
+  cursor: pointer;
+  transition: background 160ms ease, border-color 160ms ease;
+}
+
+.brand-toggle input[type='checkbox']::after {
+  content: '';
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: rgb(var(--color-ivory));
+  box-shadow: 0 1px 2px rgb(var(--color-ink) / 0.18);
+  transition: transform 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.brand-toggle input[type='checkbox']:checked {
+  background: rgb(var(--color-forest));
+  border-color: rgb(var(--color-forest));
+}
+
+.brand-toggle input[type='checkbox']:checked::after {
+  transform: translateX(13px);
 }
 
 .dlg-fade-enter-from,

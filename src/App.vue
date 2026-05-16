@@ -32,6 +32,15 @@ import { useMobileViewport } from './composables/useMobileViewport'
 import { useHealthCheck } from './composables/useHealthCheck'
 import { useGenerationFlow } from './composables/useGenerationFlow'
 import { useMediaQuery } from './composables/useMediaQuery'
+import { useCommandPalette } from './composables/useCommandPalette'
+import { useShortcutsDialog } from './composables/useShortcutsDialog'
+import { usePromptContext } from './composables/usePromptContext'
+import { usePromptTree } from './composables/usePromptTree'
+import { reverseParseRevisedPrompt, docToPlainPrompt } from './lib/revisedParser'
+import { useOnboarding } from './composables/useOnboarding'
+import { useServiceWorker } from './composables/useServiceWorker'
+import { useInstallPrompt } from './composables/useInstallPrompt'
+import { useI18n } from './lib/i18n'
 import type { EnhanceResult } from './lib/magicEnhance'
 
 const loadPromptComposer = () => import('./components/PromptComposer.vue')
@@ -42,6 +51,10 @@ const loadStyleSheet = () => import('./components/StyleSheet.vue')
 const loadSettingsDialog = () => import('./components/SettingsDialog.vue')
 const loadHistoryDialog = () => import('./components/HistoryDialog.vue')
 const loadLightbox = () => import('./components/Lightbox.vue')
+const loadCommandPalette = () => import('./components/CommandPalette.vue')
+const loadActivitySidebar = () => import('./components/ActivitySidebar.vue')
+const loadShortcutsDialog = () => import('./components/ShortcutsDialog.vue')
+const loadOnboardingTour = () => import('./components/OnboardingTour.vue')
 
 const PromptComposer = defineAsyncComponent(loadPromptComposer)
 const CanvasStage = defineAsyncComponent(loadCanvasStage)
@@ -51,6 +64,10 @@ const StyleSheet = defineAsyncComponent(loadStyleSheet)
 const SettingsDialog = defineAsyncComponent(loadSettingsDialog)
 const HistoryDialog = defineAsyncComponent(loadHistoryDialog)
 const Lightbox = defineAsyncComponent(loadLightbox)
+const CommandPalette = defineAsyncComponent(loadCommandPalette)
+const ActivitySidebar = defineAsyncComponent(loadActivitySidebar)
+const ShortcutsDialog = defineAsyncComponent(loadShortcutsDialog)
+const OnboardingTour = defineAsyncComponent(loadOnboardingTour)
 
 const defaultPrompt = '一只穿着复古宇航服的橘猫，站在月球摄影棚里，像 1970 年代科幻电影海报'
 const defaultNegativePrompt = '低清晰度、模糊、水印、错误文字、畸形手指、画面杂乱'
@@ -83,6 +100,12 @@ const { vibrate } = useVibration()
 const settingsOpen = ref(false)
 const historyOpen = ref(false)
 const styleSheetOpen = ref(false)
+const commandPalette = useCommandPalette()
+const shortcutsDialog = useShortcutsDialog()
+const onboarding = useOnboarding()
+const sw = useServiceWorker()
+const installPrompt = useInstallPrompt()
+const { t } = useI18n()
 const composerRef = ref<{ focusPrompt?: () => void } | null>(null)
 const chatDockRef = ref<{ focusInput?: () => void } | null>(null)
 const chatStreamRef = ref<{ scrollToMessage?: (id: string) => void; scrollToBottom?: (smooth?: boolean) => void } | null>(null)
@@ -90,8 +113,14 @@ const messages = shallowRef<ChatMessage[]>([])
 const pendingContinuation = ref<ContinuationContext | null>(null)
 const mobileDockHeight = ref(180)
 
+const promptContextManager = usePromptContext({ history, messages, pendingContinuation })
+const promptContext = promptContextManager.context
+const promptTree = usePromptTree()
+let suppressTreeAutoCommit = false
+
 const { viewportHeight: mobileViewportHeight, keyboardInset: mobileKeyboardInset } = useMobileViewport()
 const isDesktop = useMediaQuery('(min-width: 1024px)')
+const isWideDesktop = useMediaQuery('(min-width: 1280px)')
 const refImages = useReferenceImages({ toast })
 const referenceImages = refImages.items
 const addReferenceImages = refImages.add
@@ -309,7 +338,13 @@ function handleMagicEnhance(result: EnhanceResult) {
   }
 
   lastEnhanceResult.value = result
+  suppressTreeAutoCommit = true
   prompt.value = result.enhanced
+  promptTree.commit({
+    prompt: result.enhanced,
+    action: 'enhance',
+    label: result.summary || '智能优化',
+  })
   vibrate('success')
 
   const dimLabels = result.dimensionLabels.join('、')
@@ -318,10 +353,159 @@ function handleMagicEnhance(result: EnhanceResult) {
 
 function handleUndoEnhance() {
   if (!lastEnhanceResult.value) return
+  suppressTreeAutoCommit = true
   prompt.value = lastEnhanceResult.value.original
+  promptTree.commit({
+    prompt: lastEnhanceResult.value.original,
+    action: 'undo',
+    label: '撤销魔法',
+  })
   lastEnhanceResult.value = null
   vibrate('tap')
   toast.info('已撤销魔法增强')
+}
+
+function handleTreeUndo() {
+  const node = promptTree.undo()
+  if (!node) {
+    toast.info('没有更早的版本')
+    return
+  }
+  suppressTreeAutoCommit = true
+  prompt.value = node.prompt
+  vibrate('tap')
+  toast.info('已回到上一个版本', node.label)
+}
+
+function handleTreeRedo() {
+  const node = promptTree.redo()
+  if (!node) {
+    toast.info('没有更新的版本')
+    return
+  }
+  suppressTreeAutoCommit = true
+  prompt.value = node.prompt
+  vibrate('tap')
+  toast.info('已恢复版本', node.label)
+}
+
+function handleTreeJump(id: string) {
+  const node = promptTree.jumpTo(id)
+  if (!node) return
+  suppressTreeAutoCommit = true
+  prompt.value = node.prompt
+  vibrate('tap')
+  toast.info('已跳转到该版本', node.label)
+}
+
+function handleTreeBranch(id: string) {
+  const node = promptTree.branchFrom(id)
+  if (!node) return
+  suppressTreeAutoCommit = true
+  prompt.value = node.prompt
+  vibrate('tap')
+  toast.info('从该节点分支', '继续修改会形成新分支')
+}
+
+function handleTreeClear() {
+  promptTree.clear()
+  toast.info('已清空 Prompt 树')
+}
+
+async function handleMagicAbTest(original: string, optimized: EnhanceResult) {
+  if (!optimized.enhanced || optimized.enhanced === original) {
+    toast.info('优化版本与原始一致，无需 A/B')
+    return
+  }
+  if (isGenerating.value) {
+    toast.info('正在生成中，请稍候')
+    return
+  }
+  if (!provider.isConfigured.value) {
+    toast.error('请先配置 API 服务', '右上角「设置」→ 服务商')
+    settingsOpen.value = true
+    return
+  }
+  if (healthStatus.value === 'offline') {
+    toast.error('API 未配置', '请先在「设置」中填写 baseUrl 与 Key')
+    return
+  }
+
+  prompt.value = optimized.enhanced
+  lastEnhanceResult.value = optimized
+
+  const userIdA = createId()
+  const userIdB = createId()
+  const basePayload = buildPayload()
+  const payloadOriginal: GenerateImageRequest = { ...basePayload, prompt: original }
+  const payloadOptimized: GenerateImageRequest = { ...basePayload, prompt: optimized.enhanced }
+
+  messages.value = [
+    ...messages.value,
+    {
+      id: userIdA,
+      role: 'user',
+      content: `[A · 原始] ${original}`,
+      createdAt: new Date().toISOString(),
+      meta: payloadToMeta(payloadOriginal),
+    },
+  ]
+  await runGeneration({ payload: payloadOriginal, userMessageId: userIdA })
+
+  messages.value = [
+    ...messages.value,
+    {
+      id: userIdB,
+      role: 'user',
+      content: `[B · 优化] ${optimized.enhanced}`,
+      createdAt: new Date().toISOString(),
+      meta: payloadToMeta(payloadOptimized),
+    },
+  ]
+  await runGeneration({ payload: payloadOptimized, userMessageId: userIdB })
+
+  toast.success('A/B 双轨完成', '上下两组可对比效果')
+}
+
+function handleImportPrompt(text: string) {
+  const trimmed = text.trim()
+  if (!trimmed) {
+    toast.error('没有可导入的提示词内容')
+    return
+  }
+  const looksStructured = /^(?:Subject|Lighting|Camera|Composition|主体|光位|镜头|构图)[:：]/m.test(trimmed)
+  let nextValue: string
+  let slotCount = 0
+  if (looksStructured) {
+    const doc = reverseParseRevisedPrompt({
+      revisedPrompt: trimmed,
+      style: style.value,
+      size: size.value,
+      hasReferenceImages: referenceImages.value.length > 0,
+      modelName: modelChoice.value,
+    })
+    const plain = docToPlainPrompt(doc) || trimmed
+    nextValue = plain
+    slotCount = Object.keys(doc.slots).filter((key) => doc.slots[key as keyof typeof doc.slots]?.value).length
+  } else {
+    nextValue = trimmed
+  }
+  suppressTreeAutoCommit = true
+  prompt.value = nextValue
+  promptTree.commit({
+    prompt: nextValue,
+    action: 'import',
+    label: looksStructured ? `反向导入 · ${slotCount} 槽位` : '反向导入',
+  })
+  if (looksStructured) {
+    toast.success('已导入并解析槽位', `识别 ${slotCount} 个槽位，已规整为可读 prompt`)
+  } else {
+    toast.success('已导入到 Composer', '原文不含结构化标记，按原样写入')
+  }
+  templateAnchorPrompt = prompt.value
+  lastEnhanceResult.value = null
+  vibrate('tap')
+  focusPrompt()
 }
 
 function handlePickQuickPrompt(value: string) {
@@ -561,13 +745,13 @@ function resetDraft() {
   lastEnhanceResult.value = null
   lastRequestId.value = ''
   elapsedSeconds.value = 0
-  toast.info('已重置画布与参数')
+  toast.info(t('toast.draftReset'))
 }
 
 function clearLocalHistory() {
   clearHistory()
   history.value = []
-  toast.info('已清空历史')
+  toast.info(t('toast.historyCleared'))
 }
 
 function openImage(image: GeneratedImage) {
@@ -583,7 +767,7 @@ function openImage(image: GeneratedImage) {
 
 async function copyToClipboard(text: string, message: string) {
   if (!text || !text.trim()) {
-    toast.error('没有可复制的内容')
+    toast.error(t('toast.empty'))
     return
   }
 
@@ -591,7 +775,7 @@ async function copyToClipboard(text: string, message: string) {
     await navigator.clipboard.writeText(text)
     toast.success(message)
   } catch {
-    toast.error('复制失败，请手动复制')
+    toast.error(t('toast.copyFailed'))
   }
 }
 
@@ -645,6 +829,10 @@ function warmLazyComponents() {
       loadSettingsDialog(),
       loadHistoryDialog(),
       loadLightbox(),
+      loadCommandPalette(),
+      loadActivitySidebar(),
+      loadShortcutsDialog(),
+      loadOnboardingTour(),
     ])
   }
 
@@ -655,10 +843,32 @@ function warmLazyComponents() {
   }
 }
 
+let manualCommitTimer: number | undefined
+
 watch(prompt, (value) => {
   if (lastEnhanceResult.value && value !== lastEnhanceResult.value.enhanced) {
     lastEnhanceResult.value = null
   }
+  if (suppressTreeAutoCommit) {
+    suppressTreeAutoCommit = false
+    return
+  }
+  if (manualCommitTimer) {
+    window.clearTimeout(manualCommitTimer)
+    manualCommitTimer = undefined
+  }
+  manualCommitTimer = window.setTimeout(() => {
+    manualCommitTimer = undefined
+    const trimmed = value.trim()
+    if (!trimmed) return
+    const current = promptTree.currentNode.value
+    if (current && current.prompt === value) return
+    promptTree.commit({
+      prompt: value,
+      action: 'manual',
+      label: '手动编辑',
+    })
+  }, 1200)
 })
 
 watch(style, (newValue, oldValue) => {
@@ -701,6 +911,23 @@ onMounted(() => {
     history.value = items
   })
   warmLazyComponents()
+  onboarding.startIfNeeded()
+  if (!promptTree.currentNode.value && prompt.value.trim()) {
+    promptTree.commit({
+      prompt: prompt.value,
+      action: 'manual',
+      label: '初始',
+    })
+  }
+})
+
+watch(sw.updateAvailable, (available) => {
+  if (!available) return
+  toast.info(t('toast.updateReady'), t('toast.updateReadyHint'))
+  // Apply on the next user interaction window — give them a heartbeat to read the toast.
+  window.setTimeout(() => {
+    sw.applyUpdate()
+  }, 4000)
 })
 </script>
 
@@ -710,7 +937,7 @@ onMounted(() => {
       href="#canvas"
       class="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[80] focus:rounded-md focus:bg-ink focus:px-3 focus:py-2 focus:text-paper"
     >
-      跳到画布
+      {{ t('app.skipToCanvas') }}
     </a>
 
     <AppHeader
@@ -721,12 +948,17 @@ onMounted(() => {
       @toggle-theme="toggleTheme"
       @open-history="historyOpen = true"
       @open-settings="settingsOpen = true"
+      @open-command-palette="commandPalette.open.value = true"
       @reset="resetDraft"
     />
 
     <main
       v-if="isDesktop"
-      class="desktop-workbench relative z-[2] mx-auto grid w-full max-w-[1560px] flex-1 grid-cols-[minmax(360px,440px)_minmax(0,1fr)] gap-7 px-10 pb-10 pt-7 xl:gap-8"
+      class="desktop-workbench relative z-[2] mx-auto grid w-full max-w-[1680px] flex-1 gap-6 px-8 pb-10 pt-7 xl:gap-7 2xl:px-10"
+      :class="isWideDesktop
+        ? 'grid-cols-[minmax(340px,420px)_minmax(0,1fr)_minmax(280px,340px)]'
+        : 'grid-cols-[minmax(360px,440px)_minmax(0,1fr)]'
+      "
     >
       <section class="studio-panel reveal touch-scroll-y" style="--reveal-delay: 40ms;">
         <PromptComposer
@@ -744,6 +976,13 @@ onMounted(() => {
           :health-offline="healthStatus === 'offline'"
           :continuation="pendingContinuation"
           :can-undo-enhance="!!lastEnhanceResult"
+          :quality="quality"
+          :model-name="selectedModelLabel"
+          :prompt-context="promptContext"
+          :tree-nodes="promptTree.nodes.value"
+          :tree-current-id="promptTree.currentNode.value?.id ?? null"
+          :tree-can-undo="promptTree.canUndo.value"
+          :tree-can-redo="promptTree.canRedo.value"
           @generate="handleGenerate"
           @abort="handleAbortGeneration"
           @copy="copyToClipboard"
@@ -751,7 +990,14 @@ onMounted(() => {
           @select-reference-images="addReferenceImages"
           @remove-reference-image="removeReferenceImage"
           @magic-enhance="handleMagicEnhance"
+          @magic-ab-test="handleMagicAbTest"
+          @toast-info="(title: string, message?: string) => toast.info(title, message)"
           @undo-enhance="handleUndoEnhance"
+          @tree-undo="handleTreeUndo"
+          @tree-redo="handleTreeRedo"
+          @tree-jump="handleTreeJump"
+          @tree-branch="handleTreeBranch"
+          @tree-clear="handleTreeClear"
           @clear="lastEnhanceResult = null"
           @cancel-continuation="handleCancelContinuation"
         />
@@ -771,6 +1017,7 @@ onMounted(() => {
           :prompt-preview="promptPreview"
           :has-prompt="trimmedPrompt.length >= 4"
           :quick-prompts="quickPromptCards"
+          :provider-configured="provider.isConfigured.value"
           @select="(index) => (activeImageIndex = index)"
           @open-lightbox="(index) => lightbox.open(images, index)"
           @download="downloadImage"
@@ -782,8 +1029,22 @@ onMounted(() => {
           @remix="(image, index) => handleRemix(image, prompt, lastRequestId || 'canvas', index)"
           @generate="handleGenerate"
           @abort="handleAbortGeneration"
+          @open-settings="settingsOpen = true"
+          @drop-reference-images="addReferenceImages"
         />
       </section>
+
+      <ActivitySidebar
+        v-if="isWideDesktop"
+        :history="history"
+        :is-generating="isGenerating"
+        :elapsed-seconds="elapsedSeconds"
+        :prompt-preview="promptPreview"
+        :selected-request-id="lastRequestId"
+        @restore="restoreHistory"
+        @open-history="historyOpen = true"
+        @copy="copyToClipboard"
+      />
 
     </main>
 
@@ -803,14 +1064,17 @@ onMounted(() => {
         :messages="messages"
         :mobile-bottom-padding="mobileChatBottomPadding"
         :jump-bottom="mobileJumpButtonBottom"
+        :provider-configured="provider.isConfigured.value"
         @retry="regenerateFromMessage"
         @open-image="lightbox.open"
         @download="downloadImage"
         @copy="copyToClipboard"
         @remix="handleRemix"
+        @import-prompt="handleImportPrompt"
         @pick-suggestion="handlePickSuggestion"
         @scroll-to-message="handleScrollToMessage"
         @abort="handleAbortGeneration"
+        @open-settings="settingsOpen = true"
       />
     </div>
 
@@ -830,6 +1094,10 @@ onMounted(() => {
       :viewport-height="mobileViewportHeight ?? undefined"
       :continuation="pendingContinuation"
       :can-undo-enhance="!!lastEnhanceResult"
+      :size="size"
+      :quality="quality"
+      :model-name="selectedModelLabel"
+      :prompt-context="promptContext"
       @send="sendFromChat"
       @abort="handleAbortGeneration"
       @open-style-sheet="styleSheetOpen = true"
@@ -837,6 +1105,7 @@ onMounted(() => {
       @select-reference-images="addReferenceImages"
       @remove-reference-image="removeReferenceImage"
       @magic-enhance="handleMagicEnhance"
+      @magic-ab-test="handleMagicAbTest"
       @undo-enhance="handleUndoEnhance"
       @cancel-continuation="handleCancelContinuation"
       @jump-to-continuation="handleScrollToMessage"
@@ -861,7 +1130,7 @@ onMounted(() => {
       v-model:customModel="customModel"
       @export="exportCurrentConfig"
       @reset="resetDraft"
-      @reset-provider="toast.info('已清除 API 凭据', '请重新填写以继续生成')"
+      @reset-provider="toast.info(t('toast.providerCleared'), t('toast.providerClearedHint'))"
       @test-result="handleProviderTestResult"
     />
 
@@ -871,6 +1140,36 @@ onMounted(() => {
       :history="history"
       @restore="restoreHistory"
       @clear="clearLocalHistory"
+    />
+
+    <CommandPalette
+      v-if="commandPalette.open.value"
+      v-model:open="commandPalette.open.value"
+      :install-available="installPrompt.available.value"
+      @pick-style="(value) => (style = value)"
+      @pick-size="(value) => (size = value)"
+      @open-history="historyOpen = true"
+      @open-settings="settingsOpen = true"
+      @open-style-sheet="styleSheetOpen = true"
+      @open-shortcuts="shortcutsDialog.open.value = true"
+      @open-onboarding="onboarding.start()"
+      @install-app="() => { void installPrompt.prompt() }"
+      @toggle-theme="toggleTheme"
+      @reset="resetDraft"
+      @generate="handleGenerate"
+      @focus-prompt="focusPrompt"
+    />
+
+    <ShortcutsDialog
+      v-if="shortcutsDialog.open.value"
+      v-model:open="shortcutsDialog.open.value"
+    />
+
+    <OnboardingTour
+      v-if="onboarding.active.value"
+      :active="onboarding.active.value"
+      @finish="onboarding.finish"
+      @dismiss="onboarding.dismiss"
     />
 
     <Lightbox v-if="lightbox.state.open" />

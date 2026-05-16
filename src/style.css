@@ -6,51 +6,55 @@
   :root {
     font-size: 16px;
     color-scheme: light;
-    --color-ink: 24 23 20;
-    --color-paper: 239 236 226;
-    --color-paper-soft: 226 229 216;
-    --color-cream: 218 210 193;
-    --color-vellum: 251 248 239;
-    --color-muted: 91 90 78;
-    --color-line: 188 182 161;
-    --color-line-strong: 111 112 89;
-    --color-accent: 151 55 39;
-    --color-forest: 70 94 72;
-    --color-ochre: 154 110 50;
-    --color-blueprint: 54 63 64;
+    --color-ink: 22 24 28;
+    --color-paper: 242 240 233;
+    --color-paper-soft: 232 230 222;
+    --color-cream: 222 218 206;
+    --color-vellum: 249 247 240;
+    --color-muted: 104 106 110;
+    --color-line: 216 213 204;
+    --color-line-strong: 148 148 142;
+    --color-accent: 168 76 58;
+    --color-forest: 58 84 70;
+    --color-ochre: 156 118 60;
+    --color-blueprint: 78 96 118;
     --color-sage: 178 188 163;
     --color-clay: 184 107 76;
-    --color-ivory: 255 252 244;
-    --color-shadow: 32 28 22;
+    --color-ivory: 255 254 250;
+    --color-shadow: 24 26 30;
     --shadow-paper-1: 0 1px 0 rgb(255 255 255 / 0.72), 0 8px 20px -16px rgb(var(--color-shadow) / 0.25);
     --shadow-paper-2: 0 1px 0 rgb(255 255 255 / 0.62), 0 18px 42px -30px rgb(var(--color-shadow) / 0.36), 0 8px 18px -16px rgb(var(--color-shadow) / 0.24);
     --shadow-paper-3: 0 1px 0 rgb(255 255 255 / 0.58), 0 34px 78px -44px rgb(var(--color-shadow) / 0.48), 0 16px 34px -28px rgb(var(--color-shadow) / 0.32);
     --shadow-inner-paper: inset 0 1px 0 rgb(255 255 255 / 0.76), inset 0 -1px 0 rgb(var(--color-shadow) / 0.065);
-    --focus-ring: 0 0 0 2px rgb(var(--color-paper)), 0 0 0 4px rgb(var(--color-forest) / 0.26), 0 14px 30px -24px rgb(var(--color-forest) / 0.65);
+    --focus-ring: 0 0 0 2px rgb(var(--color-paper)), 0 0 0 4px rgb(var(--color-forest) / 0.32), 0 14px 30px -24px rgb(var(--color-forest) / 0.55);
     --radius-field: 12px;
     --radius-panel: 16px;
     --motion-snap: cubic-bezier(0.16, 1, 0.3, 1);
     --motion-soft: cubic-bezier(0.2, 0.8, 0.2, 1);
     --motion-press: cubic-bezier(0.34, 1.56, 0.64, 1);
+    --dur-feedback: 140ms;
+    --dur-transition: 220ms;
+    --dur-reveal: 380ms;
+    --dur-stage: 5000ms;
   }
 
   :root.theme-night {
     color-scheme: dark;
-    --color-ink: 241 238 226;
-    --color-paper: 17 18 16;
-    --color-paper-soft: 28 32 28;
-    --color-cream: 36 38 32;
-    --color-vellum: 42 44 37;
-    --color-muted: 174 177 159;
-    --color-line: 70 75 61;
-    --color-line-strong: 121 130 104;
-    --color-accent: 229 109 82;
-    --color-forest: 139 169 124;
-    --color-ochre: 218 168 86;
-    --color-blueprint: 125 148 149;
+    --color-ink: 232 232 226;
+    --color-paper: 15 16 18;
+    --color-paper-soft: 22 24 26;
+    --color-cream: 36 38 40;
+    --color-vellum: 28 30 32;
+    --color-muted: 156 160 166;
+    --color-line: 52 54 58;
+    --color-line-strong: 108 112 118;
+    --color-accent: 212 110 86;
+    --color-forest: 128 168 144;
+    --color-ochre: 196 158 96;
+    --color-blueprint: 142 162 188;
     --color-sage: 104 124 96;
     --color-clay: 205 128 91;
-    --color-ivory: 48 49 41;
+    --color-ivory: 44 46 48;
     --color-shadow: 0 0 0;
     --shadow-paper-1: 0 1px 0 rgb(255 255 255 / 0.04), 0 10px 26px -20px rgb(0 0 0 / 0.78);
     --shadow-paper-2: 0 1px 0 rgb(255 255 255 / 0.06), 0 24px 52px -34px rgb(0 0 0 / 0.88);
@@ -156,10 +160,14 @@
 
   .display-h1 {
     @apply font-display text-3xl leading-[1.05] tracking-tightish text-ink lg:text-[2rem];
+    font-variation-settings: 'opsz' 96, 'SOFT' 30;
+    font-optical-sizing: auto;
   }
 
   .display-h2 {
     @apply font-display text-3xl leading-[1.05] tracking-tightish text-ink lg:text-[2rem];
+    font-variation-settings: 'opsz' 96, 'SOFT' 30;
+    font-optical-sizing: auto;
   }
 
   .field-select,
@@ -291,10 +299,8 @@
   .paper-bg {
     background-color: rgb(var(--color-paper));
     background-image:
-      linear-gradient(115deg, rgb(var(--color-sage) / 0.18), transparent 32%, rgb(var(--color-clay) / 0.08) 66%, transparent),
-      linear-gradient(180deg, rgb(var(--color-ivory) / 0.34), transparent 26%),
-      repeating-linear-gradient(90deg, rgb(var(--color-ink) / 0.018) 0 1px, transparent 1px 18px),
-      url("data:image/svg+xml;utf8,%3Csvg viewBox='0 0 280 280' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch' seed='4'/%3E%3CfeColorMatrix values='0 0 0 0 0.09 0 0 0 0 0.075 0 0 0 0 0.06 0 0 0 0.055 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+      linear-gradient(180deg, rgb(var(--color-ivory) / 0.5), rgb(var(--color-vellum) / 0)),
+      url("data:image/svg+xml;utf8,%3Csvg viewBox='0 0 280 280' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch' seed='4'/%3E%3CfeColorMatrix values='0 0 0 0 0.09 0 0 0 0 0.075 0 0 0 0 0.06 0 0 0 0.025 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   }
 
   .studio-panel {
@@ -440,6 +446,25 @@
   100% { transform: translateY(380%); }
 }
 
+/* DevelopingFrame shared keyframes (used by skeleton shimmer & baseline rise). */
+@keyframes dev-shimmer {
+  0%   { background-position: -50% 0; }
+  100% { background-position: 150% 0; }
+}
+
+@keyframes dev-rise {
+  0%   { transform: translateY(0);      opacity: 0; }
+  12%  { opacity: 1; }
+  88%  { opacity: 1; }
+  100% { transform: translateY(-100%);  opacity: 0; }
+}
+
+/* Image arrival: 200ms blur→focus (Midjourney-style settle). */
+@keyframes dev-focus {
+  0%   { filter: blur(8px); }
+  100% { filter: blur(0); }
+}
+
 @keyframes ink-blink {
   0%, 100% { opacity: 0.18; transform: scale(0.8); }
   50% { opacity: 1; transform: scale(1); }
@@ -461,9 +486,8 @@
 @media (max-width: 640px) {
   .paper-bg {
     background-image:
-      linear-gradient(180deg, rgb(var(--color-ivory) / 0.22), transparent 32%),
-      repeating-linear-gradient(90deg, rgb(var(--color-ink) / 0.014) 0 1px, transparent 1px 20px),
-      url("data:image/svg+xml;utf8,%3Csvg viewBox='0 0 280 280' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='1' stitchTiles='stitch' seed='4'/%3E%3CfeColorMatrix values='0 0 0 0 0.09 0 0 0 0 0.075 0 0 0 0 0.06 0 0 0 0.038 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+      linear-gradient(180deg, rgb(var(--color-ivory) / 0.4), rgb(var(--color-vellum) / 0)),
+      url("data:image/svg+xml;utf8,%3Csvg viewBox='0 0 280 280' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='1' stitchTiles='stitch' seed='4'/%3E%3CfeColorMatrix values='0 0 0 0 0.09 0 0 0 0 0.075 0 0 0 0 0.06 0 0 0 0.022 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   }
 }
 

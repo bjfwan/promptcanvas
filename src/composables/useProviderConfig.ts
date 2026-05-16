@@ -1,5 +1,6 @@
 import { computed, reactive, watch } from 'vue'
 import {
+  DEFAULT_PROXY_URL,
   isProviderConfigured as checkConfigured,
   loadProviderConfig,
   rawApiKeyIsEncrypted,
@@ -7,7 +8,7 @@ import {
 } from '../storage'
 import type { ProviderConfig } from '../types'
 
-const state = reactive<ProviderConfig>({ baseUrl: '', apiKey: '', proxyUrl: '' })
+const state = reactive<ProviderConfig>({ baseUrl: '', apiKey: '', proxyUrl: DEFAULT_PROXY_URL })
 
 const ready = { value: false } as { value: boolean }
 let saveTimer: number | undefined
@@ -18,7 +19,8 @@ async function hydrate() {
     const loaded = await loadProviderConfig()
     state.baseUrl = loaded.baseUrl
     state.apiKey = loaded.apiKey
-    state.proxyUrl = loaded.proxyUrl ?? ''
+    // loadProviderConfig 已经保证 proxyUrl 至少是内置默认值
+    state.proxyUrl = loaded.proxyUrl ?? DEFAULT_PROXY_URL
 
     if (loaded.apiKey && !rawApiKeyIsEncrypted()) {
       await saveProviderConfig(loaded)
@@ -54,7 +56,7 @@ export function snapshotProviderConfig(): ProviderConfig {
   return {
     baseUrl: normalizeBaseUrl(state.baseUrl ?? ''),
     apiKey: (state.apiKey ?? '').trim(),
-    proxyUrl: normalizeBaseUrl(state.proxyUrl ?? ''),
+    proxyUrl: normalizeBaseUrl(state.proxyUrl ?? '') || DEFAULT_PROXY_URL,
   }
 }
 
@@ -71,7 +73,8 @@ export function useProviderConfig() {
     reset() {
       state.baseUrl = ''
       state.apiKey = ''
-      state.proxyUrl = ''
+      // 保留内置代理：用户「清除凭据」只是为了清密钥，不应让请求改走直连
+      state.proxyUrl = DEFAULT_PROXY_URL
     },
   }
 }

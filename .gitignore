@@ -24,3 +24,4 @@ Thumbs.db
 playwright-report/
 test-results/
 proxy/package-lock.json
+.kiro

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import Icon from './Icon.vue'
+import DevelopingFrame from './DevelopingFrame.vue'
 import { resolveImageSource } from '../api'
 import type { GeneratedImage, ImageSize } from '../types'
 
@@ -22,9 +23,14 @@ interface Props {
   hasPrompt: boolean
   modelLabel?: string
   quickPrompts?: QuickPromptCard[]
+  providerConfigured?: boolean
+  canAcceptDrop?: boolean
 }
 
-const props = defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), {
+  providerConfigured: true,
+  canAcceptDrop: true,
+})
 
 const emit = defineEmits<{
   (e: 'select', index: number): void
@@ -38,6 +44,8 @@ const emit = defineEmits<{
   (e: 'remix', image: GeneratedImage, index: number): void
   (e: 'generate'): void
   (e: 'abort'): void
+  (e: 'open-settings'): void
+  (e: 'drop-reference-images', files: File[]): void
 }>()
 
 const activeImage = computed(() => props.images[props.activeImageIndex])
@@ -50,7 +58,53 @@ const orient = computed<'portrait' | 'landscape' | 'square'>(() => {
   return 'square'
 })
 
-const elapsedLabel = computed(() => `${props.elapsedSeconds.toString().padStart(2, '0')}s`)
+const dragActive = ref(false)
+let dragDepth = 0
+
+function hasFileDrag(event: DragEvent) {
+  return Array.from(event.dataTransfer?.types ?? []).includes('Files')
+}
+
+function imageFilesFrom(dataTransfer: DataTransfer | null) {
+  if (!dataTransfer?.files?.length) return []
+  return Array.from(dataTransfer.files).filter((file) => file.type.startsWith('image/'))
+}
+
+function handleDragEnter(event: DragEvent) {
+  if (!props.canAcceptDrop || !hasFileDrag(event)) return
+  event.preventDefault()
+  dragDepth += 1
+  dragActive.value = true
+}
+
+function handleDragOver(event: DragEvent) {
+  if (!props.canAcceptDrop || !hasFileDrag(event)) return
+  event.preventDefault()
+  if (event.dataTransfer) {
+    event.dataTransfer.dropEffect = 'copy'
+  }
+  dragActive.value = true
+}
+
+function handleDragLeave() {
+  if (!dragActive.value) return
+  dragDepth = Math.max(0, dragDepth - 1)
+  if (dragDepth === 0) {
+    dragActive.value = false
+  }
+}
+
+function handleDrop(event: DragEvent) {
+  if (!props.canAcceptDrop) return
+  event.preventDefault()
+  dragDepth = 0
+  dragActive.value = false
+  const files = imageFilesFrom(event.dataTransfer)
+  if (files.length) {
+    emit('drop-reference-images', files)
+  }
+}
+
 const canvasProgress = computed(() => {
   const elapsed = Math.max(0, props.elapsedSeconds)
   if (elapsed <= 0) return 6
@@ -64,7 +118,6 @@ const canvasStageLabel = computed(() => {
   if (canvasProgress.value < 84) return '生成细节'
   return '等待返回'
 })
-const canvasProgressStyle = computed(() => ({ '--progress': `${canvasProgress.value}%` }))
 
 const canvasEstimatedDuration = computed(() => {
   let seconds = 11
@@ -98,7 +151,26 @@ function isImageReady(image: GeneratedImage, index: number) {
 </script>
 
 <template>
-  <section class="space-y-5">
+  <section
+    class="space-y-5 canvas-stage-root canvas-grid"
+    :class="{ 'canvas-stage-root--dragging': dragActive, 'canvas-scan': !isGenerating }"
+    @dragenter="handleDragEnter"
+    @dragover="handleDragOver"
+    @dragleave="handleDragLeave"
+    @drop="handleDrop"
+  >
+    <Transition name="canvas-drop-fade">
+      <div v-if="dragActive" class="canvas-drop-overlay" aria-hidden="true">
+        <div class="canvas-drop-overlay__inner">
+          <Icon name="upload" :size="22" />
+          <p class="font-display text-xl italic">松手添加为参考图</p>
+          <p class="font-mono text-[10px] uppercase tracking-[0.18em] opacity-70">
+            支持 PNG · JPEG · WEBP · GIF
+          </p>
+        </div>
+      </div>
+    </Transition>
+
     <header class="flex items-end justify-between gap-4">
       <div class="space-y-2">
         <p class="display-eyebrow">02 · Canvas</p>
@@ -134,70 +206,25 @@ function isImageReady(image: GeneratedImage, index: number) {
       role="status"
       aria-live="polite"
     >
-      <div class="chat-pending-bg absolute inset-0"></div>
-      <div class="canvas-pending-layers" aria-hidden="true">
-        <span></span>
-        <span></span>
-        <span></span>
-        <span></span>
-        <span></span>
-      </div>
-
-      <div class="absolute inset-0 grid grid-rows-[auto_1fr_auto] p-6 sm:p-8">
-        <div class="flex items-center justify-between font-mono text-[10px] uppercase tracking-[0.25em] text-muted/60">
-          <div class="flex items-center gap-2.5">
-            <span class="flex h-1.5 w-1.5 rounded-full bg-ink/20 animate-pulse"></span>
-            <span>{{ canvasStageLabel }}</span>
-          </div>
-          <span class="tabular-nums">{{ elapsedLabel }}</span>
-        </div>
-
-        <div class="grid place-items-center">
-          <div class="atelier-process">
-            <div class="atelier-process__plate" aria-hidden="true">
-              <span></span>
-              <span></span>
-              <span></span>
-              <span></span>
-            </div>
-            <div class="atelier-process__readout">
-              <span>Composing frame</span>
-              <strong>{{ canvasStageLabel }}</strong>
-              <em>{{ elapsedLabel }} · {{ canvasProgress }}%</em>
-            </div>
-          </div>
-        </div>
-
-        <div class="space-y-4">
-          <div class="chat-pending-bar" :style="canvasProgressStyle"></div>
-          <div class="flex items-end justify-between gap-6">
-            <p class="font-display text-lg italic leading-snug tracking-tight text-ink/80 truncate-2 max-w-[60%]">
-              {{ promptPreview || 'untitled draft' }}
-            </p>
-            <div class="flex flex-col items-end gap-1 font-mono text-[9px] uppercase tracking-[0.2em] text-muted/55">
-              <span class="canvas-pending__remain">
-                <span class="canvas-pending__remain-dot" aria-hidden="true"></span>
-                <span>{{ canvasRemainingLabel }}</span>
-              </span>
-              <span>{{ size }} · {{ styleLabel }}</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <button
-        type="button"
-        class="canvas-pending__cancel"
-        aria-label="取消这次生成"
-        @click="emit('abort')"
-      >
-        <Icon name="close" :size="13" />
-        <span>取消</span>
-      </button>
+      <DevelopingFrame
+        :progress="canvasProgress"
+        :elapsed-seconds="elapsedSeconds"
+        :stage="canvasStageLabel"
+        :remaining-label="canvasRemainingLabel"
+        :meta-label="`${size} · ${styleLabel}`"
+        :prompt-preview="promptPreview || 'untitled draft'"
+        :ring-size="200"
+        @cancel="emit('abort')"
+      />
     </div>
 
     <div v-else-if="activeImage" class="space-y-5">
-      <div class="canvas-frame surface-2 group bg-paper-soft" :data-orient="orient">
+      <!-- Single image: keep the original full-canvas presentation. -->
+      <div
+        v-if="images.length === 1"
+        class="canvas-frame surface-2 group bg-paper-soft"
+        :data-orient="orient"
+      >
         <button
           type="button"
           class="absolute inset-0 grid place-items-center p-3 transition focus-visible:outline-none sm:p-5"
@@ -230,11 +257,12 @@ function isImageReady(image: GeneratedImage, index: number) {
         </button>
 
         <div
-          class="pointer-events-none absolute right-3 top-3 hidden translate-y-1 gap-1.5 opacity-0 transition group-hover:translate-y-0 group-hover:opacity-100 sm:flex"
+          class="canvas-tool-cluster pointer-events-none absolute right-3 top-3"
+          aria-label="图片操作"
         >
           <button
             type="button"
-            class="pointer-events-auto inline-grid h-9 w-9 place-items-center rounded-full border border-line bg-vellum/95 text-ink shadow-paper-2 backdrop-blur transition hover:bg-paper"
+            class="pointer-events-auto canvas-tool-btn"
             aria-label="放大"
             @click.stop="emit('open-lightbox', activeImageIndex)"
           >
@@ -242,20 +270,107 @@ function isImageReady(image: GeneratedImage, index: number) {
           </button>
           <button
             type="button"
-            class="pointer-events-auto inline-grid h-9 w-9 place-items-center rounded-full border border-line bg-vellum/95 text-ink shadow-paper-2 backdrop-blur transition hover:bg-paper"
+            class="pointer-events-auto canvas-tool-btn"
             aria-label="新窗口打开"
             @click.stop="emit('open', activeImage)"
           >
-            <Icon name="link" :size="14" />
+            <Icon name="external" :size="14" />
           </button>
           <button
             type="button"
-            class="pointer-events-auto inline-grid h-9 w-9 place-items-center rounded-full border border-line bg-vellum/95 text-ink shadow-paper-2 backdrop-blur transition hover:bg-paper"
+            class="pointer-events-auto canvas-tool-btn"
             aria-label="下载"
             @click.stop="emit('download', activeImage, activeImageIndex)"
           >
             <Icon name="download" :size="14" />
           </button>
+        </div>
+      </div>
+
+      <!-- Multi image: mosaic doubles as selector + preview. -->
+      <div
+        v-else
+        class="canvas-mosaic surface-2"
+        :class="`canvas-mosaic--${images.length}`"
+        :data-orient="orient"
+        role="listbox"
+        aria-label="生成结果"
+      >
+        <div
+          v-for="(image, index) in images"
+          :key="image.id || index"
+          class="canvas-mosaic__cell"
+          :class="{ 'canvas-mosaic__cell--active': activeImageIndex === index }"
+          :data-cell="index"
+          role="option"
+          :aria-selected="activeImageIndex === index"
+        >
+          <button
+            type="button"
+            class="canvas-mosaic__surface"
+            :aria-label="activeImageIndex === index
+              ? `第 ${index + 1} 张已激活，点击放大`
+              : `选中第 ${index + 1} 张`"
+            @click="activeImageIndex === index
+              ? emit('open-lightbox', index)
+              : emit('select', index)"
+          >
+            <div
+              v-if="!isImageReady(image, index)"
+              class="canvas-image-placeholder absolute inset-0"
+              aria-hidden="true"
+            >
+              <div class="canvas-image-placeholder__glow"></div>
+              <div class="canvas-image-placeholder__loader">
+                <span></span>
+                <span></span>
+                <span></span>
+              </div>
+            </div>
+            <img
+              :src="imageSource(image)"
+              :alt="`生成图片 ${index + 1}`"
+              :loading="index < 2 ? 'eager' : 'lazy'"
+              :fetchpriority="activeImageIndex === index ? 'high' : 'auto'"
+              decoding="async"
+              class="canvas-mosaic__img"
+              :class="isImageReady(image, index) ? 'canvas-mosaic__img--ready' : 'canvas-mosaic__img--loading'"
+              @load="markImageReady(image, index)"
+              @error="markImageReady(image, index)"
+            />
+            <span class="canvas-mosaic__index" aria-hidden="true">
+              {{ index + 1 }}<span class="opacity-60">/{{ images.length }}</span>
+            </span>
+            <span
+              v-if="activeImageIndex === index"
+              class="canvas-mosaic__active-mark"
+              aria-hidden="true"
+            >
+              <Icon name="check" :size="12" />
+            </span>
+          </button>
+
+          <div
+            class="canvas-mosaic__tools pointer-events-none"
+            :aria-hidden="activeImageIndex !== index"
+          >
+            <button
+              type="button"
+              class="pointer-events-auto canvas-mosaic__tool"
+              aria-label="放大"
+              @click.stop="emit('open-lightbox', index)"
+            >
+              <Icon name="zoomIn" :size="13" />
+            </button>
+            <button
+              type="button"
+              class="pointer-events-auto canvas-mosaic__tool"
+              aria-label="下载"
+              @click.stop="emit('download', image, index)"
+            >
+              <Icon name="download" :size="13" />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -287,39 +402,6 @@ function isImageReady(image: GeneratedImage, index: number) {
       </div>
 
       <div
-        v-if="images.length > 1"
-        class="-mx-1 flex gap-2 overflow-x-auto px-1 pb-2 [&::-webkit-scrollbar]:h-1.5"
-        aria-label="图片缩略图"
-        role="listbox"
-      >
-        <button
-          v-for="(image, index) in images"
-          :key="image.id || index"
-          type="button"
-          class="shrink-0 overflow-hidden rounded-xl border bg-cream p-1 transition"
-          :class="
-            activeImageIndex === index
-              ? 'border-ink shadow-paper-2'
-              : 'border-line hover:border-line-strong'
-          "
-          :aria-selected="activeImageIndex === index"
-          role="option"
-          @click="emit('select', index)"
-        >
-          <img
-            :src="imageSource(image)"
-            alt=""
-            :loading="Math.abs(activeImageIndex - index) <= 1 ? 'eager' : 'lazy'"
-            :fetchpriority="activeImageIndex === index ? 'high' : 'auto'"
-            decoding="async"
-            class="aspect-square w-16 rounded-md object-cover sm:w-20"
-            @load="markImageReady(image, index)"
-            @error="markImageReady(image, index)"
-          />
-        </button>
-      </div>
-
-      <div
         v-if="activeImage.revisedPrompt"
         class="surface-1 p-4 reveal"
       >
@@ -339,59 +421,100 @@ function isImageReady(image: GeneratedImage, index: number) {
 
     <div
       v-else
-      class="canvas-frame surface-1 border-dashed bg-cream/60"
+      class="canvas-frame surface-1 bg-cream/60 canvas-hero"
       :data-orient="orient"
     >
+      <div class="canvas-hero__art" aria-hidden="true">
+        <span class="canvas-hero__sun"></span>
+        <span class="canvas-hero__horizon"></span>
+        <span class="canvas-hero__paper canvas-hero__paper--1"></span>
+        <span class="canvas-hero__paper canvas-hero__paper--2"></span>
+        <span class="canvas-hero__paper canvas-hero__paper--3"></span>
+        <span class="canvas-hero__sparkle canvas-hero__sparkle--a"></span>
+        <span class="canvas-hero__sparkle canvas-hero__sparkle--b"></span>
+        <span class="canvas-hero__sparkle canvas-hero__sparkle--c"></span>
+      </div>
+
       <div class="absolute inset-0 grid place-items-center text-center">
         <div class="max-w-md px-6">
-          <div
-            class="mx-auto mb-5 grid h-14 w-14 place-items-center overflow-hidden rounded-[1.15rem] border border-line-strong/60 bg-vellum text-ink shadow-inner-paper"
-            aria-hidden="true"
-          >
-            <img src="/brand/promptcanvas-icon-96.png" alt="" width="56" height="56" decoding="async" />
-          </div>
-          <p class="font-display text-2xl italic tracking-tightish text-ink/85 sm:text-3xl">空白画布</p>
-          <p class="mt-3 text-[13px] leading-6 text-muted">
-            写下提示词，或先选一种模板气质，再生成第一张画面。
-          </p>
+          <template v-if="!providerConfigured">
+            <div
+              class="canvas-hero__badge mx-auto mb-5 grid h-14 w-14 place-items-center rounded-[1.15rem]"
+              aria-hidden="true"
+            >
+              <Icon name="settings" :size="22" />
+            </div>
+            <p class="font-display text-2xl italic tracking-tightish text-ink/85 sm:text-3xl">先配一下 API</p>
+            <p class="mt-3 text-[13px] leading-6 text-muted">
+              填入 OpenAI 或兼容中转站的 API 端点和 Key，请求会自动经内置反代中转，避免 CORS 与超时问题。
+            </p>
+            <div class="mt-6 flex flex-col items-center gap-2.5 sm:flex-row sm:justify-center">
+              <button
+                type="button"
+                class="btn-primary px-5"
+                @click="emit('open-settings')"
+              >
+                <Icon name="settings" :size="14" />
+                <span>打开设置</span>
+                <Icon name="arrowRight" :size="14" />
+              </button>
+            </div>
+            <p class="mt-4 font-mono text-[10px] uppercase tracking-[0.18em] text-muted/70">
+              proxy · likeyou.qzz.io · 透明转发
+            </p>
+          </template>
 
-          <div
-            v-if="quickPrompts?.length"
-            class="mt-6 grid gap-2 text-left sm:grid-cols-3"
-          >
-            <button
-              v-for="item in quickPrompts"
-              :key="item.title"
-              type="button"
-              class="canvas-prompt-card"
-              @click="emit('pick-prompt', item.prompt)"
+          <template v-else>
+            <div
+              class="canvas-hero__badge mx-auto mb-5 grid h-14 w-14 place-items-center rounded-[1.15rem]"
+              aria-hidden="true"
             >
-              <span class="block font-mono text-[10px] uppercase tracking-[0.18em] text-muted">{{ item.title }}</span>
-              <span class="mt-1 block truncate-2 text-[12px] leading-5 text-ink/75">{{ item.prompt }}</span>
-            </button>
-          </div>
+              <img src="/brand/promptcanvas-icon-96.png" alt="" width="56" height="56" decoding="async" />
+            </div>
+            <p class="font-display text-2xl italic tracking-tightish text-ink/85 sm:text-3xl">空白画布</p>
+            <p class="mt-3 text-[13px] leading-6 text-muted">
+              写下一段画面描述，或挑一个起点。
+              <kbd class="canvas-hero__kbd">⌘K</kbd> 唤出命令面板。
+            </p>
 
-          <div class="mt-6 flex flex-col items-center gap-2.5 sm:flex-row sm:justify-center">
-            <button
-              v-if="hasPrompt"
-              type="button"
-              class="btn-primary px-5"
-              @click="emit('generate')"
+            <div
+              v-if="quickPrompts?.length"
+              class="mt-6 grid gap-2 text-left sm:grid-cols-3"
             >
-              <Icon name="lightning" :size="14" />
-              <span>立即生成</span>
-            </button>
-            <button
-              v-else
-              type="button"
-              class="btn-secondary px-4 lg:hidden"
-              @click="emit('go-compose')"
-            >
-              <Icon name="textCursor" :size="14" />
-              去写提示词
-              <Icon name="arrowRight" :size="14" />
-            </button>
-          </div>
+              <button
+                v-for="item in quickPrompts"
+                :key="item.title"
+                type="button"
+                class="canvas-prompt-card"
+                @click="emit('pick-prompt', item.prompt)"
+              >
+                <span class="block font-mono text-[10px] uppercase tracking-[0.18em] text-muted">{{ item.title }}</span>
+                <span class="mt-1 block truncate-2 text-[12px] leading-5 text-ink/75">{{ item.prompt }}</span>
+              </button>
+            </div>
+
+            <div class="mt-6 flex flex-col items-center gap-2.5 sm:flex-row sm:justify-center">
+              <button
+                v-if="hasPrompt"
+                type="button"
+                class="btn-primary px-5"
+                @click="emit('generate')"
+              >
+                <Icon name="lightning" :size="14" />
+                <span>立即生成</span>
+              </button>
+              <button
+                v-else
+                type="button"
+                class="btn-secondary px-4 lg:hidden"
+                @click="emit('go-compose')"
+              >
+                <Icon name="textCursor" :size="14" />
+                去写提示词
+                <Icon name="arrowRight" :size="14" />
+              </button>
+            </div>
+          </template>
         </div>
       </div>
     </div>
@@ -399,18 +522,6 @@ function isImageReady(image: GeneratedImage, index: number) {
 </template>
 
 <style scoped>
-.chat-pending-bg {
-  contain: paint;
-  transform: translateZ(0);
-  will-change: transform;
-  background:
-    linear-gradient(125deg, rgb(var(--color-paper-soft) / 0.72), transparent 42%),
-    linear-gradient(245deg, rgb(var(--color-cream) / 0.72), transparent 48%),
-    repeating-linear-gradient(90deg, rgb(var(--color-ink) / 0.035) 0 1px, transparent 1px 22px),
-    rgb(var(--color-paper-soft));
-  animation: pending-bg-shift 8s ease-in-out infinite alternate;
-}
-
 .canvas-action-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -438,6 +549,73 @@ function isImageReady(image: GeneratedImage, index: number) {
   font-weight: 720;
   box-shadow: var(--shadow-inner-paper);
   transition: transform 160ms var(--motion-press), background-color 160ms var(--motion-soft), border-color 160ms var(--motion-soft), box-shadow 180ms var(--motion-soft), color 160ms var(--motion-soft);
+}
+
+.canvas-tool-cluster {
+  display: flex;
+  gap: 0.4rem;
+  z-index: 4;
+  /* Permanent. We add a soft halo so it remains legible against bright images. */
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 200ms var(--motion-soft), transform 200ms var(--motion-soft);
+}
+
+.canvas-image-pager {
+  position: absolute;
+  inset: auto 0 0.7rem 0;
+  z-index: 3;
+  display: flex;
+  justify-content: center;
+  gap: 0.35rem;
+  pointer-events: none;
+}
+
+.canvas-image-pager__dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: rgb(var(--color-paper) / 0.5);
+  box-shadow: 0 0 0 1px rgb(var(--color-ink) / 0.18);
+  transition: width 220ms var(--motion-soft), background 220ms var(--motion-soft);
+}
+
+.canvas-image-pager__dot--active {
+  width: 16px;
+  background: rgb(var(--color-paper));
+  box-shadow: 0 0 0 1px rgb(var(--color-ink) / 0.32);
+}
+
+.canvas-tool-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  border: 1px solid rgb(var(--color-paper) / 0.6);
+  background: rgb(var(--color-ink) / 0.62);
+  color: rgb(var(--color-paper));
+  box-shadow: 0 14px 28px -16px rgb(0 0 0 / 0.56);
+  backdrop-filter: blur(10px) saturate(140%);
+  -webkit-backdrop-filter: blur(10px) saturate(140%);
+  transition: transform 160ms var(--motion-press), background-color 160ms var(--motion-soft), border-color 160ms ease;
+}
+
+.canvas-tool-btn:hover {
+  background: rgb(var(--color-ink) / 0.82);
+  border-color: rgb(var(--color-paper) / 0.8);
+  transform: translateY(-1px);
+}
+
+.canvas-tool-btn:active {
+  transform: translateY(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .canvas-tool-cluster,
+  .canvas-tool-btn {
+    transition: none;
+  }
 }
 
 .canvas-action:hover {
@@ -507,310 +685,7 @@ function isImageReady(image: GeneratedImage, index: number) {
   box-shadow: var(--shadow-paper-1), var(--shadow-inner-paper);
 }
 
-.canvas-pending-layers {
-  position: absolute;
-  inset: 5.5rem 3.2rem 5.8rem;
-  display: grid;
-  grid-template-columns: 0.95fr 1.2fr 0.8fr;
-  grid-template-rows: 0.8fr 1.1fr 0.7fr;
-  gap: 0.6rem;
-  opacity: 0.5;
-  transform: perspective(900px) rotateX(7deg);
-  contain: paint;
-  will-change: transform;
-}
-
-.canvas-pending-layers span {
-  position: relative;
-  overflow: hidden;
-  border: 1px solid rgb(var(--color-line-strong) / 0.2);
-  border-radius: 18px;
-  background: rgb(var(--color-paper) / 0.34);
-  box-shadow: inset 0 1px 0 rgb(var(--color-paper) / 0.48);
-}
-
-.canvas-pending-layers span::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(110deg, transparent 0%, rgb(var(--color-paper) / 0.42) 45%, transparent 70%);
-  transform: translateX(-120%);
-  animation: canvas-layer-sweep 2.4s ease-in-out infinite;
-}
-
-.canvas-pending-layers span:nth-child(1) {
-  grid-column: 1 / 3;
-  grid-row: 1 / 2;
-}
-
-.canvas-pending-layers span:nth-child(2) {
-  grid-column: 3 / 4;
-  grid-row: 1 / 3;
-  border-radius: 999px 18px 18px 999px;
-}
-
-.canvas-pending-layers span:nth-child(3) {
-  grid-column: 1 / 2;
-  grid-row: 2 / 4;
-  border-radius: 18px 999px 999px 18px;
-}
-
-.canvas-pending-layers span:nth-child(4) {
-  grid-column: 2 / 3;
-  grid-row: 2 / 3;
-}
-
-.canvas-pending-layers span:nth-child(5) {
-  grid-column: 2 / 4;
-  grid-row: 3 / 4;
-}
-
-.chat-pending-manifest {
-  text-align: center;
-}
-
-.chat-pending-manifest__value {
-  display: block;
-  font-family: 'IBM Plex Mono', monospace;
-  font-weight: 200;
-  letter-spacing: 0;
-  color: rgb(var(--color-ink));
-  font-feature-settings: 'tnum';
-}
-
-.chat-pending-manifest__label {
-  display: block;
-  text-transform: uppercase;
-  letter-spacing: 0.3em;
-  color: rgb(var(--color-muted));
-  opacity: 0.6;
-}
-
-.atelier-process {
-  display: grid;
-  justify-items: center;
-  gap: 1.15rem;
-}
-
-.atelier-process__plate {
-  position: relative;
-  width: min(44vw, 210px);
-  aspect-ratio: 1;
-  border-radius: 18px;
-  border: 1px solid rgb(var(--color-line-strong) / 0.48);
-  background:
-    linear-gradient(135deg, rgb(var(--color-vellum) / 0.62), rgb(var(--color-paper) / 0.28)),
-    repeating-linear-gradient(0deg, transparent 0 18px, rgb(var(--color-ink) / 0.045) 18px 19px),
-    repeating-linear-gradient(90deg, transparent 0 18px, rgb(var(--color-ink) / 0.045) 18px 19px);
-  box-shadow: var(--shadow-paper-2), inset 0 0 0 1px rgb(var(--color-paper) / 0.5);
-  overflow: hidden;
-  contain: paint;
-  transform: translateZ(0);
-}
-
-.atelier-process__plate::before,
-.atelier-process__plate::after {
-  content: '';
-  position: absolute;
-  inset: 12%;
-  border: 1px solid rgb(var(--color-ink) / 0.16);
-  border-radius: 999px;
-  animation: atelier-register 2.8s var(--motion-soft) infinite;
-}
-
-.atelier-process__plate::after {
-  inset: 25%;
-  border-radius: 14px;
-  animation-delay: 0.34s;
-}
-
-.atelier-process__plate span {
-  position: absolute;
-  width: 34%;
-  height: 1px;
-  background: rgb(var(--color-accent) / 0.62);
-  opacity: 0.72;
-  animation: atelier-mark 2.4s var(--motion-soft) infinite;
-}
-
-.atelier-process__plate span:nth-child(1) {
-  left: 10%;
-  top: 18%;
-}
-
-.atelier-process__plate span:nth-child(2) {
-  right: 10%;
-  top: 36%;
-  background: rgb(var(--color-forest) / 0.62);
-  animation-delay: 0.16s;
-}
-
-.atelier-process__plate span:nth-child(3) {
-  left: 16%;
-  bottom: 34%;
-  background: rgb(var(--color-blueprint) / 0.58);
-  animation-delay: 0.32s;
-}
-
-.atelier-process__plate span:nth-child(4) {
-  right: 16%;
-  bottom: 18%;
-  background: rgb(var(--color-ochre) / 0.62);
-  animation-delay: 0.48s;
-}
-
-.atelier-process__readout {
-  display: grid;
-  justify-items: center;
-  gap: 0.2rem;
-  text-align: center;
-}
-
-.atelier-process__readout span,
-.atelier-process__readout em {
-  font-family: 'JetBrains Mono', ui-monospace, monospace;
-  font-size: 10px;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  color: rgb(var(--color-muted));
-  font-style: normal;
-}
-
-.atelier-process__readout strong {
-  font-family: 'Fraunces', Georgia, serif;
-  font-size: 1.75rem;
-  font-weight: 520;
-  letter-spacing: 0;
-  color: rgb(var(--color-ink));
-}
-
-@keyframes atelier-register {
-  0%, 100% {
-    opacity: 0.28;
-    transform: scale(0.98);
-  }
-  50% {
-    opacity: 0.72;
-    transform: scale(1.025);
-  }
-}
-
-@keyframes atelier-mark {
-  0%, 100% {
-    transform: translateX(-3px);
-    opacity: 0.32;
-  }
-  50% {
-    transform: translateX(3px);
-    opacity: 0.86;
-  }
-}
-
-.chat-pending-bar {
-  height: 1px;
-  background: rgb(var(--color-line-strong) / 0.2);
-  width: 100%;
-  position: relative;
-  overflow: hidden;
-}
-
-.chat-pending-bar::after {
-  content: '';
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: var(--progress, 0%);
-  background: rgb(var(--color-ink));
-  transition: width 0.8s cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-
-@keyframes pending-bg-shift {
-  0% { transform: scale(1) rotate(0deg); }
-  100% { transform: scale(1.1) rotate(2deg); }
-}
-
-@keyframes canvas-layer-sweep {
-  0% { transform: translateX(-120%); }
-  56%, 100% { transform: translateX(120%); }
-}
-
-.canvas-pending__remain {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.32rem;
-  letter-spacing: 0.06em;
-  text-transform: none;
-  font-size: 11px;
-  color: rgb(var(--color-ink) / 0.78);
-  font-feature-settings: 'tnum';
-}
-
-.canvas-pending__remain-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 999px;
-  background: rgb(var(--color-forest));
-  box-shadow: 0 0 0 0 rgb(var(--color-forest) / 0.5);
-  animation: canvas-pending-pulse 1.6s ease-in-out infinite;
-}
-
-@keyframes canvas-pending-pulse {
-  0%, 100% {
-    transform: scale(0.85);
-    box-shadow: 0 0 0 0 rgb(var(--color-forest) / 0.5);
-  }
-  50% {
-    transform: scale(1.05);
-    box-shadow: 0 0 0 6px rgb(var(--color-forest) / 0);
-  }
-}
-
-.canvas-pending__cancel {
-  position: absolute;
-  top: 0.85rem;
-  right: 0.85rem;
-  z-index: 20;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  padding: 0.35rem 0.7rem;
-  border-radius: 999px;
-  border: 1px solid rgb(var(--color-line) / 0.9);
-  background: rgb(var(--color-vellum) / 0.92);
-  color: rgb(var(--color-muted));
-  font-family: 'IBM Plex Mono', monospace;
-  font-size: 10px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  cursor: pointer;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  transition: color 140ms ease, border-color 140ms ease, background 140ms ease, transform 140ms ease;
-}
-
-.canvas-pending__cancel:hover {
-  color: rgb(var(--color-accent));
-  border-color: rgb(var(--color-accent) / 0.5);
-  background: rgb(var(--color-paper));
-}
-
-.canvas-pending__cancel:active {
-  transform: scale(0.97);
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .chat-pending-bg,
-  .atelier-process__plate::before,
-  .atelier-process__plate::after,
-  .atelier-process__plate span,
-  .canvas-pending__remain-dot,
-  .canvas-pending-layers span::after {
-    animation: none;
-  }
-
-  .chat-pending-bar::after {
-    transition: none;
-  }
-
   .canvas-action,
   .canvas-prompt-card {
     transition: none;
@@ -881,18 +756,21 @@ function isImageReady(image: GeneratedImage, index: number) {
 .result-image {
   opacity: 0;
   transform: translateY(8px) scale(0.992);
-  transition: opacity 420ms var(--motion-snap), transform 520ms var(--motion-snap);
-  will-change: opacity, transform;
+  filter: blur(8px);
+  transition: opacity 420ms var(--motion-snap), transform 520ms var(--motion-snap), filter 200ms var(--motion-snap);
+  will-change: opacity, transform, filter;
 }
 
 .result-image--ready {
   opacity: 1;
   transform: translateY(0) scale(1);
+  filter: blur(0);
   animation: result-settle 720ms var(--motion-snap) both;
 }
 
 .result-image--loading {
   opacity: 0;
+  filter: blur(8px);
 }
 
 @keyframes result-settle {
@@ -930,6 +808,435 @@ function isImageReady(image: GeneratedImage, index: number) {
     animation: none;
     transition: none;
     transform: none;
+  }
+}
+
+.canvas-hero {
+  position: relative;
+  overflow: hidden;
+  border-style: solid;
+  background:
+    radial-gradient(120% 80% at 30% 12%, rgb(var(--color-sage) / 0.18), transparent 56%),
+    radial-gradient(100% 70% at 80% 90%, rgb(var(--color-clay) / 0.12), transparent 60%),
+    rgb(var(--color-cream) / 0.62);
+}
+
+.canvas-hero__art {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.canvas-hero__sun {
+  position: absolute;
+  width: 38%;
+  aspect-ratio: 1;
+  top: 12%;
+  right: 14%;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgb(var(--color-ochre) / 0.36) 0%, rgb(var(--color-ochre) / 0.05) 60%, transparent 78%);
+  filter: blur(2px);
+  animation: hero-sun-breathe 6.4s ease-in-out infinite;
+}
+
+.canvas-hero__horizon {
+  position: absolute;
+  inset: auto 0 36% 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgb(var(--color-ink) / 0.18) 22%, rgb(var(--color-ink) / 0.18) 78%, transparent);
+  opacity: 0.42;
+}
+
+.canvas-hero__paper {
+  position: absolute;
+  border-radius: 18px;
+  border: 1px solid rgb(var(--color-line-strong) / 0.36);
+  background:
+    linear-gradient(135deg, rgb(var(--color-ivory) / 0.86), rgb(var(--color-vellum) / 0.62));
+  box-shadow: var(--shadow-paper-2);
+  animation: hero-paper-drift 9s ease-in-out infinite;
+}
+
+.canvas-hero__paper--1 {
+  width: 24%;
+  aspect-ratio: 3 / 4;
+  bottom: 18%;
+  left: 11%;
+  transform: rotate(-9deg);
+  animation-delay: 0s;
+}
+
+.canvas-hero__paper--2 {
+  width: 22%;
+  aspect-ratio: 1;
+  bottom: 24%;
+  left: 28%;
+  transform: rotate(4deg);
+  animation-delay: 1.2s;
+  border-color: rgb(var(--color-forest) / 0.32);
+  background:
+    linear-gradient(180deg, rgb(var(--color-vellum) / 0.86), rgb(var(--color-paper-soft) / 0.5)),
+    repeating-linear-gradient(0deg, transparent 0 14px, rgb(var(--color-ink) / 0.06) 14px 15px);
+}
+
+.canvas-hero__paper--3 {
+  width: 20%;
+  aspect-ratio: 4 / 5;
+  top: 22%;
+  left: 18%;
+  transform: rotate(7deg);
+  animation-delay: 2.4s;
+  background:
+    linear-gradient(135deg, rgb(var(--color-ochre) / 0.18), rgb(var(--color-vellum) / 0.6)),
+    rgb(var(--color-vellum));
+}
+
+.canvas-hero__sparkle {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  background: radial-gradient(circle, rgb(var(--color-accent)) 0 22%, transparent 60%);
+  filter: blur(0.4px);
+  opacity: 0.0;
+  animation: hero-sparkle 4.4s ease-in-out infinite;
+}
+
+.canvas-hero__sparkle--a { top: 28%; right: 26%; animation-delay: 0.4s; }
+.canvas-hero__sparkle--b { top: 50%; right: 12%; animation-delay: 1.6s; background: radial-gradient(circle, rgb(var(--color-forest)) 0 22%, transparent 60%); }
+.canvas-hero__sparkle--c { bottom: 20%; right: 30%; animation-delay: 2.8s; background: radial-gradient(circle, rgb(var(--color-ochre)) 0 22%, transparent 60%); }
+
+.canvas-hero__badge {
+  border: 1px solid rgb(var(--color-line-strong) / 0.6);
+  background: rgb(var(--color-vellum));
+  color: rgb(var(--color-ink));
+  box-shadow: var(--shadow-inner-paper), var(--shadow-paper-2);
+  overflow: hidden;
+}
+
+.canvas-hero__badge img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.canvas-hero__kbd {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.08rem 0.42rem;
+  border-radius: 6px;
+  border: 1px solid rgb(var(--color-line-strong) / 0.7);
+  background: rgb(var(--color-vellum));
+  color: rgb(var(--color-muted));
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  vertical-align: middle;
+  margin-inline: 0.18rem;
+}
+
+@keyframes hero-paper-drift {
+  0%, 100% { transform: translateY(0) rotate(var(--rot, -9deg)); }
+  50% { transform: translateY(-8px) rotate(calc(var(--rot, -9deg) + 1.5deg)); }
+}
+
+.canvas-hero__paper--1 { --rot: -9deg; }
+.canvas-hero__paper--2 { --rot: 4deg; }
+.canvas-hero__paper--3 { --rot: 7deg; }
+
+@keyframes hero-sun-breathe {
+  0%, 100% { transform: scale(1); opacity: 0.9; }
+  50% { transform: scale(1.06); opacity: 1; }
+}
+
+@keyframes hero-sparkle {
+  0%, 100% { opacity: 0; transform: scale(0.6); }
+  18%, 38% { opacity: 1; transform: scale(1.1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .canvas-hero__sun,
+  .canvas-hero__paper,
+  .canvas-hero__sparkle {
+    animation: none;
+  }
+}
+
+.canvas-stage-root {
+  position: relative;
+}
+
+/* ---------- Canvas mosaic (multi-image desktop) ---------- */
+
+.canvas-mosaic {
+  position: relative;
+  width: 100%;
+  display: grid;
+  gap: 0.6rem;
+  padding: 0.7rem;
+  border-radius: 22px;
+  border: 1px solid rgb(var(--color-line));
+  background:
+    linear-gradient(180deg, rgb(var(--color-ivory) / 0.6), rgb(var(--color-vellum) / 0.34)),
+    rgb(var(--color-cream) / 0.18);
+  box-shadow: var(--shadow-paper-2), var(--shadow-inner-paper);
+}
+
+.canvas-mosaic[data-orient="portrait"]   { aspect-ratio: 4 / 5; max-height: 70dvh; }
+.canvas-mosaic[data-orient="landscape"]  { aspect-ratio: 16 / 10; max-height: 60dvh; }
+.canvas-mosaic[data-orient="square"]     { aspect-ratio: 5 / 4; max-height: 64dvh; }
+
+.canvas-mosaic--2 {
+  grid-template-columns: 1fr 1fr;
+}
+
+.canvas-mosaic--3 {
+  grid-template-columns: 1.55fr 1fr;
+  grid-template-rows: 1fr 1fr;
+}
+
+.canvas-mosaic--3 > .canvas-mosaic__cell:nth-child(1) {
+  grid-column: 1 / 2;
+  grid-row: 1 / 3;
+}
+.canvas-mosaic--3 > .canvas-mosaic__cell:nth-child(2) {
+  grid-column: 2 / 3;
+  grid-row: 1 / 2;
+}
+.canvas-mosaic--3 > .canvas-mosaic__cell:nth-child(3) {
+  grid-column: 2 / 3;
+  grid-row: 2 / 3;
+}
+
+.canvas-mosaic--4 {
+  grid-template-columns: 1.45fr 1fr;
+  grid-template-rows: 1fr 1fr 1fr;
+}
+
+.canvas-mosaic--4 > .canvas-mosaic__cell:nth-child(1) {
+  grid-column: 1 / 2;
+  grid-row: 1 / 4;
+}
+.canvas-mosaic--4 > .canvas-mosaic__cell:nth-child(2) { grid-column: 2 / 3; grid-row: 1 / 2; }
+.canvas-mosaic--4 > .canvas-mosaic__cell:nth-child(3) { grid-column: 2 / 3; grid-row: 2 / 3; }
+.canvas-mosaic--4 > .canvas-mosaic__cell:nth-child(4) { grid-column: 2 / 3; grid-row: 3 / 4; }
+
+.canvas-mosaic__cell {
+  position: relative;
+  overflow: hidden;
+  border-radius: 16px;
+  border: 1px solid rgb(var(--color-line));
+  background: rgb(var(--color-paper-soft));
+  box-shadow: var(--shadow-inner-paper);
+  transition: border-color 200ms var(--motion-soft), box-shadow 220ms var(--motion-soft), transform 200ms var(--motion-press);
+}
+
+.canvas-mosaic__cell:hover {
+  border-color: rgb(var(--color-line-strong));
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-paper-1), var(--shadow-inner-paper);
+}
+
+.canvas-mosaic__cell--active {
+  border-color: rgb(var(--color-ink));
+  box-shadow: 0 0 0 2px rgb(var(--color-ink) / 0.16), var(--shadow-paper-2);
+}
+
+.canvas-mosaic__cell--active:hover {
+  transform: translateY(0);
+}
+
+.canvas-mosaic__surface {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  appearance: none;
+  padding: 0;
+}
+
+.canvas-mosaic__surface:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.canvas-mosaic__img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  opacity: 0;
+  transform: scale(1.005);
+  filter: blur(8px);
+  transition: opacity 360ms var(--motion-snap), transform 480ms var(--motion-snap), filter 200ms var(--motion-snap);
+}
+
+.canvas-mosaic__img--ready {
+  opacity: 1;
+  transform: scale(1);
+  filter: blur(0);
+}
+
+/* Inactive cells get a subtle tonal dampening so the active one pops. */
+.canvas-mosaic__cell:not(.canvas-mosaic__cell--active) .canvas-mosaic__img {
+  filter: saturate(0.92) brightness(0.97);
+}
+
+.canvas-mosaic__cell:not(.canvas-mosaic__cell--active):hover .canvas-mosaic__img {
+  filter: saturate(1) brightness(1);
+}
+
+.canvas-mosaic__index {
+  position: absolute;
+  top: 0.55rem;
+  left: 0.55rem;
+  display: inline-flex;
+  align-items: center;
+  padding: 0.18rem 0.5rem;
+  border-radius: 999px;
+  background: rgb(var(--color-ink) / 0.55);
+  color: rgb(var(--color-paper));
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  pointer-events: none;
+}
+
+.canvas-mosaic__active-mark {
+  position: absolute;
+  top: 0.55rem;
+  right: 0.55rem;
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: rgb(var(--color-ink));
+  color: rgb(var(--color-paper));
+  box-shadow: 0 8px 18px -10px rgb(var(--color-ink) / 0.6);
+  pointer-events: none;
+  animation: canvas-mosaic-mark 320ms var(--motion-snap);
+}
+
+@keyframes canvas-mosaic-mark {
+  0% { transform: scale(0.6); opacity: 0; }
+  60% { transform: scale(1.1); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.canvas-mosaic__tools {
+  position: absolute;
+  inset: auto 0.45rem 0.45rem auto;
+  display: flex;
+  gap: 0.32rem;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 180ms var(--motion-soft), transform 180ms var(--motion-soft);
+}
+
+.canvas-mosaic__cell--active .canvas-mosaic__tools,
+.canvas-mosaic__cell:focus-within .canvas-mosaic__tools {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .canvas-mosaic__cell:hover .canvas-mosaic__tools {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.canvas-mosaic__tool {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  border: 1px solid rgb(var(--color-paper) / 0.6);
+  background: rgb(var(--color-ink) / 0.6);
+  color: rgb(var(--color-paper));
+  box-shadow: 0 8px 18px -12px rgb(0 0 0 / 0.5);
+  backdrop-filter: blur(8px) saturate(140%);
+  -webkit-backdrop-filter: blur(8px) saturate(140%);
+  cursor: pointer;
+  transition: background-color 140ms ease, transform 140ms var(--motion-press);
+}
+
+.canvas-mosaic__tool:hover {
+  background: rgb(var(--color-ink) / 0.82);
+  transform: translateY(-1px);
+}
+
+@media (max-width: 1023px) {
+  /* Mobile path doesn't render this component but defensive guards stay safe. */
+  .canvas-mosaic[data-orient="portrait"],
+  .canvas-mosaic[data-orient="landscape"],
+  .canvas-mosaic[data-orient="square"] {
+    max-height: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .canvas-mosaic__cell,
+  .canvas-mosaic__img,
+  .canvas-mosaic__active-mark,
+  .canvas-mosaic__tools,
+  .canvas-mosaic__tool {
+    animation: none;
+    transition: none;
+  }
+}
+
+.canvas-drop-overlay {
+  position: absolute;
+  inset: -0.4rem;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  border-radius: 24px;
+  border: 2px dashed rgb(var(--color-forest) / 0.55);
+  background:
+    radial-gradient(circle at 50% 50%, rgb(var(--color-forest) / 0.12), rgb(var(--color-vellum) / 0.6) 60%);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  pointer-events: none;
+}
+
+.canvas-drop-overlay__inner {
+  display: grid;
+  justify-items: center;
+  gap: 0.5rem;
+  padding: 1rem 1.5rem;
+  border-radius: 20px;
+  background: rgb(var(--color-vellum) / 0.94);
+  border: 1px solid rgb(var(--color-forest) / 0.32);
+  color: rgb(var(--color-forest));
+  box-shadow: var(--shadow-paper-3);
+}
+
+.canvas-drop-fade-enter-from,
+.canvas-drop-fade-leave-to {
+  opacity: 0;
+  transform: scale(0.985);
+}
+
+.canvas-drop-fade-enter-active,
+.canvas-drop-fade-leave-active {
+  transition: opacity 160ms ease-out, transform 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .canvas-drop-fade-enter-active,
+  .canvas-drop-fade-leave-active {
+    transition: none;
   }
 }
 </style>

@@ -18,6 +18,7 @@ const scale = ref(1)
 const translateX = ref(0)
 const translateY = ref(0)
 const gestureActive = ref(false)
+const infoOpen = ref(false)
 
 const imageWrapRef = ref<HTMLDivElement | null>(null)
 const imageRef = ref<HTMLImageElement | null>(null)
@@ -111,6 +112,9 @@ function handleKey(event: KeyboardEvent) {
   } else if (event.key === '0') {
     event.preventDefault()
     resetTransform()
+  } else if (event.key.toLowerCase() === 'i') {
+    event.preventDefault()
+    infoOpen.value = !infoOpen.value
   }
 }
 
@@ -360,6 +364,15 @@ async function downloadCurrent() {
             <button
               type="button"
               class="grid h-11 w-11 place-items-center rounded-full border border-paper/20 text-paper transition hover:bg-paper/10"
+              :aria-pressed="infoOpen"
+              :aria-label="infoOpen ? '收起元数据' : '展开元数据'"
+              @click="infoOpen = !infoOpen"
+            >
+              <Icon name="info" :size="16" />
+            </button>
+            <button
+              type="button"
+              class="grid h-11 w-11 place-items-center rounded-full border border-paper/20 text-paper transition hover:bg-paper/10"
               :aria-pressed="isZoomed"
               aria-label="切换缩放"
               @click="isZoomed ? resetTransform() : setScale(DOUBLE_TAP_SCALE)"
@@ -385,16 +398,17 @@ async function downloadCurrent() {
           </div>
         </header>
 
-        <div
-          ref="imageWrapRef"
-          class="lb-stage relative flex-1 select-none overflow-hidden"
-          @click.stop
-          @touchstart="onTouchStart"
-          @touchmove="onTouchMove"
-          @touchend="onTouchEnd"
-          @touchcancel="onTouchEnd"
-          @wheel="onWheel"
-        >
+        <div class="lb-stage-row relative flex flex-1 min-h-0">
+          <div
+            ref="imageWrapRef"
+            class="lb-stage relative flex-1 select-none overflow-hidden"
+            @click.stop
+            @touchstart="onTouchStart"
+            @touchmove="onTouchMove"
+            @touchend="onTouchEnd"
+            @touchcancel="onTouchEnd"
+            @wheel="onWheel"
+          >
           <Transition name="lb-zoom">
             <img
               v-if="activeSrc"
@@ -429,34 +443,70 @@ async function downloadCurrent() {
           >
             <Icon name="arrowRight" :size="18" />
           </button>
+          </div>
+
+          <Transition name="lb-info">
+            <aside
+              v-if="infoOpen"
+              class="lb-info"
+              role="complementary"
+              aria-label="图片元数据"
+              @click.stop
+            >
+              <header class="lb-info__head">
+                <span class="font-mono text-[10px] uppercase tracking-[0.22em] text-paper/55">Metadata</span>
+                <button
+                  type="button"
+                  class="grid h-8 w-8 place-items-center rounded-full text-paper/70 transition hover:bg-paper/10 hover:text-paper"
+                  aria-label="关闭元数据"
+                  @click="infoOpen = false"
+                >
+                  <Icon name="close" :size="13" />
+                </button>
+              </header>
+
+              <dl class="lb-info__body">
+                <div v-if="activeImage?.revisedPrompt" class="lb-info__group">
+                  <dt class="lb-info__label">
+                    <span>Revised prompt</span>
+                    <button
+                      type="button"
+                      class="text-paper/65 transition hover:text-paper"
+                      @click="copyPrompt"
+                    >复制</button>
+                  </dt>
+                  <dd class="lb-info__prompt">{{ activeImage.revisedPrompt }}</dd>
+                </div>
+
+                <div class="lb-info__group">
+                  <dt class="lb-info__label"><span>Image</span></dt>
+                  <dd class="lb-info__rows">
+                    <span><em>类型</em><b>{{ activeImage?.mimeType || '—' }}</b></span>
+                    <span><em>序号</em><b class="font-mono">{{ lightbox.state.index + 1 }} / {{ lightbox.state.images.length }}</b></span>
+                  </dd>
+                </div>
+
+                <div v-if="counter" class="lb-info__group">
+                  <dt class="lb-info__label"><span>Tip</span></dt>
+                  <dd class="lb-info__hint">
+                    ←→ 切换 · Space 缩放 · I 收起此面板
+                  </dd>
+                </div>
+              </dl>
+            </aside>
+          </Transition>
         </div>
 
         <footer class="px-4 pb-[max(env(safe-area-inset-bottom,0px),1rem)] pt-2" @click.stop>
-          <div
-            v-if="activeImage?.revisedPrompt"
-            class="mx-auto max-w-3xl rounded-2xl border border-paper/15 bg-paper/5 px-4 py-3 text-[12px] leading-5 text-paper/75 backdrop-blur"
-          >
-            <div class="mb-1 flex items-center justify-between">
-              <p class="font-mono text-[10px] uppercase tracking-[0.24em] text-paper/55">Revised prompt</p>
-              <button
-                type="button"
-                class="font-mono text-[10px] uppercase tracking-[0.18em] text-paper/65 transition hover:text-paper"
-                @click="copyPrompt"
-              >
-                复制
-              </button>
-            </div>
-            <p class="truncate-2">{{ activeImage.revisedPrompt }}</p>
-          </div>
           <p
             v-if="lightbox.state.images.length > 1"
-            class="mt-2 hidden text-center font-mono text-[10px] uppercase tracking-[0.24em] text-paper/55 sm:block"
+            class="hidden text-center font-mono text-[10px] uppercase tracking-[0.24em] text-paper/55 sm:block"
           >
-            ← →&nbsp;切换 · Space 缩放 · +/- 缩放 · 0 复位 · Esc 关闭
+            ← →&nbsp;切换 · Space 缩放 · I 信息 · 0 复位 · Esc 关闭
           </p>
           <p
             v-else-if="isZoomed"
-            class="mt-2 hidden text-center font-mono text-[10px] uppercase tracking-[0.24em] text-paper/55 sm:block"
+            class="hidden text-center font-mono text-[10px] uppercase tracking-[0.24em] text-paper/55 sm:block"
           >
             双指缩放 · 单指拖动 · 双击复位
           </p>
@@ -508,5 +558,155 @@ async function downloadCurrent() {
   -webkit-user-select: none;
   user-select: none;
   -webkit-touch-callout: none;
+}
+
+.lb-stage-row {
+  gap: 0;
+}
+
+.lb-info {
+  width: min(360px, 86vw);
+  max-width: 360px;
+  flex-shrink: 0;
+  border-left: 1px solid rgb(var(--color-paper) / 0.12);
+  background:
+    linear-gradient(180deg, rgb(0 0 0 / 0.32), rgb(0 0 0 / 0.18));
+  backdrop-filter: blur(12px) saturate(140%);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+@media (max-width: 640px) {
+  .lb-info {
+    width: 100%;
+    max-width: none;
+    border-left: none;
+    border-top: 1px solid rgb(var(--color-paper) / 0.12);
+  }
+
+  .lb-stage-row {
+    flex-direction: column;
+  }
+}
+
+.lb-info__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.85rem 1rem 0.6rem;
+  border-bottom: 1px solid rgb(var(--color-paper) / 0.08);
+}
+
+.lb-info__body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  scrollbar-width: thin;
+  scrollbar-color: rgb(var(--color-paper) / 0.18) transparent;
+}
+
+.lb-info__body::-webkit-scrollbar {
+  width: 5px;
+}
+
+.lb-info__body::-webkit-scrollbar-thumb {
+  background: rgb(var(--color-paper) / 0.18);
+  border-radius: 999px;
+}
+
+.lb-info__group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.42rem;
+}
+
+.lb-info__label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgb(var(--color-paper) / 0.55);
+}
+
+.lb-info__label button {
+  font-size: 10px;
+  letter-spacing: 0.18em;
+}
+
+.lb-info__prompt {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: rgb(var(--color-paper) / 0.92);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.lb-info__rows {
+  margin: 0;
+  display: grid;
+  gap: 0.32rem;
+}
+
+.lb-info__rows span {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: rgb(var(--color-paper) / 0.85);
+}
+
+.lb-info__rows em {
+  font-style: normal;
+  color: rgb(var(--color-paper) / 0.55);
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.lb-info__rows b {
+  font-weight: 500;
+  color: rgb(var(--color-paper));
+}
+
+.lb-info__hint {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: rgb(var(--color-paper) / 0.6);
+}
+
+.lb-info-enter-from,
+.lb-info-leave-to {
+  opacity: 0;
+  transform: translateX(20px);
+}
+
+.lb-info-enter-active,
+.lb-info-leave-active {
+  transition: opacity 220ms ease-out, transform 280ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@media (max-width: 640px) {
+  .lb-info-enter-from,
+  .lb-info-leave-to {
+    transform: translateY(20px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lb-info-enter-active,
+  .lb-info-leave-active {
+    transition: none;
+  }
 }
 </style>

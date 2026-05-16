@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import Icon from './Icon.vue'
+import { useI18n } from '../lib/i18n'
 import type { ThemeMode } from '../composables/useTheme'
 
 interface Props {
@@ -16,22 +17,25 @@ const emit = defineEmits<{
   (e: 'toggleTheme'): void
   (e: 'openHistory'): void
   (e: 'openSettings'): void
+  (e: 'openCommandPalette'): void
   (e: 'reset'): void
 }>()
+
+const { t } = useI18n()
 
 const headerRef = ref<HTMLElement | null>(null)
 const menuOpen = ref(false)
 
 const dotClass = computed(() => {
-  if (props.healthStatus === 'online') return 'bg-forest'
-  if (props.healthStatus === 'offline') return 'bg-accent'
+  if (props.healthStatus === 'online') return 'bg-forest health-dot health-dot--online'
+  if (props.healthStatus === 'offline') return 'bg-accent health-dot health-dot--offline'
   return 'bg-muted/60 animate-breathe'
 })
 
 const labelText = computed(() => {
-  if (props.healthStatus === 'online') return '在线'
-  if (props.healthStatus === 'offline') return '离线'
-  return '检查中'
+  if (props.healthStatus === 'online') return t('header.healthOnline')
+  if (props.healthStatus === 'offline') return t('header.healthOffline')
+  return t('header.healthChecking')
 })
 
 function closeMenu() {
@@ -85,7 +89,7 @@ onBeforeUnmount(() => {
             Prompt<span class="italic text-accent">Canvas</span>
           </p>
           <p class="mt-0.5 hidden font-mono text-[10px] uppercase tracking-[0.22em] text-muted sm:block">
-            atelier image studio
+            {{ t('header.atelier') }}
           </p>
         </div>
       </div>
@@ -93,9 +97,22 @@ onBeforeUnmount(() => {
       <div class="header-actions-wide flex shrink-0 items-center gap-1 sm:gap-2">
         <button
           type="button"
+          class="cmdk-hint hidden md:inline-flex"
+          data-tour="cmdk-hint"
+          :title="t('header.cmdkOpenTitle')"
+          :aria-label="t('header.cmdkOpenTitle')"
+          @click="emit('openCommandPalette')"
+        >
+          <Icon name="search" :size="13" />
+          <span>{{ t('header.cmdkSearch') }}</span>
+          <kbd>⌘K</kbd>
+        </button>
+
+        <button
+          type="button"
           class="icon-btn"
-          title="历史生成"
-          aria-label="历史生成"
+          :title="t('header.history')"
+          :aria-label="t('header.history')"
           @click="emit('openHistory')"
         >
           <Icon name="history" :size="17" />
@@ -104,8 +121,8 @@ onBeforeUnmount(() => {
         <button
           type="button"
           class="icon-btn"
-          title="设置"
-          aria-label="设置"
+          :title="t('header.settings')"
+          :aria-label="t('header.settings')"
           @click="emit('openSettings')"
         >
           <Icon name="settings" :size="17" />
@@ -114,8 +131,8 @@ onBeforeUnmount(() => {
         <button
           type="button"
           class="icon-btn"
-          :title="theme === 'paper' ? '切换为夜间主题' : '切换为日间主题'"
-          :aria-label="theme === 'paper' ? '切换为夜间主题' : '切换为日间主题'"
+          :title="theme === 'paper' ? t('header.toggleThemeToNight') : t('header.toggleThemeToPaper')"
+          :aria-label="theme === 'paper' ? t('header.toggleThemeToNight') : t('header.toggleThemeToPaper')"
           @click="emit('toggleTheme')"
         >
           <Icon :name="theme === 'paper' ? 'moon' : 'sun'" :size="17" />
@@ -130,7 +147,7 @@ onBeforeUnmount(() => {
             'border-accent/40 bg-accent/[0.08] text-accent': healthStatus === 'offline',
           }"
           :title="healthMessage"
-          :aria-label="`后端状态：${labelText}。点击重新检查。`"
+          :aria-label="`${t('header.refresh')} · ${labelText}`"
           @click="emit('refreshHealth')"
         >
           <span class="h-1.5 w-1.5 rounded-full" :class="dotClass" aria-hidden="true"></span>
@@ -140,20 +157,20 @@ onBeforeUnmount(() => {
         <button
           type="button"
           class="hidden items-center gap-1.5 rounded-full border border-line bg-cream px-3 py-2 text-[11px] font-medium uppercase tracking-[0.16em] text-muted transition hover:border-line-strong hover:text-ink sm:inline-flex"
-          title="重置表单为默认值"
-          aria-label="重置表单为默认值"
+          :title="t('header.resetTip')"
+          :aria-label="t('header.resetTip')"
           @click="emit('reset')"
         >
           <Icon name="reset" :size="13" />
-          <span>重置</span>
+          <span>{{ t('header.reset') }}</span>
         </button>
       </div>
 
-      <div class="header-actions-compact relative hidden shrink-0">
+      <div class="header-actions-compact relative hidden shrink-0" data-tour="header-menu">
         <button
           type="button"
           class="icon-btn"
-          aria-label="打开菜单"
+          :aria-label="t('header.menuOpen')"
           :aria-expanded="menuOpen"
           aria-controls="app-header-menu"
           @click="menuOpen = !menuOpen"
@@ -169,23 +186,23 @@ onBeforeUnmount(() => {
           >
             <button type="button" class="header-menu-item" @click="runMenuAction(() => emit('openHistory'))">
               <Icon name="history" :size="14" />
-              <span>历史生成</span>
+              <span>{{ t('header.history') }}</span>
             </button>
             <button type="button" class="header-menu-item" @click="runMenuAction(() => emit('openSettings'))">
               <Icon name="settings" :size="14" />
-              <span>设置</span>
+              <span>{{ t('header.settings') }}</span>
             </button>
             <button type="button" class="header-menu-item" @click="runMenuAction(() => emit('toggleTheme'))">
               <Icon :name="theme === 'paper' ? 'moon' : 'sun'" :size="14" />
-              <span>{{ theme === 'paper' ? '夜间主题' : '日间主题' }}</span>
+              <span>{{ theme === 'paper' ? t('header.toggleThemeToNight') : t('header.toggleThemeToPaper') }}</span>
             </button>
             <button type="button" class="header-menu-item" @click="runMenuAction(() => emit('refreshHealth'))">
               <span class="h-1.5 w-1.5 rounded-full" :class="dotClass" aria-hidden="true"></span>
-              <span>状态：{{ labelText }}</span>
+              <span>{{ labelText }}</span>
             </button>
             <button type="button" class="header-menu-item" @click="runMenuAction(() => emit('reset'))">
               <Icon name="reset" :size="14" />
-              <span>重置表单</span>
+              <span>{{ t('header.reset') }}</span>
             </button>
           </div>
         </Transition>
@@ -206,12 +223,100 @@ onBeforeUnmount(() => {
   background: rgb(var(--color-vellum));
   box-shadow: var(--shadow-inner-paper), var(--shadow-paper-1);
   overflow: hidden;
+  transition: transform 220ms var(--motion-press), box-shadow 220ms var(--motion-soft);
+}
+
+.cmdk-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  height: 36px;
+  padding: 0 0.65rem 0 0.85rem;
+  border-radius: 999px;
+  border: 1px solid rgb(var(--color-line));
+  background: rgb(var(--color-ivory) / 0.66);
+  color: rgb(var(--color-muted));
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  transition: border-color 160ms var(--motion-soft), background-color 160ms var(--motion-soft), color 160ms ease, transform 160ms var(--motion-press);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.cmdk-hint:hover {
+  border-color: rgb(var(--color-line-strong));
+  background: rgb(var(--color-vellum));
+  color: rgb(var(--color-ink));
+  transform: translateY(-1px);
+}
+
+.cmdk-hint:active {
+  transform: translateY(0);
+}
+
+.cmdk-hint kbd {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 10px;
+  padding: 0.16rem 0.4rem;
+  border-radius: 5px;
+  border: 1px solid rgb(var(--color-line-strong) / 0.5);
+  background: rgb(var(--color-vellum));
+  color: rgb(var(--color-ink));
+  letter-spacing: 0.04em;
+}
+
+.brand-mark:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-inner-paper), var(--shadow-paper-2);
 }
 
 .brand-mark img {
   width: 100%;
   height: 100%;
   display: block;
+}
+
+.health-dot {
+  position: relative;
+}
+
+.health-dot::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0;
+}
+
+.health-dot--online::after {
+  background: rgb(var(--color-forest));
+  animation: health-halo 2.6s ease-in-out infinite;
+}
+
+.health-dot--offline::after {
+  background: rgb(var(--color-accent));
+  animation: health-halo 1.8s ease-out infinite;
+}
+
+@keyframes health-halo {
+  0% {
+    opacity: 0.45;
+    transform: scale(0.8);
+  }
+  70%, 100% {
+    opacity: 0;
+    transform: scale(2);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .health-dot::after,
+  .brand-mark {
+    animation: none;
+    transition: none;
+  }
 }
 
 .header-menu-item {

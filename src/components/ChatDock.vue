@@ -8,8 +8,9 @@ import { customModelSentinel, styleOptions } from '../presets'
 import { useDiscoveredModels } from '../composables/useDiscoveredModels'
 import { useVibration } from '../composables/useVibration'
 import { rafThrottle } from '../lib/rafThrottle'
-import type { ContinuationContext, ImageStyle, ReferenceImageAttachment } from '../types'
+import type { ContinuationContext, ImageQuality, ImageStyle, ReferenceImageAttachment } from '../types'
 import type { EnhanceResult } from '../lib/magicEnhance'
+import type { PromptContext } from '../lib/promptDoc'
 
 const MagicEnhanceMenu = defineAsyncComponent(() => import('./MagicEnhanceMenu.vue'))
 
@@ -24,6 +25,10 @@ interface Props {
   viewportHeight?: number
   continuation?: ContinuationContext | null
   canUndoEnhance?: boolean
+  size?: string
+  quality?: ImageQuality
+  modelName?: string
+  promptContext?: PromptContext | null
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -31,6 +36,10 @@ const props = withDefaults(defineProps<Props>(), {
   viewportHeight: 0,
   continuation: null,
   canUndoEnhance: false,
+  size: '1024x1024',
+  quality: 'auto',
+  modelName: '',
+  promptContext: null,
 })
 
 const prompt = defineModel<string>('prompt', { required: true })
@@ -45,6 +54,7 @@ const emit = defineEmits<{
   (e: 'select-reference-images', files: File[]): void
   (e: 'remove-reference-image', id: string): void
   (e: 'magic-enhance', result: EnhanceResult): void
+  (e: 'magic-ab-test', original: string, optimized: EnhanceResult): void
   (e: 'undo-enhance'): void
   (e: 'cancel-continuation'): void
   (e: 'jump-to-continuation', id: string): void
@@ -252,6 +262,13 @@ function handleEnhanceResult(result: EnhanceResult) {
   magicMenuOpen.value = false
 }
 
+function handleAbTest(original: string, optimized: EnhanceResult) {
+  isMagicPulsing.value = true
+  setTimeout(() => { isMagicPulsing.value = false }, 1000)
+  emit('magic-ab-test', original, optimized)
+  magicMenuOpen.value = false
+}
+
 function onKeydown(event: KeyboardEvent) {
   if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
     event.preventDefault()
@@ -332,6 +349,7 @@ defineExpose({ focusInput })
     ref="dockRef"
     class="chat-dock absolute inset-x-0 bottom-0 z-dock pb-[max(env(safe-area-inset-bottom,0px),0.5rem)] pt-2"
     :style="dockOuterStyle"
+    data-tour="chat-dock"
   >
     <div
       class="pointer-events-none absolute inset-x-0 -top-8 h-8 bg-gradient-to-t from-paper to-transparent"
@@ -523,8 +541,14 @@ defineExpose({ focusInput })
               :prompt="prompt"
               :image-style="props.currentStyle"
               :has-reference-images="hasReferenceImages"
+              :size="props.size"
+              :quality="props.quality"
+              :model-name="props.modelName"
+              :context="props.promptContext ?? null"
               compact
               @enhance="handleEnhanceResult"
+              @ab-test="handleAbTest"
+              @update-prompt="(value: string) => { prompt = value }"
               @close="magicMenuOpen = false"
             />
           </div>
@@ -769,14 +793,32 @@ defineExpose({ focusInput })
   position: relative;
   display: inline-grid;
   place-items: center;
-  width: 36px;
-  height: 36px;
+  width: 40px;
+  height: 40px;
   border-radius: 999px;
   background: rgb(var(--color-ink) / 0.04);
   color: rgb(var(--color-ink) / 0.2);
   border: 1px solid transparent;
   transition: transform 170ms var(--motion-press), background-color 170ms var(--motion-soft), color 170ms var(--motion-soft), box-shadow 190ms var(--motion-soft);
   cursor: not-allowed;
+}
+
+@media (max-width: 640px) {
+  .chat-dock__send-inner,
+  .chat-dock__magic-inner,
+  .chat-dock__undo-inner {
+    height: 44px;
+    min-height: 44px;
+  }
+
+  .chat-dock__send-inner,
+  .chat-dock__undo-inner {
+    width: 44px;
+  }
+
+  .chat-dock__magic-inner {
+    min-width: 72px;
+  }
 }
 
 .chat-dock__send-inner--ready {

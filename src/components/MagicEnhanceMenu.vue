@@ -2,13 +2,16 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import Icon from './Icon.vue'
 import {
-  analyzePrompt,
+  analyzePromptDoc,
+  applyLintFix,
+  buildSlotCards,
+  createAxisVariants,
   createPromptVariants,
   enhanceDimensions,
   enhanceIntentMeta,
   enhanceLevelMeta,
   enhanceModeMeta,
-  enhancePrompt,
+  enhancePromptDoc,
   enhanceSingleDimension,
   getMissingLabel,
   inferEnhanceIntent,
@@ -18,8 +21,11 @@ import {
   type EnhanceMode,
   type EnhanceResult,
   type PromptVariant,
+  type SlotCard,
 } from '../lib/magicEnhance'
-import type { ImageStyle } from '../types'
+import type { PromptContext, SlotName, LintIssue } from '../lib/promptDoc'
+import { listCameraRecipes } from '../lib/cameraLookbook'
+import type { ImageQuality, ImageStyle } from '../types'
 import { useBodyLock } from '../composables/useBodyLock'
 import { useFocusTrap } from '../composables/useFocusTrap'
 
@@ -28,15 +34,25 @@ interface Props {
   imageStyle: ImageStyle
   compact?: boolean
   hasReferenceImages?: boolean
+  size?: string
+  quality?: ImageQuality
+  modelName?: string
+  context?: PromptContext | null
 }
 
 const props = withDefaults(defineProps<Props>(), {
   compact: false,
   hasReferenceImages: false,
+  size: '1024x1024',
+  quality: 'auto',
+  modelName: '',
+  context: null,
 })
 
 const emit = defineEmits<{
   (e: 'enhance', result: EnhanceResult): void
+  (e: 'ab-test', original: string, optimized: EnhanceResult): void
+  (e: 'update-prompt', value: string): void
   (e: 'close'): void
 }>()
 
@@ -46,36 +62,82 @@ const selectedIntent = ref<EnhanceIntent>('create')
 const selectedVariantId = ref('current')
 const intentTouched = ref(false)
 const dialogRef = ref<HTMLElement | null>(null)
+const slotOverrides = ref<Partial<Record<SlotName, string>>>({})
+const editingSlot = ref<SlotName | null>(null)
+const editingDraft = ref('')
+const variantTab = ref<'matrix' | 'lighting' | 'camera' | 'palette' | 'mood' | 'composition'>('matrix')
+const wantsAB = ref(false)
+const cameraLookbookOpen = ref(false)
+const cameraRecipes = computed(() => listCameraRecipes(analysis.value.language))
+
+function pickCameraFromLookbook(recipe: { id: string; value: string }) {
+  const next = { ...slotOverrides.value }
+  next.camera = recipe.value
+  slotOverrides.value = next
+  cameraLookbookOpen.value = false
+  selectedVariantId.value = 'current'
+}
 
 const intentOptions = Object.values(enhanceIntentMeta)
 const modeOptions = Object.values(enhanceModeMeta)
 const levelKeys: EnhanceLevel[] = ['light', 'standard', 'heavy']
 
-const analysis = computed(() => analyzePrompt(props.prompt, props.imageStyle))
-const missingDimensions = computed(() => analysis.value.missing)
+const analysis = computed(() =>
+  analyzePromptDoc({
+    prompt: props.prompt,
+    style: props.imageStyle,
+    size: props.size,
+    quality: props.quality,
+    intent: selectedIntent.value,
+    modelName: props.modelName,
+    hasReferenceImages: props.hasReferenceImages,
+  }),
+)
+const missingDimensions = computed(() => analysis.value.missingDimensions)
 const missingHint = computed(() => getMissingLabel(missingDimensions.value))
 const hasMissing = computed(() => missingDimensions.value.length > 0)
 const canEnhance = computed(() => props.prompt.trim().length > 0)
 const beforeText = computed(() => props.prompt.trim())
 
+const slotOverridePayload = computed(() => {
+  const out: Partial<Record<SlotName, { value: string; source: 'user' }>> = {}
+  for (const [slot, value] of Object.entries(slotOverrides.value) as Array<[SlotName, string]>) {
+    if (value && value.trim()) {
+      out[slot] = { value: value.trim(), source: 'user' }
+    }
+  }
+  return Object.keys(out).length ? out : undefined
+})
+
 const currentVariant = computed<PromptVariant>(() => ({
   id: 'current',
   label: '当前策略',
   hint: `${enhanceIntentMeta[selectedIntent.value].label} · ${enhanceLevelMeta[selectedLevel.value].label}`,
-  result: enhancePrompt(
-    props.prompt,
-    props.imageStyle,
-    selectedLevel.value,
-    undefined,
-    selectedMode.value,
-    selectedIntent.value,
-  ),
+  result: enhancePromptDoc({
+    prompt: props.prompt,
+    style: props.imageStyle,
+    size: props.size,
+    quality: props.quality,
+    level: selectedLevel.value,
+    mode: selectedMode.value,
+    intent: selectedIntent.value,
+    modelName: props.modelName,
+    hasReferenceImages: props.hasReferenceImages,
+    context: props.context ?? undefined,
+    slotOverrides: slotOverridePayload.value,
+  }),
 }))
 
-const variants = computed<PromptVariant[]>(() => {
+const matrixVariants = computed<PromptVariant[]>(() => {
   const items = [
     currentVariant.value,
-    ...createPromptVariants(props.prompt, props.imageStyle, selectedMode.value, selectedIntent.value),
+    ...createPromptVariants(
+      props.prompt,
+      props.imageStyle,
+      selectedMode.value,
+      selectedIntent.value,
+      props.context ?? undefined,
+    ),
   ]
   const seen = new Set<string>()
   return items.filter((item) => {
@@ -85,6 +147,34 @@ const variants = computed<PromptVariant[]>(() => {
     return true
   })
 })
+
+const axisVariants = computed<PromptVariant[]>(() => {
+  if (variantTab.value === 'matrix') return []
+  return createAxisVariants(
+    props.prompt,
+    props.imageStyle,
+    variantTab.value,
+    selectedIntent.value,
+    props.context ?? undefined,
+  )
+})
+
+const variants = computed<PromptVariant[]>(() => {
+  if (variantTab.value === 'matrix') return matrixVariants.value
+  return [currentVariant.value, ...axisVariants.value].filter((item, index, arr) => {
+    const value = item.result.enhanced.trim()
+    return value.length > 0 && arr.findIndex((v) => v.result.enhanced.trim() === value) === index
+  })
+})
+
+const variantTabs: Array<{ id: 'matrix' | 'lighting' | 'camera' | 'palette' | 'mood' | 'composition'; label: string }> = [
+  { id: 'matrix', label: '矩阵' },
+  { id: 'lighting', label: '光位' },
+  { id: 'camera', label: '镜头' },
+  { id: 'palette', label: '色彩' },
+  { id: 'mood', label: '氛围' },
+  { id: 'composition', label: '构图' },
+]
 
 const selectedVariant = computed(() =>
   variants.value.find((item) => item.id === selectedVariantId.value) ?? variants.value[0] ?? currentVariant.value,
@@ -102,6 +192,17 @@ const strategyTags = computed(() => [
 ])
 const issueItems = computed(() => analysis.value.issues.slice(0, 3))
 const strengthItems = computed(() => analysis.value.strengths.slice(0, 4))
+const slotCards = computed<SlotCard[]>(() => buildSlotCards(analysis.value))
+const filledSlotCards = computed(() => slotCards.value.filter((card) => !card.isMissing))
+const missingSlotCards = computed(() => slotCards.value.filter((card) => card.isMissing))
+const lintIssues = computed(() => analysis.value.lintIssues.slice(0, 4))
+const tokenEstimate = computed(() => analysis.value.estimatedTokens)
+const renderModeLabel = computed(() => {
+  const mode = selectedResult.value.renderMode
+  if (mode === 'narrative') return '叙事 · DALL·E 友好'
+  if (mode === 'compact') return '紧凑 · MJ/SD 风格'
+  return '结构化 · GPT-Image 友好'
+})
 const grade = computed(() => {
   const score = selectedResult.value.scoreAfter
   if (score >= 88) return { label: '强', tone: 'great', hint: '可直接进入高质量生成' }
@@ -138,8 +239,76 @@ function selectLevel(level: EnhanceLevel) {
 
 function applyResult(result = selectedResult.value) {
   if (!canEnhance.value) return
-  emit('enhance', result)
+  if (wantsAB.value && result.original && result.enhanced && result.original !== result.enhanced) {
+    emit('ab-test', result.original, result)
+  } else {
+    emit('enhance', result)
+  }
   emit('close')
+}
+
+function startEditSlot(slot: SlotName) {
+  editingSlot.value = slot
+  const card = slotCards.value.find((item) => item.slot === slot)
+  editingDraft.value = slotOverrides.value[slot] ?? card?.value ?? ''
+}
+
+function commitEditSlot() {
+  if (!editingSlot.value) return
+  const slot = editingSlot.value
+  const value = editingDraft.value.trim()
+  const next = { ...slotOverrides.value }
+  if (value) {
+    next[slot] = value
+  } else {
+    delete next[slot]
+  }
+  slotOverrides.value = next
+  editingSlot.value = null
+  editingDraft.value = ''
+  selectedVariantId.value = 'current'
+}
+
+function cancelEditSlot() {
+  editingSlot.value = null
+  editingDraft.value = ''
+}
+
+function clearSlotOverride(slot: SlotName) {
+  if (!(slot in slotOverrides.value)) return
+  const next = { ...slotOverrides.value }
+  delete next[slot]
+  slotOverrides.value = next
+  selectedVariantId.value = 'current'
+}
+
+function refillSlot(slot: SlotName) {
+  clearSlotOverride(slot)
+  selectedVariantId.value = 'current'
+  selectedLevel.value = 'standard'
+}
+
+function applyFix(issue: LintIssue, optionId?: string) {
+  if (!issue.fix) return
+  const outcome = applyLintFix({
+    prompt: props.prompt,
+    style: props.imageStyle,
+    size: props.size,
+    intent: selectedIntent.value,
+    modelName: props.modelName,
+    hasReferenceImages: props.hasReferenceImages,
+    issue,
+    optionId,
+    context: props.context ?? undefined,
+  })
+  if (outcome.nextPrompt && outcome.nextPrompt !== props.prompt) {
+    emit('update-prompt', outcome.nextPrompt)
+  } else if (outcome.slotOverride) {
+    const next = { ...slotOverrides.value }
+    next[outcome.slotOverride.slot] = outcome.slotOverride.value
+    slotOverrides.value = next
+    selectedVariantId.value = 'current'
+  }
 }
 
 function handleDimensionClick(dim: EnhanceDimension) {
@@ -354,6 +523,20 @@ useFocusTrap(() => true, dialogRef)
               <span>候选方案</span>
               <small>{{ selectedResult.summary }}</small>
             </div>
+            <div class="magic-menu__variant-tabs" role="tablist">
+              <button
+                v-for="tab in variantTabs"
+                :key="tab.id"
+                type="button"
+                role="tab"
+                class="magic-menu__variant-tab"
+                :class="{ 'is-active': variantTab === tab.id }"
+                :aria-selected="variantTab === tab.id"
+                @click="() => { variantTab = tab.id; selectedVariantId = 'current' }"
+              >
+                {{ tab.label }}
+              </button>
+            </div>
             <div class="magic-menu__variants">
               <button
                 v-for="item in variants"
@@ -366,6 +549,176 @@ useFocusTrap(() => true, dialogRef)
                 <span>{{ item.label }}</span>
                 <small>{{ item.hint }}</small>
               </button>
+            </div>
+          </section>
+
+          <section class="magic-menu__section">
+            <div class="magic-menu__section-head">
+              <span>语义槽位识别</span>
+              <small>已识别 {{ filledSlotCards.length }} / {{ slotCards.length }} · 缺 {{ missingSlotCards.length }} · 点击编辑</small>
+            </div>
+            <div class="magic-menu__slot-grid">
+              <div
+                v-for="card in slotCards"
+                :key="card.slot"
+                class="magic-menu__slot-card"
+                :class="{
+                  'is-missing': card.isMissing,
+                  'is-brand': card.source === 'brand',
+                  'is-session': card.source === 'session',
+                  'is-continuation': card.source === 'continuation',
+                  'is-overridden': card.slot in slotOverrides,
+                  'is-editing': editingSlot === card.slot,
+                }"
+              >
+                <div class="magic-menu__slot-head">
+                  <Icon :name="card.icon" :size="11" />
+                  <span>{{ card.label }}</span>
+                  <small v-if="card.slot in slotOverrides">已编辑</small>
+                  <small v-else-if="!card.isMissing">{{
+                    card.source === 'user' ? '用户输入' :
+                    card.source === 'brand' ? '我的画风' :
+                    card.source === 'session' ? '历史口味' :
+                    card.source === 'continuation' ? '接着画继承' : '引擎补齐'
+                  }}</small>
+                  <small v-else>待补</small>
+                </div>
+                <div v-if="editingSlot === card.slot" class="magic-menu__slot-edit">
+                  <textarea
+                    v-model="editingDraft"
+                    class="magic-menu__slot-textarea"
+                    rows="3"
+                    :placeholder="card.label"
+                    @keydown.enter.exact.prevent="commitEditSlot"
+                    @keydown.esc.prevent="cancelEditSlot"
+                  ></textarea>
+                  <div class="magic-menu__slot-edit-actions">
+                    <button type="button" class="magic-menu__slot-btn is-primary" @click="commitEditSlot">
+                      <Icon name="check" :size="10" />
+                      <span>保存</span>
+                    </button>
+                    <button type="button" class="magic-menu__slot-btn" @click="cancelEditSlot">
+                      <Icon name="close" :size="10" />
+                      <span>取消</span>
+                    </button>
+                  </div>
+                </div>
+                <template v-else>
+                  <div
+                    v-if="!card.isMissing || (card.slot in slotOverrides)"
+                    class="magic-menu__slot-value"
+                  >
+                    {{ slotOverrides[card.slot] || card.value }}
+                  </div>
+                  <div v-else class="magic-menu__slot-empty">优化时可自动补齐</div>
+                  <div class="magic-menu__slot-actions">
+                    <button
+                      type="button"
+                      class="magic-menu__slot-btn"
+                      aria-label="编辑这个槽位"
+                      @click="startEditSlot(card.slot)"
+                    >
+                      <Icon name="pencil" :size="10" />
+                      <span>编辑</span>
+                    </button>
+                    <button
+                      type="button"
+                      class="magic-menu__slot-btn"
+                      aria-label="重新填充"
+                      @click="refillSlot(card.slot)"
+                    >
+                      <Icon name="refresh" :size="10" />
+                      <span>重填</span>
+                    </button>
+                    <span v-if="card.slot === 'camera'" class="magic-menu__lookbook-wrap">
+                      <button
+                        type="button"
+                        class="magic-menu__slot-btn"
+                        aria-label="从镜头图鉴选一个"
+                        :aria-expanded="cameraLookbookOpen"
+                        @click="cameraLookbookOpen = !cameraLookbookOpen"
+                      >
+                        <Icon name="camera" :size="10" />
+                        <span>图鉴</span>
+                      </button>
+                      <div
+                        v-if="cameraLookbookOpen"
+                        class="magic-menu__lookbook"
+                        role="listbox"
+                        aria-label="镜头图鉴"
+                      >
+                        <button
+                          v-for="recipe in cameraRecipes"
+                          :key="recipe.id"
+                          type="button"
+                          class="magic-menu__lookbook-item"
+                          role="option"
+                          @click="pickCameraFromLookbook(recipe)"
+                        >
+                          <strong>{{ recipe.id }}</strong>
+                          <small>{{ recipe.value }}</small>
+                        </button>
+                      </div>
+                    </span>
+                    <button
+                      v-if="card.slot in slotOverrides"
+                      type="button"
+                      class="magic-menu__slot-btn is-danger"
+                      @click="clearSlotOverride(card.slot)"
+                    >
+                      <Icon name="reset" :size="10" />
+                      <span>还原</span>
+                    </button>
+                  </div>
+                </template>
+              </div>
+            </div>
+          </section>
+
+          <section v-if="lintIssues.length" class="magic-menu__section">
+            <div class="magic-menu__section-head">
+              <span>诊断报告</span>
+              <small>{{ tokenEstimate }} tokens · {{ renderModeLabel }}</small>
+            </div>
+            <div class="magic-menu__lint-list">
+              <div
+                v-for="issue in lintIssues"
+                :key="issue.id"
+                class="magic-menu__lint-item"
+                :class="`is-${issue.severity}`"
+              >
+                <Icon
+                  :name="issue.severity === 'error' ? 'warning' : issue.severity === 'warning' ? 'info' : 'pulse'"
+                  :size="11"
+                />
+                <span class="min-w-0">
+                  <strong>{{ issue.message }}</strong>
+                  <small v-if="issue.hint">{{ issue.hint }}</small>
+                  <span v-if="issue.fix" class="magic-menu__lint-actions">
+                    <template v-if="issue.fix.kind === 'pick-one-of' && issue.fix.options">
+                      <button
+                        v-for="option in issue.fix.options"
+                        :key="option.id"
+                        type="button"
+                        class="magic-menu__lint-fix"
+                        @click="applyFix(issue, option.id)"
+                      >
+                        <Icon name="check" :size="10" />
+                        <span>{{ option.label }}</span>
+                      </button>
+                    </template>
+                    <button
+                      v-else
+                      type="button"
+                      class="magic-menu__lint-fix"
+                      @click="applyFix(issue)"
+                    >
+                      <Icon name="check" :size="10" />
+                      <span>{{ issue.fix.label }}</span>
+                    </button>
+                  </span>
+                </span>
+              </div>
             </div>
           </section>
 
@@ -388,6 +741,16 @@ useFocusTrap(() => true, dialogRef)
             <span v-for="part in previewParts" :key="part">{{ part }}</span>
           </div>
 
+          <div class="magic-menu__ab-toggle">
+            <label class="magic-menu__ab-label">
+              <input type="checkbox" v-model="wantsAB" />
+              <span>
+                <strong>A/B 双轨</strong>
+                <small>同时发原始 prompt 和优化版，方便对比</small>
+              </span>
+            </label>
+          </div>
+
           <button
             type="button"
             class="magic-menu__apply"
@@ -395,7 +758,7 @@ useFocusTrap(() => true, dialogRef)
             @click="applyResult()"
           >
             <Icon name="check" :size="14" />
-            <span>{{ applyLabel }}</span>
+            <span>{{ wantsAB ? '应用并 A/B 双发' : applyLabel }}</span>
           </button>
         </template>
       </section>
@@ -1027,5 +1390,353 @@ useFocusTrap(() => true, dialogRef)
   .magic-menu__close {
     transition: none;
   }
+}
+
+.magic-menu__slot-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.45rem;
+}
+
+.magic-menu__slot-card {
+  display: grid;
+  gap: 0.32rem;
+  min-width: 0;
+  padding: 0.55rem 0.6rem;
+  border-radius: 14px;
+  border: 1px solid rgb(var(--color-line) / 0.78);
+  background: rgb(var(--color-paper) / 0.7);
+}
+
+.magic-menu__slot-card.is-missing {
+  border-style: dashed;
+  border-color: rgb(var(--color-ochre) / 0.5);
+  background: rgb(var(--color-ochre) / 0.05);
+  color: rgb(var(--color-muted));
+}
+
+.magic-menu__slot-card.is-brand {
+  border-color: rgb(var(--color-forest) / 0.4);
+  background: rgb(var(--color-forest) / 0.08);
+}
+
+.magic-menu__slot-card.is-session {
+  border-color: rgb(var(--color-blueprint) / 0.4);
+  background: rgb(var(--color-blueprint) / 0.08);
+}
+
+.magic-menu__slot-card.is-continuation {
+  border-color: rgb(var(--color-accent) / 0.4);
+  background: rgb(var(--color-accent) / 0.08);
+}
+
+.magic-menu__slot-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.32rem;
+  font-size: 11px;
+  font-weight: 720;
+  color: rgb(var(--color-ink));
+}
+
+.magic-menu__slot-head small {
+  margin-left: auto;
+  font-size: 9px;
+  font-weight: 620;
+  color: rgb(var(--color-muted));
+  letter-spacing: 0.04em;
+}
+
+.magic-menu__slot-value {
+  font-size: 11px;
+  line-height: 1.5;
+  color: rgb(var(--color-ink));
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-word;
+}
+
+.magic-menu__slot-empty {
+  font-size: 10px;
+  color: rgb(var(--color-muted));
+  font-style: italic;
+}
+
+.magic-menu__lint-list {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.magic-menu__lint-item {
+  display: flex;
+  gap: 0.4rem;
+  padding: 0.45rem 0.6rem;
+  border-radius: 12px;
+  border: 1px solid rgb(var(--color-line));
+  background: rgb(var(--color-paper) / 0.5);
+  font-size: 11px;
+}
+
+.magic-menu__lint-item.is-error {
+  border-color: rgb(var(--color-accent) / 0.4);
+  background: rgb(var(--color-accent) / 0.08);
+  color: rgb(var(--color-accent));
+}
+
+.magic-menu__lint-item.is-warning {
+  border-color: rgb(var(--color-ochre) / 0.4);
+  background: rgb(var(--color-ochre) / 0.08);
+  color: rgb(var(--color-ochre));
+}
+
+.magic-menu__lint-item.is-info {
+  color: rgb(var(--color-muted));
+}
+
+.magic-menu__lint-item span {
+  display: grid;
+  gap: 0.18rem;
+}
+
+.magic-menu__lint-item strong {
+  font-weight: 720;
+}
+
+.magic-menu__lint-item small {
+  font-size: 10px;
+  opacity: 0.78;
+}
+
+.magic-menu__lint-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.32rem;
+  margin-top: 0.32rem;
+}
+
+.magic-menu__lint-fix {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  padding: 0.22rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  background: rgb(var(--color-paper) / 0.6);
+  color: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 140ms ease, transform 140ms ease;
+}
+
+.magic-menu__lint-fix:hover {
+  background: rgb(var(--color-paper));
+  transform: translateY(-1px);
+}
+
+.magic-menu__lint-fix:active {
+  transform: translateY(0);
+}
+
+.magic-menu__lookbook-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.magic-menu__lookbook {
+  position: absolute;
+  top: calc(100% + 0.32rem);
+  right: 0;
+  z-index: 5;
+  display: grid;
+  gap: 0.32rem;
+  width: min(280px, 80vw);
+  max-height: 240px;
+  overflow: auto;
+  padding: 0.4rem;
+  border-radius: 14px;
+  border: 1px solid rgb(var(--color-line-strong) / 0.7);
+  background: rgb(var(--color-paper));
+  box-shadow: var(--shadow-paper-3);
+}
+
+.magic-menu__lookbook-item {
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.45rem 0.55rem;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background: rgb(var(--color-paper-soft) / 0.6);
+  text-align: left;
+  cursor: pointer;
+  transition: background 140ms ease, border-color 140ms ease;
+}
+
+.magic-menu__lookbook-item:hover {
+  border-color: rgb(var(--color-line-strong) / 0.6);
+  background: rgb(var(--color-vellum));
+}
+
+.magic-menu__lookbook-item strong {
+  font-size: 11px;
+  font-weight: 720;
+  color: rgb(var(--color-ink));
+}
+
+.magic-menu__lookbook-item small {
+  font-size: 10px;
+  line-height: 1.45;
+  color: rgb(var(--color-muted));
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.magic-menu__slot-card.is-overridden {
+  border-color: rgb(var(--color-ink));
+  background: rgb(var(--color-vellum));
+  box-shadow: 0 0 0 1px rgb(var(--color-ink) / 0.18);
+}
+
+.magic-menu__slot-card.is-editing {
+  border-style: solid;
+  border-color: rgb(var(--color-ink));
+}
+
+.magic-menu__slot-actions {
+  display: flex;
+  gap: 0.32rem;
+  margin-top: 0.18rem;
+  flex-wrap: wrap;
+}
+
+.magic-menu__slot-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.26rem;
+  padding: 0.18rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid rgb(var(--color-line) / 0.78);
+  background: rgb(var(--color-paper) / 0.65);
+  color: rgb(var(--color-muted));
+  font-size: 10px;
+  font-weight: 680;
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease, border-color 140ms ease;
+}
+
+.magic-menu__slot-btn:hover {
+  border-color: rgb(var(--color-line-strong));
+  background: rgb(var(--color-vellum));
+  color: rgb(var(--color-ink));
+}
+
+.magic-menu__slot-btn.is-primary {
+  border-color: rgb(var(--color-ink));
+  background: rgb(var(--color-ink));
+  color: rgb(var(--color-paper));
+}
+
+.magic-menu__slot-btn.is-danger {
+  border-color: rgb(var(--color-accent) / 0.4);
+  background: rgb(var(--color-accent) / 0.08);
+  color: rgb(var(--color-accent));
+}
+
+.magic-menu__slot-edit {
+  display: grid;
+  gap: 0.32rem;
+}
+
+.magic-menu__slot-textarea {
+  width: 100%;
+  resize: vertical;
+  min-height: 56px;
+  padding: 0.4rem 0.5rem;
+  border-radius: 10px;
+  border: 1px solid rgb(var(--color-line) / 0.85);
+  background: rgb(var(--color-paper));
+  color: rgb(var(--color-ink));
+  font-size: 11px;
+  line-height: 1.5;
+  font-family: inherit;
+}
+
+.magic-menu__slot-textarea:focus {
+  outline: none;
+  border-color: rgb(var(--color-ink));
+}
+
+.magic-menu__slot-edit-actions {
+  display: flex;
+  gap: 0.32rem;
+}
+
+.magic-menu__variant-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.32rem;
+  margin-bottom: 0.5rem;
+}
+
+.magic-menu__variant-tab {
+  padding: 0.32rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid rgb(var(--color-line) / 0.85);
+  background: rgb(var(--color-paper) / 0.7);
+  color: rgb(var(--color-muted));
+  font-size: 11px;
+  font-weight: 680;
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease, border-color 140ms ease;
+}
+
+.magic-menu__variant-tab:hover {
+  border-color: rgb(var(--color-line-strong));
+  background: rgb(var(--color-vellum));
+  color: rgb(var(--color-ink));
+}
+
+.magic-menu__variant-tab.is-active {
+  border-color: rgb(var(--color-ink));
+  background: rgb(var(--color-ink));
+  color: rgb(var(--color-paper));
+}
+
+.magic-menu__ab-toggle {
+  margin-top: 0.7rem;
+  padding: 0.55rem 0.65rem;
+  border-radius: 14px;
+  border: 1px solid rgb(var(--color-line) / 0.74);
+  background: rgb(var(--color-paper) / 0.6);
+}
+
+.magic-menu__ab-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  cursor: pointer;
+}
+
+.magic-menu__ab-label input[type='checkbox'] {
+  margin-top: 0.18rem;
+}
+
+.magic-menu__ab-label span {
+  display: grid;
+  gap: 0.12rem;
+}
+
+.magic-menu__ab-label strong {
+  font-size: 11px;
+  font-weight: 720;
+}
+
+.magic-menu__ab-label small {
+  font-size: 10px;
+  color: rgb(var(--color-muted));
 }
 </style>

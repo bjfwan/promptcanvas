@@ -8,6 +8,13 @@ const maxHistoryItems = 12
 const imageDbName = 'promptcanvas-history-images'
 const imageStoreName = 'images'
 
+/**
+ * 出厂内置的反代 URL。所有用户默认走这条线，避免每个人都要自己部署 Workers。
+ * - 仅做透明转发 + 加 CORS 头，不持久化任何凭据
+ * - 浏览器直连模式仍然支持：用户可以在 localStorage 里手动清掉 proxyUrl
+ */
+export const DEFAULT_PROXY_URL = 'https://proxy.likeyou.qzz.io'
+
 interface HistoryImageRecord {
   key: string
   source: string
@@ -322,7 +329,7 @@ export function clearHistory() {
   } catch {}
 }
 
-const emptyProvider: ProviderConfig = { baseUrl: '', apiKey: '', proxyUrl: '' }
+const emptyProvider: ProviderConfig = { baseUrl: '', apiKey: '', proxyUrl: DEFAULT_PROXY_URL }
 
 interface StoredProviderEntry {
   baseUrl?: unknown
@@ -348,7 +355,9 @@ export async function loadProviderConfig(): Promise<ProviderConfig> {
 
   const baseUrl = typeof entry.baseUrl === 'string' ? entry.baseUrl : ''
   const apiKeyField = typeof entry.apiKey === 'string' ? entry.apiKey : ''
-  const proxyUrl = typeof entry.proxyUrl === 'string' ? entry.proxyUrl : ''
+  const storedProxy = typeof entry.proxyUrl === 'string' ? entry.proxyUrl.trim() : ''
+  // 老版本可能没存 proxyUrl，或用户自己清空过——这里始终回退到内置 proxy。
+  const proxyUrl = storedProxy || DEFAULT_PROXY_URL
 
   if (!apiKeyField) {
     return { baseUrl, apiKey: '', proxyUrl }
@@ -367,7 +376,7 @@ export async function saveProviderConfig(config: ProviderConfig) {
     const baseUrl = config.baseUrl ?? ''
     const plaintextKey = (config.apiKey ?? '').trim()
     const apiKey = plaintextKey ? await encryptString(plaintextKey) : ''
-    const proxyUrl = (config.proxyUrl ?? '').trim()
+    const proxyUrl = ((config.proxyUrl ?? '').trim()) || DEFAULT_PROXY_URL
     localStorage.setItem(providerKey, JSON.stringify({ baseUrl, apiKey, proxyUrl }))
   } catch {}
 }

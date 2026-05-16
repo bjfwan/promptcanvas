@@ -3,12 +3,18 @@ import { computed, defineAsyncComponent, nextTick, ref, watch } from 'vue'
 import Icon from './Icon.vue'
 import StyleSwatch from './StyleSwatch.vue'
 import Select, { type SelectOption } from './Select.vue'
+import PromptInsightChips from './PromptInsightChips.vue'
 import { maxReferenceImages } from '../lib/imagesApi'
 import { customModelSentinel, sizeOptions, styleOptions } from '../presets'
 import { stylePrompts } from '../lib/imagesApi'
 import { useDiscoveredModels } from '../composables/useDiscoveredModels'
-import type { ContinuationContext, ImageSize, ImageStyle, ReferenceImageAttachment } from '../types'
+import type { ContinuationContext, ImageQuality, ImageSize, ImageStyle, ReferenceImageAttachment } from '../types'
 import type { EnhanceResult } from '../lib/magicEnhance'
+import type { PromptContext } from '../lib/promptDoc'
+import type { PromptTreeNode } from '../composables/usePromptTree'
+import { reverseParseRevisedPrompt, docToPlainPrompt } from '../lib/revisedParser'
+
+const PromptTreeline = defineAsyncComponent(() => import('./PromptTreeline.vue'))
 
 const MagicEnhanceMenu = defineAsyncComponent(() => import('./MagicEnhanceMenu.vue'))
 
@@ -42,12 +48,26 @@ interface Props {
   layout?: 'panel' | 'sheet'
   continuation?: ContinuationContext | null
   canUndoEnhance?: boolean
+  quality?: ImageQuality
+  modelName?: string
+  promptContext?: PromptContext | null
+  treeNodes?: PromptTreeNode[]
+  treeCurrentId?: string | null
+  treeCanUndo?: boolean
+  treeCanRedo?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
   layout: 'panel',
   continuation: null,
   canUndoEnhance: false,
+  quality: 'auto',
+  modelName: '',
+  promptContext: null,
+  treeNodes: () => [],
+  treeCurrentId: null,
+  treeCanUndo: false,
+  treeCanRedo: false,
 })
 
 const prompt = defineModel<string>('prompt', { required: true })
@@ -66,7 +86,14 @@ const emit = defineEmits<{
   (e: 'select-reference-images', files: File[]): void
   (e: 'remove-reference-image', id: string): void
   (e: 'magic-enhance', result: EnhanceResult): void
+  (e: 'magic-ab-test', original: string, optimized: EnhanceResult): void
+  (e: 'toast-info', title: string, message?: string): void
   (e: 'undo-enhance'): void
+  (e: 'tree-undo'): void
+  (e: 'tree-redo'): void
+  (e: 'tree-jump', id: string): void
+  (e: 'tree-branch', id: string): void
+  (e: 'tree-clear'): void
   (e: 'cancel-continuation'): void
 }>()
 
@@ -137,6 +164,26 @@ function clearPrompt() {
   prompt.value = ''
   emit('clear')
   focusPrompt()
+}
+
+function handlePromptPaste(event: ClipboardEvent) {
+  const pasted = event.clipboardData?.getData('text') ?? ''
+  if (!pasted) return
+  const looksStructured = /^(?:Subject|Lighting|Camera|Composition|主体|光位|镜头|构图)[:：]/m.test(pasted)
+  if (!looksStructured || pasted.length < 24) return
+  event.preventDefault()
+  const doc = reverseParseRevisedPrompt({
+    revisedPrompt: pasted,
+    style: imageStyle.value,
+    size: size.value,
+    hasReferenceImages: hasReferenceImages.value,
+  })
+  const plain = docToPlainPrompt(doc) || pasted
+  prompt.value = plain
+  nextTick(() => {
+    promptRef.value?.focus()
+    emit('toast-info', '已解析为槽位', `识别 ${Object.keys(doc.slots).filter((k) => doc.slots[k as keyof typeof doc.slots]?.value).length} 个槽位，已规整化为可读 prompt`)
+  })
 }
 
 function openReferencePicker() {
@@ -310,7 +357,7 @@ watch(prompt, () => {
         </label>
         <p class="font-mono text-[10px] tabular-nums text-muted">{{ promptCount }} / 1200</p>
       </div>
-      <div class="prompt-field-shell" @click="promptRef?.focus()">
+      <div class="prompt-field-shell" data-tour="composer-prompt" @click="promptRef?.focus()">
         <textarea
           id="prompt-input"
           ref="promptRef"
@@ -322,6 +369,7 @@ watch(prompt, () => {
           autocomplete="off"
           spellcheck="false"
           @click.stop="promptRef?.focus()"
+          @paste="handlePromptPaste"
         ></textarea>
         <div class="prompt-field-tools">
           <span class="prompt-model-chip">
@@ -365,7 +413,13 @@ watch(prompt, () => {
                 :prompt="prompt"
                 :image-style="imageStyle"
                 :has-reference-images="hasReferenceImages"
+                :size="size"
+                :quality="props.quality"
+                :model-name="props.modelName"
+                :context="props.promptContext ?? null"
                 @enhance="(result: EnhanceResult) => { emit('magic-enhance', result); magicMenuOpen = false }"
+                @ab-test="(original: string, optimized: EnhanceResult) => { emit('magic-ab-test', original, optimized); magicMenuOpen = false }"
+                @update-prompt="(value: string) => { prompt = value }"
                 @close="magicMenuOpen = false"
               />
             </span>
@@ -454,6 +508,25 @@ watch(prompt, () => {
           <span class="font-mono text-muted/70">~{{ promptTokens }} tokens</span>
         </p>
       </div>
+
+      <PromptTreeline
+        v-if="layout === 'panel' && (props.treeNodes?.length ?? 0) > 1"
+        :nodes="props.treeNodes ?? []"
+        :current-id="props.treeCurrentId ?? null"
+        :can-undo="props.treeCanUndo ?? false"
+        :can-redo="props.treeCanRedo ?? false"
+        @undo="emit('tree-undo')"
+        @redo="emit('tree-redo')"
+        @jump="(id) => emit('tree-jump', id)"
+        @branch="(id) => emit('tree-branch', id)"
+        @clear="emit('tree-clear')"
+      />
+
+      <PromptInsightChips
+        :prompt="prompt"
+        @pick="magicMenuOpen = true"
+      />
+
       <p class="text-[10px] leading-snug text-muted">
         需要负面提示词、Seed、质量等高级参数？
         <button
@@ -486,7 +559,7 @@ watch(prompt, () => {
           @click="imageStyle = item.value"
         >
           <span class="style-card__rail" aria-hidden="true"></span>
-          <StyleSwatch :variant="item.value" :active="imageStyle === item.value" :size="34" />
+          <StyleSwatch :variant="item.value" :active="imageStyle === item.value" :size="40" />
           <span class="style-card__body">
             <span class="style-card__top">
               <span class="style-card__title">{{ item.label }}</span>
@@ -570,7 +643,8 @@ watch(prompt, () => {
 
     <div
       v-if="layout === 'panel'"
-      class="sticky bottom-0 -mx-4 border-t border-line/80 bg-paper/95 px-4 pb-[max(env(safe-area-inset-bottom),0.75rem)] pt-3 backdrop-blur sm:-mx-6 sm:px-6 lg:static lg:mx-0 lg:border-0 lg:bg-transparent lg:px-0 lg:pb-0 lg:pt-0 lg:backdrop-blur-none"
+      class="composer-cta sticky bottom-0 z-[5]"
+      data-tour="composer-cta"
     >
       <button
         type="submit"
@@ -633,6 +707,40 @@ watch(prompt, () => {
   background: rgb(var(--color-ivory) / 0.72);
   box-shadow: var(--shadow-inner-paper);
   transition: border-color 180ms var(--motion-soft), background 180ms var(--motion-soft), box-shadow 180ms var(--motion-soft);
+}
+
+.composer-cta {
+  margin-inline: -1.25rem;
+  padding: 0.85rem 1.25rem max(env(safe-area-inset-bottom), 0.85rem);
+  background:
+    linear-gradient(180deg, rgb(var(--color-ivory) / 0) 0%, rgb(var(--color-ivory) / 0.7) 28%, rgb(var(--color-vellum) / 0.96) 100%);
+  backdrop-filter: blur(10px) saturate(140%);
+  -webkit-backdrop-filter: blur(10px) saturate(140%);
+  border-top: 1px solid rgb(var(--color-line) / 0.6);
+}
+
+.composer-cta::before {
+  /* extra ambient halo when scrolling content sits behind */
+  content: '';
+  position: absolute;
+  inset: -28px 0 100% 0;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgb(var(--color-ivory) / 0) 0%, rgb(var(--color-vellum) / 0.6) 100%);
+}
+
+@supports (-webkit-backdrop-filter: blur(1px)) {
+  .composer-cta {
+    background:
+      linear-gradient(180deg, rgb(var(--color-ivory) / 0) 0%, rgb(var(--color-vellum) / 0.55) 28%, rgb(var(--color-vellum) / 0.92) 100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .composer-cta {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background: rgb(var(--color-vellum));
+  }
 }
 
 .prompt-field-shell:focus-within {

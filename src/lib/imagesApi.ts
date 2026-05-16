@@ -1,4 +1,10 @@
 import type { GeneratedImage, GenerateImageRequest, ReferenceImageAttachment } from '../types'
+import { buildSessionProfileWithLongTerm } from './sessionProfile'
+import { compose } from './promptCompose'
+import { parsePrompt } from './promptParser'
+import { inferEnhanceIntent } from './magicEnhance'
+import type { BrandKit, PromptContext } from './promptDoc'
+import type { GenerationHistoryItem } from '../types'
 
 export const allowedSizes: ReadonlySet<string> = new Set([
   '1024x1024',
@@ -318,6 +324,14 @@ export async function ensurePngBlob(file: File): Promise<Blob> {
   })
 }
 
+export interface BuildPromptOptions {
+  brandKit?: BrandKit | null
+  history?: GenerationHistoryItem[] | null
+  modelName?: string
+  hasReferenceImages?: boolean
+  count?: number
+}
+
 export function buildPrompt(payload: {
   prompt: string
   style: string
@@ -325,21 +339,85 @@ export function buildPrompt(payload: {
   negativePrompt: string
   creativity: number | null
   seed: string
-}): string {
-  const styleInstruction = stylePrompts[payload.style] ?? payload.style
-  const subjectType = detectSubjectType(payload.prompt)
-  const adaptiveEnhancement = adaptiveEnhancements[subjectType]
+  size?: string
+  quality?: string
+  model?: string
+  referenceImages?: Array<unknown>
+}, options: BuildPromptOptions = {}): string {
+  const trimmedPrompt = payload.prompt.trim()
+  if (!trimmedPrompt) return ''
 
-  return [
-    `画面内容：${payload.prompt}`,
-    styleInstruction ? `风格指引：${styleInstruction}` : null,
-    adaptiveEnhancement ? `主体优化：${adaptiveEnhancement}` : null,
-    payload.negativePrompt ? `避免要素：${payload.negativePrompt}` : null,
-    resolveCreativityInstruction(payload.creativity),
-    payload.seed ? `一致性参考：${payload.seed}` : null,
-  ]
-    .filter(Boolean)
-    .join('\n')
+  const allowedStyles = new Set([
+    'natural',
+    'poster',
+    'product',
+    'portrait',
+    'anime',
+    'cinematic',
+    'logo',
+    'interior',
+    'raw',
+  ])
+  const styleId = (allowedStyles.has(payload.style) ? payload.style : 'raw') as
+    | 'natural'
+    | 'poster'
+    | 'product'
+    | 'portrait'
+    | 'anime'
+    | 'cinematic'
+    | 'logo'
+    | 'interior'
+    | 'raw'
+
+  const allowedSizesList = new Set(['1024x1024', '1024x1536', '1536x1024'])
+  const size = allowedSizesList.has(payload.size ?? '') ? (payload.size as string) : '1024x1024'
+
+  const allowedQualitiesList = new Set(['auto', 'low', 'medium', 'high'])
+  const quality = allowedQualitiesList.has(payload.quality ?? '')
+    ? (payload.quality as 'auto' | 'low' | 'medium' | 'high')
+    : 'auto'
+
+  const hasReferenceImages = Boolean(
+    options.hasReferenceImages ?? (Array.isArray(payload.referenceImages) && payload.referenceImages.length > 0),
+  )
+  const intent = inferEnhanceIntent(styleId, hasReferenceImages)
+  const modelName = options.modelName ?? payload.model ?? ''
+  const count = options.count ?? 1
+
+  const doc = parsePrompt({
+    prompt: trimmedPrompt,
+    style: styleId,
+    size,
+    quality,
+    intent,
+    modelName,
+    count,
+  })
+
+  if (payload.negativePrompt.trim()) {
+    doc.constraints.forbid.push(payload.negativePrompt.trim())
+  }
+
+  const sessionProfile = options.history?.length ? buildSessionProfileWithLongTerm(options.history) : null
+  const context: PromptContext = {
+    brand: options.brandKit && options.brandKit.enabled ? options.brandKit : null,
+    session: sessionProfile,
+    continuation: null,
+  }
+
+  const composition = compose(doc, {
+    level: 'standard',
+    mode: 'balanced',
+    context,
+  })
+
+  const lines: string[] = [composition.rendered]
+
+  const creativityHint = resolveCreativityInstruction(payload.creativity)
+  if (creativityHint) lines.push(creativityHint)
+  if (payload.seed) lines.push(`一致性参考：${payload.seed}`)
+
+  return lines.filter(Boolean).join('\n')
 }
 
 interface RawUpstreamImage {

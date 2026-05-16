@@ -10,11 +10,13 @@ interface Props {
   messages: ChatMessage[]
   mobileBottomPadding?: number
   jumpBottom?: number
+  providerConfigured?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
   mobileBottomPadding: 200,
   jumpBottom: 14,
+  providerConfigured: true,
 })
 
 const VIRTUALIZE_THRESHOLD = 24
@@ -43,9 +45,11 @@ const emit = defineEmits<{
   (e: 'download', image: GeneratedImage, index: number): void
   (e: 'copy', text: string, message: string): void
   (e: 'remix', image: GeneratedImage, prompt: string, messageId: string, imageIndex: number): void
+  (e: 'import-prompt', text: string): void
   (e: 'pick-suggestion', style: ImageStyle): void
   (e: 'scroll-to-message', id: string): void
   (e: 'abort', id: string): void
+  (e: 'open-settings'): void
 }>()
 
 const scrollerRef = ref<HTMLDivElement | null>(null)
@@ -140,26 +144,48 @@ defineExpose({ scrollToBottom, scrollToMessage })
         >
           <img src="/brand/promptcanvas-icon-96.png" alt="" width="56" height="56" decoding="async" />
         </div>
-        <p class="font-display text-2xl italic tracking-tightish text-ink/85">画点什么呢？</p>
-        <p class="mt-2 max-w-[26ch] text-[13px] leading-6 text-muted">
-          写一段画面描述，或先挑一种风格作为起点。
-        </p>
 
-        <ul class="mt-6 grid w-full max-w-sm grid-cols-1 gap-2 min-[380px]:grid-cols-2">
-          <li v-for="item in suggestionStyles" :key="item.value">
-            <button
-              type="button"
-              class="group flex w-full items-center gap-3 rounded-2xl border border-line bg-cream p-2.5 text-left transition hover:-translate-y-px hover:border-line-strong hover:bg-paper-soft"
-              @click="emit('pick-suggestion', item.value)"
-            >
-              <StyleSwatch :variant="item.value" :size="36" />
-              <span class="min-w-0 flex-1">
-                <span class="block text-[13px] font-medium leading-tight text-ink">{{ item.label }}</span>
-                <span class="mt-0.5 block text-[11px] leading-snug text-muted">{{ item.accent }}</span>
-              </span>
-            </button>
-          </li>
-        </ul>
+        <template v-if="!providerConfigured">
+          <p class="font-display text-2xl italic tracking-tightish text-ink/85">先配一下 API</p>
+          <p class="mt-2 max-w-[28ch] text-[13px] leading-6 text-muted">
+            填入服务商的 API 端点和 Key，请求会自动经内置反代中转。
+          </p>
+          <button
+            type="button"
+            class="mt-5 inline-flex items-center gap-2 rounded-full border border-ink bg-ink px-4 py-2.5 text-[13px] font-semibold text-paper shadow-paper-2 active:translate-y-px"
+            @click="emit('open-settings')"
+          >
+            <Icon name="settings" :size="14" />
+            <span>打开设置</span>
+            <Icon name="arrowRight" :size="14" />
+          </button>
+          <p class="mt-3 font-mono text-[10px] uppercase tracking-[0.18em] text-muted/70">
+            proxy · likeyou.qzz.io
+          </p>
+        </template>
+
+        <template v-else>
+          <p class="font-display text-2xl italic tracking-tightish text-ink/85">画点什么呢？</p>
+          <p class="mt-2 max-w-[26ch] text-[13px] leading-6 text-muted">
+            写一段画面描述，或先挑一种风格作为起点。
+          </p>
+
+          <ul class="mt-6 grid w-full max-w-sm grid-cols-1 gap-2 min-[380px]:grid-cols-2">
+            <li v-for="item in suggestionStyles" :key="item.value">
+              <button
+                type="button"
+                class="group flex w-full items-center gap-3 rounded-2xl border border-line bg-cream p-2.5 text-left transition hover:-translate-y-px hover:border-line-strong hover:bg-paper-soft"
+                @click="emit('pick-suggestion', item.value)"
+              >
+                <StyleSwatch :variant="item.value" :size="36" />
+                <span class="min-w-0 flex-1">
+                  <span class="block text-[13px] font-medium leading-tight text-ink">{{ item.label }}</span>
+                  <span class="mt-0.5 block text-[11px] leading-snug text-muted">{{ item.accent }}</span>
+                </span>
+              </button>
+            </li>
+          </ul>
+        </template>
       </div>
 
       <ol v-else class="flex flex-col gap-4 px-4 pt-4 sm:px-6">
@@ -188,6 +214,7 @@ defineExpose({ scrollToBottom, scrollToMessage })
             @download="(image, idx) => emit('download', image, idx)"
             @copy="(text, msg) => emit('copy', text, msg)"
             @remix="(image, content, idx) => emit('remix', image, content, message.id, idx)"
+            @import-prompt="(text) => emit('import-prompt', text)"
             @scroll-to-message="(id) => emit('scroll-to-message', id)"
             @abort="(id) => emit('abort', id)"
           />
