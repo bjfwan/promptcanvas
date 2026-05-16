@@ -150,6 +150,16 @@ export function useGenerationFlow(deps: GenerationFlowDeps) {
       void prependHistory(historyItem).then((next) => {
         deps.history.value = next
       })
+
+      try {
+        recordGenerationToPreference({
+          prompt: args.payload.prompt,
+          style: args.payload.style,
+          size: args.payload.size,
+          referenceImageCount: args.payload.referenceImages?.length,
+          model: args.payload.model,
+        })
+      } catch {}
     } catch (error) {
       let message = '生成失败，请稍后重试。'
       let code: string | undefined
