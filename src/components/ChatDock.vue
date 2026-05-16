@@ -187,7 +187,10 @@ function autosize() {
     (parseFloat(computed.paddingTop) || 0) + (parseFloat(computed.paddingBottom) || 0)
   const viewportH = effectiveViewportHeight()
   let cap: number
-  if (tall.value) {
+  if (props.isGenerating) {
+    // 生成中把 textarea 压到约 1 行，让出空间给 ChatStream 看图。
+    cap = Math.max(56, lineHeight + padY)
+  } else if (tall.value) {
     cap = focused.value ? Math.round(viewportH * 0.72) : Math.round(viewportH * 0.6)
   } else {
     cap = focused.value ? 280 : 200
@@ -281,6 +284,20 @@ watch(prompt, () => {
   syncLayoutSoon()
 })
 
+// 生成中自动收起 dock：避免 tall textarea / 参考图条 / 接着画 banner /
+// 自定义模型行把屏幕下半部分全占掉，让用户能看到正在生成的图。
+watch(
+  () => props.isGenerating,
+  (busy) => {
+    if (busy) {
+      if (tall.value) tall.value = false
+      if (magicMenuOpen.value) magicMenuOpen.value = false
+      if (customModelOpen.value) customModelOpen.value = false
+    }
+    syncLayoutSoon()
+  },
+)
+
 watch(focused, (isFocused) => {
   syncLayoutSoon()
   if (isFocused) ensureDockVisible()
@@ -358,7 +375,7 @@ defineExpose({ focusInput })
 
     <Transition name="chat-dock-continuation">
       <div
-        v-if="continuation"
+        v-if="continuation && !isGenerating"
         class="chat-dock__continuation mx-2.5 mb-2 sm:mx-3"
         role="status"
         aria-label="正在接着画"
@@ -415,7 +432,7 @@ defineExpose({ focusInput })
         @change="onReferenceInputChange"
       />
 
-      <div class="chat-dock__handle-bar" aria-hidden="true">
+      <div v-if="!isGenerating" class="chat-dock__handle-bar" aria-hidden="true">
         <button
           type="button"
           class="chat-dock__handle"
@@ -430,7 +447,7 @@ defineExpose({ focusInput })
 
       <Transition name="chat-dock-custom">
         <div
-          v-if="isCustomModel && customModelOpen"
+          v-if="isCustomModel && customModelOpen && !isGenerating"
           class="border-b border-line/70 px-2.5 pb-2 pt-2.5 sm:px-3"
         >
           <label class="mb-1 inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.2em] text-muted" for="chat-custom-model">
@@ -594,7 +611,7 @@ defineExpose({ focusInput })
 
       <Transition name="chat-dock-attachments">
         <div
-          v-if="hasReferenceImages"
+          v-if="hasReferenceImages && !isGenerating"
           class="chat-dock__attachments border-t border-line/70 px-2.5 pb-2 pt-1.5 sm:px-3"
         >
           <div class="mb-1.5 flex items-center justify-between gap-2 px-0.5">
