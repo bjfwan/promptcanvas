@@ -4,6 +4,7 @@ import Icon from './Icon.vue'
 import DevelopingFrame from './DevelopingFrame.vue'
 import { resolveImageSource } from '../api'
 import { styleOptions } from '../presets'
+import { useI18n } from '../lib/i18n'
 import type { ChatAssistantMessage, ChatMessage, GeneratedImage } from '../types'
 
 interface Props {
@@ -11,6 +12,7 @@ interface Props {
 }
 
 const props = defineProps<Props>()
+const { t } = useI18n()
 
 const emit = defineEmits<{
   (e: 'retry', id: string): void
@@ -243,7 +245,7 @@ function isImageReady(image: GeneratedImage, index: number) {
         >
           <Icon name="sparkle" :size="11" />
         </span>
-        <span class="chat-meta-row__chunk">canvas</span>
+        <span class="chat-meta-row__chunk">{{ t('chat.canvas') }}</span>
         <span class="chat-meta-row__chunk">{{ styleLabel }}</span>
         <span class="chat-meta-row__chunk">{{ message.meta.size }}</span>
         <span v-if="message.meta.referenceImageCount" class="chat-meta-row__chunk">参考 {{ message.meta.referenceImageCount }}</span>
@@ -281,7 +283,7 @@ function isImageReady(image: GeneratedImage, index: number) {
         <div class="flex items-start gap-2">
           <Icon name="warning" :size="14" class="mt-1 shrink-0" />
           <div class="min-w-0 flex-1">
-            <p class="font-medium">{{ message.errorMessage || '生成失败，请稍后重试。' }}</p>
+            <p class="font-medium">{{ message.errorMessage || t('chat.errorFallback') }}</p>
             <p
               v-if="message.requestId"
               class="mt-1 font-mono text-[10px] uppercase tracking-[0.2em] text-accent/70"
@@ -298,7 +300,7 @@ function isImageReady(image: GeneratedImage, index: number) {
             @click="emit('retry', message.replyTo)"
           >
             <Icon name="refresh" :size="12" />
-            <span>重试</span>
+            <span>{{ t('chat.retry') }}</span>
           </button>
           <button
             v-if="message.errorMessage"
@@ -398,16 +400,16 @@ function isImageReady(image: GeneratedImage, index: number) {
             @click="emit('retry', message.replyTo)"
           >
             <Icon name="refresh" :size="12" />
-            <span>再画一张</span>
+            <span>{{ t('chat.actionRetry') }}</span>
           </button>
           <button
             type="button"
             class="chat-action-chip chat-action-chip--quiet"
-            aria-label="复制提示词"
-            @click="emit('copy', message.content || '', '已复制提示词')"
+            :aria-label="t('chat.actionCopyPrompt')"
+            @click="emit('copy', message.content || '', t('toast.copyPrompt'))"
           >
             <Icon name="copy" :size="12" />
-            <span>复制提示词</span>
+            <span>{{ t('chat.actionCopyPrompt') }}</span>
           </button>
           <button
             v-if="importablePrompt"

@@ -4,6 +4,7 @@ import ChatBubble from './ChatBubble.vue'
 import Icon from './Icon.vue'
 import StyleSwatch from './StyleSwatch.vue'
 import { styleOptions } from '../presets'
+import { useI18n } from '../lib/i18n'
 import type { ChatMessage, GeneratedImage, ImageStyle } from '../types'
 
 interface Props {
@@ -54,6 +55,7 @@ const emit = defineEmits<{
 
 const scrollerRef = ref<HTMLDivElement | null>(null)
 const stuckToBottom = ref(true)
+const { t } = useI18n()
 
 function shouldVirtualize(index: number, total: number): boolean {
   if (total < VIRTUALIZE_THRESHOLD) return false
@@ -131,7 +133,7 @@ defineExpose({ scrollToBottom, scrollToMessage })
       :style="{ paddingBottom: `${mobileBottomPadding}px` }"
       role="log"
       aria-live="polite"
-      aria-label="对话流"
+      :aria-label="t('stream.label')"
       @scroll.passive="onScroll"
     >
       <div
@@ -146,9 +148,9 @@ defineExpose({ scrollToBottom, scrollToMessage })
         </div>
 
         <template v-if="!providerConfigured">
-          <p class="font-display text-2xl italic tracking-tightish text-ink/85">先配一下 API</p>
+          <p class="font-display text-2xl italic tracking-tightish text-ink/85">{{ t('stream.empty.unconfigured.title') }}</p>
           <p class="mt-2 max-w-[28ch] text-[13px] leading-6 text-muted">
-            填入服务商的 API 端点和 Key，请求会自动经内置反代中转。
+            {{ t('stream.empty.unconfigured.body') }}
           </p>
           <button
             type="button"
@@ -156,7 +158,7 @@ defineExpose({ scrollToBottom, scrollToMessage })
             @click="emit('open-settings')"
           >
             <Icon name="settings" :size="14" />
-            <span>打开设置</span>
+            <span>{{ t('stream.empty.unconfigured.cta') }}</span>
             <Icon name="arrowRight" :size="14" />
           </button>
           <p class="mt-3 font-mono text-[10px] uppercase tracking-[0.18em] text-muted/70">
@@ -165,9 +167,9 @@ defineExpose({ scrollToBottom, scrollToMessage })
         </template>
 
         <template v-else>
-          <p class="font-display text-2xl italic tracking-tightish text-ink/85">画点什么呢？</p>
+          <p class="font-display text-2xl italic tracking-tightish text-ink/85">{{ t('stream.empty.title') }}</p>
           <p class="mt-2 max-w-[26ch] text-[13px] leading-6 text-muted">
-            写一段画面描述，或先挑一种风格作为起点。
+            {{ t('stream.empty.body') }}
           </p>
 
           <ul class="mt-6 grid w-full max-w-sm grid-cols-1 gap-2 min-[380px]:grid-cols-2">
@@ -227,7 +229,7 @@ defineExpose({ scrollToBottom, scrollToMessage })
       type="button"
       class="chat-stream__jump"
       :style="{ bottom: `${jumpBottom}px` }"
-      aria-label="滚动到底部"
+      :aria-label="t('stream.jump')"
       @click="scrollToBottom(true)"
     >
       <Icon name="arrowDown" :size="14" />

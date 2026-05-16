@@ -6,10 +6,14 @@ import { useFocusTrap } from '../composables/useFocusTrap'
 import { useVibration } from '../composables/useVibration'
 import { useBodyLock } from '../composables/useBodyLock'
 import { useI18n } from '../lib/i18n'
+import { useShare } from '../composables/useShare'
+import { useToast } from '../composables/useToast'
 import Icon from './Icon.vue'
 
 const lightbox = useLightbox()
 const { t } = useI18n()
+const { supported: shareSupported, share } = useShare()
+const toast = useToast()
 const { vibrate } = useVibration()
 
 const MIN_SCALE = 1
@@ -341,6 +345,38 @@ async function downloadCurrent() {
     anchor.click()
   }
 }
+
+async function shareCurrent() {
+  if (!activeImage.value || !activeSrc.value) return
+  const ext = activeImage.value.mimeType?.split('/')[1] || 'png'
+  const filename = `promptcanvas-${Date.now()}.${ext}`
+
+  let blob: Blob | null = null
+  try {
+    const response = await fetch(activeSrc.value)
+    if (response.ok) blob = await response.blob()
+  } catch {
+    // CORS or network failure — try text-only share below.
+  }
+
+  const outcome = await share({
+    title: t('app.title'),
+    text: activeImage.value.revisedPrompt || undefined,
+    url: activeSrc.value.startsWith('http') ? activeSrc.value : undefined,
+    blob,
+    filename,
+  })
+
+  if (outcome === 'shared') {
+    toast.success(t('toast.shareSuccess'))
+  } else if (outcome === 'fallback-copy') {
+    toast.info(t('toast.copied'))
+  } else if (outcome === 'unsupported') {
+    toast.error(t('toast.shareUnsupported'))
+  } else if (outcome === 'failed') {
+    toast.error(t('toast.shareFailed'))
+  }
+}
 </script>
 
 <template>
@@ -388,6 +424,15 @@ async function downloadCurrent() {
               @click="downloadCurrent"
             >
               <Icon name="download" :size="16" />
+            </button>
+            <button
+              v-if="shareSupported"
+              type="button"
+              class="grid h-11 w-11 place-items-center rounded-full border border-paper/20 text-paper transition hover:bg-paper/10"
+              :aria-label="t('lightbox.share')"
+              @click="shareCurrent"
+            >
+              <Icon name="share" :size="16" />
             </button>
             <button
               type="button"

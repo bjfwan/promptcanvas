@@ -3,6 +3,9 @@ import { computed, ref } from 'vue'
 import Icon from './Icon.vue'
 import DevelopingFrame from './DevelopingFrame.vue'
 import { resolveImageSource } from '../api'
+import { useI18n } from '../lib/i18n'
+import { useShare } from '../composables/useShare'
+import { useToast } from '../composables/useToast'
 import type { GeneratedImage, ImageSize } from '../types'
 
 interface QuickPromptCard {
@@ -51,6 +54,31 @@ const emit = defineEmits<{
 const activeImage = computed(() => props.images[props.activeImageIndex])
 const activeSrc = computed(() => (activeImage.value ? resolveImageSource(activeImage.value) : ''))
 const revealedImageKeys = ref<Record<string, boolean>>({})
+const { t } = useI18n()
+const { supported: shareSupported, share } = useShare()
+const toast = useToast()
+
+async function shareActive() {
+  if (!activeImage.value || !activeSrc.value) return
+  const ext = activeImage.value.mimeType?.split('/')[1] || 'png'
+  const filename = `promptcanvas-${Date.now()}.${ext}`
+  let blob: Blob | null = null
+  try {
+    const response = await fetch(activeSrc.value)
+    if (response.ok) blob = await response.blob()
+  } catch {}
+  const outcome = await share({
+    title: t('app.title'),
+    text: activeImage.value.revisedPrompt || props.promptPreview || undefined,
+    url: activeSrc.value.startsWith('http') ? activeSrc.value : undefined,
+    blob,
+    filename,
+  })
+  if (outcome === 'shared') toast.success(t('toast.shareSuccess'))
+  else if (outcome === 'fallback-copy') toast.info(t('toast.copied'))
+  else if (outcome === 'unsupported') toast.error(t('toast.shareUnsupported'))
+  else if (outcome === 'failed') toast.error(t('toast.shareFailed'))
+}
 
 const orient = computed<'portrait' | 'landscape' | 'square'>(() => {
   if (props.size === '1024x1536') return 'portrait'
@@ -377,27 +405,36 @@ function isImageReady(image: GeneratedImage, index: number) {
       <div class="canvas-action-grid">
         <button type="button" class="canvas-action canvas-action--primary" @click="emit('remix', activeImage, activeImageIndex)">
           <Icon name="sparkle" :size="14" />
-          接着画
+          {{ t('canvas.action.continue') }}
         </button>
         <button type="button" class="canvas-action" @click="emit('download', activeImage, activeImageIndex)">
           <Icon name="download" :size="14" />
-          下载
+          {{ t('canvas.action.download') }}
+        </button>
+        <button
+          v-if="shareSupported"
+          type="button"
+          class="canvas-action"
+          @click="shareActive"
+        >
+          <Icon name="share" :size="14" />
+          {{ t('canvas.action.share') }}
         </button>
         <button type="button" class="canvas-action" @click="emit('open-lightbox', activeImageIndex)">
           <Icon name="zoomIn" :size="14" />
-          放大
+          {{ t('canvas.action.zoom') }}
         </button>
         <button
           type="button"
           class="canvas-action"
-          @click="emit('copy', activeImage.revisedPrompt || promptPreview, '已复制提示词')"
+          @click="emit('copy', activeImage.revisedPrompt || promptPreview, t('toast.copyPrompt'))"
         >
           <Icon name="copy" :size="14" />
-          复制提示词
+          {{ t('canvas.action.copyPrompt') }}
         </button>
         <button type="button" class="canvas-action" @click="emit('export')">
           <Icon name="share" :size="14" />
-          导出参数
+          {{ t('canvas.action.export') }}
         </button>
       </div>
 
