@@ -225,34 +225,28 @@ function isImageReady(image: GeneratedImage, index: number) {
       >
         <p class="whitespace-pre-wrap break-words">{{ message.content }}</p>
       </div>
-      <div class="flex items-center gap-2 px-1 font-mono text-[10px] uppercase tracking-[0.18em] text-muted">
-        <span v-if="isReferenceMessage">参考图</span>
-        <span v-if="isReferenceMessage" class="text-line">·</span>
-        <span>{{ styleLabel }}</span>
-        <span class="text-line">·</span>
-        <span>{{ message.meta.size }}</span>
-        <span v-if="message.meta.count > 1" class="text-line">·</span>
-        <span v-if="message.meta.count > 1">×{{ message.meta.count }}</span>
-        <span v-if="message.meta.referenceImageCount" class="text-line">·</span>
-        <span v-if="message.meta.referenceImageCount">图 {{ message.meta.referenceImageCount }}</span>
-        <span v-if="timeLabel" class="text-line">·</span>
-        <span v-if="timeLabel" class="tracking-normal">{{ timeLabel }}</span>
+      <div class="chat-meta-row" :data-orientation="message.role">
+        <span v-if="isReferenceMessage" class="chat-meta-row__chunk">参考图</span>
+        <span class="chat-meta-row__chunk">{{ styleLabel }}</span>
+        <span class="chat-meta-row__chunk">{{ message.meta.size }}</span>
+        <span v-if="message.meta.count > 1" class="chat-meta-row__chunk">×{{ message.meta.count }}</span>
+        <span v-if="message.meta.referenceImageCount" class="chat-meta-row__chunk">图 {{ message.meta.referenceImageCount }}</span>
+        <span v-if="timeLabel" class="chat-meta-row__chunk chat-meta-row__chunk--time">{{ timeLabel }}</span>
       </div>
     </div>
 
     <div v-else class="flex max-w-[92%] flex-col items-start gap-1.5">
-      <div class="flex items-center gap-2 px-1 font-mono text-[10px] uppercase tracking-[0.22em] text-muted">
+      <div class="chat-meta-row chat-meta-row--assistant">
         <span
-          class="grid h-5 w-5 place-items-center rounded-full border border-line-strong bg-vellum text-ink"
+          class="grid h-5 w-5 shrink-0 place-items-center rounded-full border border-line-strong bg-vellum text-ink"
           aria-hidden="true"
         >
           <Icon name="sparkle" :size="11" />
         </span>
-        <span>canvas</span>
-        <span class="text-line">·</span>
-        <span>{{ styleLabel }} · {{ message.meta.size }}</span>
-        <span v-if="message.meta.referenceImageCount" class="text-line">·</span>
-        <span v-if="message.meta.referenceImageCount">参考 {{ message.meta.referenceImageCount }}</span>
+        <span class="chat-meta-row__chunk">canvas</span>
+        <span class="chat-meta-row__chunk">{{ styleLabel }}</span>
+        <span class="chat-meta-row__chunk">{{ message.meta.size }}</span>
+        <span v-if="message.meta.referenceImageCount" class="chat-meta-row__chunk">参考 {{ message.meta.referenceImageCount }}</span>
       </div>
 
       <div
@@ -440,13 +434,58 @@ function isImageReady(image: GeneratedImage, index: number) {
   font-feature-settings: 'ss01', 'cv11';
 }
 
+.chat-meta-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.5rem;
+  padding-inline: 0.25rem;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: rgb(var(--color-muted));
+  line-height: 1.2;
+  min-width: 0;
+}
+
+.chat-meta-row[data-orientation="user"] {
+  justify-content: flex-end;
+}
+
+.chat-meta-row--assistant {
+  letter-spacing: 0.22em;
+}
+
+.chat-meta-row__chunk {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+}
+
+.chat-meta-row__chunk + .chat-meta-row__chunk::before {
+  content: '·';
+  margin-right: 0.5rem;
+  color: rgb(var(--color-line));
+  /* Separator stays glued to its chunk, so when it wraps the dot moves with it. */
+}
+
+.chat-meta-row--assistant .chat-meta-row__chunk + .chat-meta-row__chunk::before {
+  margin-right: 0.45rem;
+}
+
+.chat-meta-row__chunk--time {
+  letter-spacing: 0;
+  text-transform: none;
+}
+
 .chat-reference-thumb {
   position: relative;
   overflow: hidden;
   border-radius: 18px;
   border: 1px solid rgb(var(--color-line-strong) / 0.7);
   background: rgb(var(--color-paper-soft));
-  min-height: 84px;
   aspect-ratio: 1;
 }
 

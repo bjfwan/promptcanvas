@@ -150,7 +150,7 @@ const mobileJumpButtonBottom = computed(() => {
     : desired
   return Math.max(18, Math.min(desired, limit))
 })
-let templateAnchorPrompt: string = defaultPrompt
+const templateAnchorPrompt = ref<string>(defaultPrompt)
 let skipNextStyleSync = false
 
 const lastEnhanceResult = ref<EnhanceResult | null>(null)
@@ -175,7 +175,7 @@ const restoredDraft = loadDraft()
 if (restoredDraft) {
   if (typeof restoredDraft.prompt === 'string') {
     prompt.value = restoredDraft.prompt
-    templateAnchorPrompt = restoredDraft.prompt
+    templateAnchorPrompt.value = restoredDraft.prompt
   }
   if (typeof restoredDraft.negativePrompt === 'string') negativePrompt.value = restoredDraft.negativePrompt
   if (styleOptions.some((option) => option.value === restoredDraft.style)) style.value = restoredDraft.style as ImageStyle
@@ -502,7 +502,7 @@ function handleImportPrompt(text: string) {
   } else {
     toast.success('已导入到 Composer', '原文不含结构化标记，按原样写入')
   }
-  templateAnchorPrompt = prompt.value
+  templateAnchorPrompt.value = prompt.value
   lastEnhanceResult.value = null
   vibrate('tap')
   focusPrompt()
@@ -510,7 +510,7 @@ function handleImportPrompt(text: string) {
 
 function handlePickQuickPrompt(value: string) {
   prompt.value = value
-  templateAnchorPrompt = value
+  templateAnchorPrompt.value = value
   vibrate('tap')
   focusPrompt()
 }
@@ -611,10 +611,44 @@ function pickStyleFromChat(value: ImageStyle) {
   }
   if (preset.examplePrompt) {
     prompt.value = preset.examplePrompt
-    templateAnchorPrompt = preset.examplePrompt
+    templateAnchorPrompt.value = preset.examplePrompt
     if (preset.defaultSize) size.value = preset.defaultSize
   }
   nextTick(() => chatDockRef.value?.focusInput?.())
+}
+
+function handleStyleSheetSelect(payload: { style: ImageStyle; mode: 'apply' | 'switch' }) {
+  const preset = stylePresetById.get(payload.style)
+  if (!preset) return
+  const styleChanged = style.value !== payload.style
+
+  if (payload.mode === 'apply') {
+    skipNextStyleSync = true
+    style.value = payload.style
+    if (preset.examplePrompt) {
+      prompt.value = preset.examplePrompt
+      templateAnchorPrompt.value = preset.examplePrompt
+      if (preset.defaultSize) size.value = preset.defaultSize
+      vibrate('success')
+      toast.success('已套用模板', `${preset.label} · 输入框已写入示例`)
+    } else {
+      vibrate('tap')
+      toast.info('已切换为「不套模板」', '直接发送你的原始提示词，不附加风格指引')
+    }
+    nextTick(() => chatDockRef.value?.focusInput?.())
+    return
+  }
+
+  if (styleChanged) {
+    skipNextStyleSync = true
+    style.value = payload.style
+  }
+  vibrate('tap')
+  if (payload.style === 'raw') {
+    toast.info('已切换为「不套模板」', '原始提示词将被原样发送')
+  } else {
+    toast.info('已切换画面气质', `${preset.label} · 保留你已写的提示词`)
+  }
 }
 
 function historyMessages(item: GenerationHistoryItem): ChatMessage[] {
@@ -663,7 +697,7 @@ function historyMessages(item: GenerationHistoryItem): ChatMessage[] {
 async function restoreHistory(item: GenerationHistoryItem) {
   item = (await hydrateHistoryImages([item]))[0] || item
   prompt.value = item.prompt
-  templateAnchorPrompt = item.prompt
+  templateAnchorPrompt.value = item.prompt
   if (style.value !== item.style) {
     skipNextStyleSync = true
   }
@@ -722,7 +756,7 @@ async function restoreHistory(item: GenerationHistoryItem) {
 function resetDraft() {
   clearDraft()
   prompt.value = defaultPrompt
-  templateAnchorPrompt = defaultPrompt
+  templateAnchorPrompt.value = defaultPrompt
   negativePrompt.value = defaultNegativePrompt
   clearComposerReferenceImages()
   if (style.value !== 'poster') {
@@ -879,7 +913,7 @@ watch(style, (newValue, oldValue) => {
   }
   const preset = stylePresetById.get(newValue)
   if (!preset) return
-  const canReplacePrompt = !prompt.value.trim() || prompt.value === templateAnchorPrompt
+  const canReplacePrompt = !prompt.value.trim() || prompt.value === templateAnchorPrompt.value
   if (newValue === 'raw') {
     toast.info('已切换为「不套模板」', '直接发送你的原始提示词，不附加风格指引')
     return
@@ -890,7 +924,7 @@ watch(style, (newValue, oldValue) => {
   }
   if (canReplacePrompt) {
     prompt.value = preset.examplePrompt
-    templateAnchorPrompt = preset.examplePrompt
+    templateAnchorPrompt.value = preset.examplePrompt
     if (preset.defaultSize) size.value = preset.defaultSize
     toast.info('已切换提示词模板', `${preset.label} · 输入框已更新`)
   } else {
@@ -1115,7 +1149,9 @@ watch(sw.updateAvailable, (available) => {
       v-if="styleSheetOpen"
       v-model:open="styleSheetOpen"
       :current="style"
-      @select="(value) => (style = value)"
+      :prompt-value="prompt"
+      :template-anchor="templateAnchorPrompt"
+      @select="handleStyleSheetSelect"
     />
 
     <SettingsDialog

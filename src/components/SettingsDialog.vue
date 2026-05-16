@@ -9,6 +9,11 @@ import { useFocusTrap } from '../composables/useFocusTrap'
 import { useBodyLock } from '../composables/useBodyLock'
 import { ApiRequestError, testProvider } from '../api'
 import { loadBrandKit, saveBrandKit, brandKitHasContent } from '../lib/brandKit'
+import {
+  loadLearnedPreference,
+  summarizeLearnedPreference,
+  clearLearnedPreference,
+} from '../lib/preferenceLearner'
 import { useI18n, type LocalePreference } from '../lib/i18n'
 import type { BrandKit } from '../lib/promptDoc'
 import type { GenerateImageRequest, ImageQuality } from '../types'
@@ -55,6 +60,43 @@ function persistBrandKit() {
 }
 
 const brandKitMeaningful = computed(() => brandKitHasContent(brandKitDraft.value))
+
+const learnedPreference = ref(loadLearnedPreference())
+const learnedSummary = computed(() => summarizeLearnedPreference(learnedPreference.value))
+const hasLearnedSamples = computed(() => learnedSummary.value.totalSamples >= 3)
+
+function refreshLearnedPreference() {
+  learnedPreference.value = loadLearnedPreference()
+}
+
+function handleClearLearned() {
+  clearLearnedPreference()
+  refreshLearnedPreference()
+}
+
+function adoptLearnedToBrandKit() {
+  const summary = learnedSummary.value
+  const lines: string[] = []
+  if (brandKitDraft.value.alwaysInclude.trim()) {
+    lines.push(brandKitDraft.value.alwaysInclude.trim())
+  }
+  if (summary.topFocals[0]?.value) {
+    lines.push(`常用焦距 ${summary.topFocals[0].value}`)
+  }
+  if (summary.topTones[0]?.value) {
+    lines.push(`偏好色调：${summary.topTones[0].value}`)
+  }
+  if (summary.topStyleAnchors[0]?.value) {
+    lines.push(`偏好风格：${summary.topStyleAnchors[0].value}`)
+  }
+  brandKitDraft.value = {
+    ...brandKitDraft.value,
+    alwaysInclude: lines.filter(Boolean).join('；'),
+    signaturePalette: brandKitDraft.value.signaturePalette || summary.topTones[0]?.value || '',
+    signatureCamera: brandKitDraft.value.signatureCamera || summary.topFocals[0]?.value || '',
+  }
+  persistBrandKit()
+}
 
 function handleResetProvider() {
   provider.reset()
@@ -199,8 +241,12 @@ function handleKey(event: KeyboardEvent) {
 watch(
   () => props.open,
   (open) => {
-    if (open) window.addEventListener('keydown', handleKey, { capture: true })
-    else window.removeEventListener('keydown', handleKey, { capture: true })
+    if (open) {
+      window.addEventListener('keydown', handleKey, { capture: true })
+      refreshLearnedPreference()
+    } else {
+      window.removeEventListener('keydown', handleKey, { capture: true })
+    }
   },
   { immediate: true },
 )
@@ -221,7 +267,7 @@ onBeforeUnmount(() => {
         class="fixed inset-0 z-sheet flex items-end justify-center px-0 py-0 sm:items-center sm:px-4 sm:py-6"
         role="dialog"
         aria-modal="true"
-        aria-label="设置"
+        :aria-label="i18n.t('settings.title')"
       >
         <div class="scrim" aria-hidden="true"></div>
 
@@ -233,10 +279,10 @@ onBeforeUnmount(() => {
           >
             <header class="flex items-start justify-between gap-3 border-b border-line px-5 py-4 sm:px-6 sm:py-5">
               <div>
-                <p class="display-eyebrow">Settings · 设置</p>
-                <h2 class="mt-1.5 font-display text-2xl tracking-tightish">生成偏好</h2>
+                <p class="display-eyebrow">{{ i18n.t('settings.eyebrow') }}</p>
+                <h2 class="mt-1.5 font-display text-2xl tracking-tightish">{{ i18n.t('settings.title') }}</h2>
               </div>
-              <button type="button" class="icon-btn-sm" aria-label="关闭" @click="close">
+              <button type="button" class="icon-btn-sm" :aria-label="i18n.t('settings.close')" @click="close">
                 <Icon name="close" :size="14" />
               </button>
             </header>
@@ -248,8 +294,8 @@ onBeforeUnmount(() => {
               >
                 <div class="mb-3 flex items-center justify-between gap-2">
                   <div class="flex flex-col">
-                    <span class="display-eyebrow text-[10px]">Provider · 服务商</span>
-                    <span class="mt-1 text-[13px] font-medium text-ink">API 端点 与 凭据</span>
+                    <span class="display-eyebrow text-[10px]">{{ i18n.t('settings.provider.eyebrow') }}</span>
+                    <span class="mt-1 text-[13px] font-medium text-ink">{{ i18n.t('settings.provider.label') }}</span>
                   </div>
                   <span
                     class="inline-flex items-center gap-1 rounded-full px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em]"
@@ -258,12 +304,12 @@ onBeforeUnmount(() => {
                       : 'bg-ochre/12 text-ochre'"
                   >
                     <Icon :name="provider.isConfigured.value ? 'check' : 'warning'" :size="11" />
-                    <span>{{ provider.isConfigured.value ? '已配置' : '未配置' }}</span>
+                    <span>{{ provider.isConfigured.value ? i18n.t('settings.provider.configured') : i18n.t('settings.provider.unconfigured') }}</span>
                   </span>
                 </div>
 
                 <p class="mb-3 text-[11px] leading-[1.6] text-muted">
-                  凭据只保存在你浏览器的 localStorage，刷新后仍在；不会写入任何服务端数据库。Network 面板里仍可见，截图分享请遮蔽。
+                  {{ i18n.t('settings.provider.note') }}
                 </p>
 
                 <div class="mb-3 flex items-start gap-2 rounded-xl border border-line/70 bg-paper-soft/40 px-3 py-2 text-[11px] leading-[1.55]">
@@ -271,8 +317,8 @@ onBeforeUnmount(() => {
                     <Icon name="share" :size="11" />
                   </span>
                   <span class="min-w-0 flex-1">
-                    <span class="font-medium text-ink">已启用内置反代</span>
-                    <span class="ml-1 text-muted">透明转发，不持久化任何凭据</span>
+                    <span class="font-medium text-ink">{{ i18n.t('settings.provider.proxyOn') }}</span>
+                    <span class="ml-1 text-muted">{{ i18n.t('settings.provider.proxyOnHint') }}</span>
                     <span class="mt-0.5 block font-mono text-[10px] uppercase tracking-[0.16em] text-muted/80">
                       proxy.likeyou.qzz.io
                     </span>
@@ -283,7 +329,7 @@ onBeforeUnmount(() => {
                   <div>
                     <label class="label mb-1.5 inline-flex items-center gap-1.5" for="set-base-url">
                       <Icon name="link" :size="12" />
-                      <span>API 端点</span>
+                      <span>{{ i18n.t('settings.provider.baseUrl') }}</span>
                     </label>
                     <input
                       id="set-base-url"
@@ -296,7 +342,7 @@ onBeforeUnmount(() => {
                       maxlength="200"
                     />
                     <p class="mt-1 text-[10px] leading-[1.5] text-muted">
-                      OpenAI 官方 <code class="font-mono">https://api.openai.com/v1</code>，第三方网关填它给的 base URL（含 <code class="font-mono">/v1</code>）。
+                      {{ i18n.t('settings.provider.baseUrlHint') }}
                     </p>
                   </div>
 
@@ -319,7 +365,7 @@ onBeforeUnmount(() => {
                       <button
                         type="button"
                         class="absolute right-1.5 top-1/2 inline-grid h-8 w-8 -translate-y-1/2 place-items-center rounded-lg text-muted transition hover:bg-paper-soft hover:text-ink"
-                        :aria-label="showApiKey ? '隐藏 API Key' : '显示 API Key'"
+                        :aria-label="showApiKey ? i18n.t('settings.provider.apiKeyHide') : i18n.t('settings.provider.apiKeyShow')"
                         :aria-pressed="showApiKey"
                         @click="showApiKey = !showApiKey"
                       >
@@ -341,7 +387,7 @@ onBeforeUnmount(() => {
                       :size="12"
                       :class="testStatus === 'testing' ? 'animate-spin' : ''"
                     />
-                    {{ testStatus === 'testing' ? '测试中…' : '测试连接' }}
+                    {{ testStatus === 'testing' ? i18n.t('settings.provider.testing') : i18n.t('settings.provider.test') }}
                   </button>
                   <button
                     type="button"
@@ -350,7 +396,7 @@ onBeforeUnmount(() => {
                     @click="handleResetProvider"
                   >
                     <Icon name="trash" :size="12" />
-                    清除凭据
+                    {{ i18n.t('settings.provider.clear') }}
                   </button>
                 </div>
 
@@ -497,10 +543,107 @@ onBeforeUnmount(() => {
                 </div>
               </section>
 
+              <section
+                class="rounded-2xl border border-line bg-paper-soft/40 p-4"
+              >
+                <div class="mb-3 flex items-center justify-between gap-2">
+                  <div class="flex flex-col">
+                    <span class="display-eyebrow text-[10px]">Learned · 长期偏好</span>
+                    <span class="mt-1 text-[13px] font-medium text-ink">
+                      {{ hasLearnedSamples ? `已累积 ${learnedSummary.totalSamples} 次成功生成` : '继续生成会逐步学习你的口味' }}
+                    </span>
+                  </div>
+                  <span
+                    v-if="hasLearnedSamples"
+                    class="inline-flex items-center gap-1 rounded-full bg-blueprint/12 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em] text-blueprint"
+                  >
+                    <Icon name="pulse" :size="11" />
+                    <span>会自动注入</span>
+                  </span>
+                </div>
+
+                <p class="mb-3 text-[11px] leading-[1.6] text-muted">
+                  这里展示从你历史生成中统计出的偏好特征，每次生成都会自动作为上下文喂给提示词工程引擎。可以一键采纳到「我的画风」固化为永久协议。
+                </p>
+
+                <div v-if="hasLearnedSamples" class="grid gap-2.5 text-[11px]">
+                  <div v-if="learnedSummary.topFocals.length" class="learned-row">
+                    <span class="learned-row__label">焦距</span>
+                    <span class="learned-row__chips">
+                      <span
+                        v-for="entry in learnedSummary.topFocals"
+                        :key="entry.value"
+                      >{{ entry.value }} <small>×{{ entry.count }}</small></span>
+                    </span>
+                  </div>
+                  <div v-if="learnedSummary.topTones.length" class="learned-row">
+                    <span class="learned-row__label">色调</span>
+                    <span class="learned-row__chips">
+                      <span
+                        v-for="entry in learnedSummary.topTones"
+                        :key="entry.value"
+                      >{{ entry.value }} <small>×{{ entry.count }}</small></span>
+                    </span>
+                  </div>
+                  <div v-if="learnedSummary.topStyleAnchors.length" class="learned-row">
+                    <span class="learned-row__label">风格</span>
+                    <span class="learned-row__chips">
+                      <span
+                        v-for="entry in learnedSummary.topStyleAnchors"
+                        :key="entry.value"
+                      >{{ entry.value }} <small>×{{ entry.count }}</small></span>
+                    </span>
+                  </div>
+                  <div v-if="learnedSummary.topSubjects.length" class="learned-row">
+                    <span class="learned-row__label">常画</span>
+                    <span class="learned-row__chips">
+                      <span
+                        v-for="entry in learnedSummary.topSubjects"
+                        :key="entry.value"
+                      >{{ entry.value }} <small>×{{ entry.count }}</small></span>
+                    </span>
+                  </div>
+                  <div v-if="learnedSummary.topModes.length" class="learned-row">
+                    <span class="learned-row__label">模式</span>
+                    <span class="learned-row__chips">
+                      <span
+                        v-for="entry in learnedSummary.topModes"
+                        :key="entry.value"
+                      >{{ entry.value }} <small>×{{ entry.count }}</small></span>
+                    </span>
+                  </div>
+                </div>
+
+                <div v-else class="rounded-xl border border-dashed border-line/70 px-3 py-3 text-[11px] text-muted">
+                  还没有足够样本。每成功生成一张图，引擎会从中提炼焦距、色调、风格等偏好。
+                </div>
+
+                <div class="mt-3 flex flex-wrap items-center justify-between gap-2">
+                  <button
+                    type="button"
+                    class="btn-quiet text-[11px]"
+                    :disabled="!hasLearnedSamples"
+                    @click="adoptLearnedToBrandKit"
+                  >
+                    <Icon name="check" :size="12" />
+                    采纳到我的画风
+                  </button>
+                  <button
+                    type="button"
+                    class="btn-quiet text-[11px]"
+                    :disabled="!hasLearnedSamples"
+                    @click="handleClearLearned"
+                  >
+                    <Icon name="trash" :size="12" />
+                    清空学习数据
+                  </button>
+                </div>
+              </section>
+
               <section>
                 <label class="label mb-2 inline-flex items-center gap-1.5" for="set-neg">
                   <Icon name="eyeOff" :size="12" />
-                  <span>负面提示词</span>
+                  <span>{{ i18n.t('settings.negative') }}</span>
                 </label>
                 <textarea
                   id="set-neg"
@@ -508,27 +651,27 @@ onBeforeUnmount(() => {
                   rows="2"
                   maxlength="400"
                   class="field-textarea"
-                  placeholder="不想出现的元素，例如：模糊、水印"
+                  :placeholder="i18n.t('settings.negative.placeholder')"
                 ></textarea>
               </section>
 
               <section>
                 <label class="label mb-2 inline-flex items-center gap-1.5" for="set-model">
                   <Icon name="settings" :size="12" />
-                  <span>模型</span>
+                  <span>{{ i18n.t('settings.model') }}</span>
                 </label>
                 <Select
                   id="set-model"
                   v-model="modelChoice"
                   :options="modelSelectOptions"
-                  aria-label="选择生成模型"
+                  :aria-label="i18n.t('settings.model')"
                 />
                 <input
                   v-if="isCustomModel"
                   v-model="customModel"
                   type="text"
                   class="field-input mt-2 font-mono text-[12px]"
-                  placeholder="例如 dall-e-3、flux-pro 等中转站支持的模型名"
+                  :placeholder="i18n.t('settings.model.custom')"
                   autocomplete="off"
                   spellcheck="false"
                   maxlength="64"
@@ -539,25 +682,25 @@ onBeforeUnmount(() => {
                 <div>
                   <label class="label mb-2 inline-flex items-center gap-1.5" for="set-quality">
                     <Icon name="star" :size="12" />
-                    <span>质量</span>
+                    <span>{{ i18n.t('settings.quality') }}</span>
                   </label>
                   <Select
                     id="set-quality"
                     v-model="quality"
                     :options="qualitySelectOptions"
-                    aria-label="选择质量"
+                    :aria-label="i18n.t('settings.quality.label')"
                   />
                 </div>
                 <div>
                   <label class="label mb-2 inline-flex items-center gap-1.5" for="set-format">
                     <Icon name="image" :size="12" />
-                    <span>输出格式</span>
+                    <span>{{ i18n.t('settings.format') }}</span>
                   </label>
                   <Select
                     id="set-format"
                     v-model="outputFormat"
                     :options="formatOptions"
-                    aria-label="选择输出格式"
+                    :aria-label="i18n.t('settings.format.label')"
                   />
                 </div>
               </section>
@@ -565,17 +708,19 @@ onBeforeUnmount(() => {
               <section>
                 <label class="label mb-2 inline-flex items-center gap-1.5" for="set-locale">
                   <Icon name="command" :size="12" />
-                  <span>界面语言 · Interface language</span>
+                  <span>{{ i18n.t('settings.locale') }}</span>
                 </label>
                 <Select
                   id="set-locale"
                   :model-value="i18n.preference.value"
                   :options="localeSelectOptions"
-                  aria-label="选择界面语言"
+                  :aria-label="i18n.t('settings.locale.label')"
                   @update:model-value="(value) => i18n.setLocale(value)"
                 />
                 <p class="mt-1 text-[10px] leading-[1.5] text-muted">
-                  {{ i18n.preference.value === 'auto' ? `当前：${i18n.locale.value === 'zh-CN' ? '简体中文' : 'English'}（跟随系统）` : '已锁定语言，关闭设置即可生效。' }}
+                  {{ i18n.preference.value === 'auto'
+                      ? i18n.t('settings.locale.auto', { name: i18n.t(`locale.${i18n.locale.value}`) })
+                      : i18n.t('settings.locale.locked') }}
                 </p>
               </section>
 
@@ -589,7 +734,7 @@ onBeforeUnmount(() => {
                     id="set-seed"
                     v-model="seed"
                     class="field-input pr-12"
-                    placeholder="留空 = 随机"
+                    :placeholder="i18n.t('settings.seed.placeholder')"
                     autocomplete="off"
                     spellcheck="false"
                     inputmode="numeric"
@@ -597,7 +742,7 @@ onBeforeUnmount(() => {
                   <button
                     type="button"
                     class="absolute right-1.5 top-1/2 inline-grid h-8 w-8 -translate-y-1/2 place-items-center rounded-lg text-muted transition hover:bg-paper-soft hover:text-ink"
-                    aria-label="生成随机 seed"
+                    :aria-label="i18n.t('settings.seed.roll')"
                     @click="rollSeed"
                   >
                     <Icon name="dice" :size="14" />
@@ -609,7 +754,7 @@ onBeforeUnmount(() => {
                 <div class="mb-2 flex items-center justify-between">
                   <span class="label inline-flex items-center gap-1.5">
                     <Icon name="lightning" :size="12" />
-                    <span>创意强度</span>
+                    <span>{{ i18n.t('settings.creativity') }}</span>
                   </span>
                   <span class="font-mono text-[11px] tabular-nums text-ink">{{ creativity }} / 10</span>
                 </div>
@@ -620,11 +765,11 @@ onBeforeUnmount(() => {
                   max="10"
                   step="1"
                   class="settings-range w-full"
-                  aria-label="创意强度"
+                  :aria-label="i18n.t('settings.creativity')"
                 />
                 <div class="mt-1 flex justify-between font-mono text-[10px] uppercase tracking-[0.16em] text-muted">
-                  <span>稳健</span>
-                  <span>大胆</span>
+                  <span>{{ i18n.t('settings.creativity.low') }}</span>
+                  <span>{{ i18n.t('settings.creativity.high') }}</span>
                 </div>
               </section>
             </div>
@@ -638,7 +783,7 @@ onBeforeUnmount(() => {
                 @click="emit('reset')"
               >
                 <Icon name="reset" :size="13" />
-                重置全部参数
+                {{ i18n.t('settings.action.reset') }}
               </button>
               <button
                 type="button"
@@ -646,7 +791,7 @@ onBeforeUnmount(() => {
                 @click="emit('export')"
               >
                 <Icon name="download" :size="13" />
-                导出当前参数为 JSON
+                {{ i18n.t('settings.action.export') }}
               </button>
             </footer>
           </div>
@@ -728,6 +873,47 @@ onBeforeUnmount(() => {
 
 .brand-toggle input[type='checkbox']:checked::after {
   transform: translateX(13px);
+}
+
+.learned-row {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  align-items: start;
+  gap: 0.5rem;
+}
+
+.learned-row__label {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgb(var(--color-muted));
+  padding-top: 0.2rem;
+}
+
+.learned-row__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.32rem;
+}
+
+.learned-row__chips span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.32rem;
+  padding: 0.22rem 0.55rem;
+  border-radius: 999px;
+  background: rgb(var(--color-paper) / 0.78);
+  border: 1px solid rgb(var(--color-line) / 0.78);
+  font-size: 10px;
+  font-weight: 660;
+  color: rgb(var(--color-ink));
+}
+
+.learned-row__chips small {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 9px;
+  color: rgb(var(--color-muted));
 }
 
 .dlg-fade-enter-from,

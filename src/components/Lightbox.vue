@@ -5,9 +5,11 @@ import { resolveImageSource } from '../api'
 import { useFocusTrap } from '../composables/useFocusTrap'
 import { useVibration } from '../composables/useVibration'
 import { useBodyLock } from '../composables/useBodyLock'
+import { useI18n } from '../lib/i18n'
 import Icon from './Icon.vue'
 
 const lightbox = useLightbox()
+const { t } = useI18n()
 const { vibrate } = useVibration()
 
 const MIN_SCALE = 1
@@ -350,7 +352,7 @@ async function downloadCurrent() {
         class="lightbox-shell fixed inset-0 z-lightbox flex flex-col text-paper backdrop-blur"
         role="dialog"
         aria-modal="true"
-        aria-label="图片详情"
+        :aria-label="t('lightbox.label')"
         @click="lightbox.close"
       >
         <header class="flex items-center justify-between px-4 pt-[max(env(safe-area-inset-top,0px),1rem)]" @click.stop>
@@ -365,7 +367,7 @@ async function downloadCurrent() {
               type="button"
               class="grid h-11 w-11 place-items-center rounded-full border border-paper/20 text-paper transition hover:bg-paper/10"
               :aria-pressed="infoOpen"
-              :aria-label="infoOpen ? '收起元数据' : '展开元数据'"
+              :aria-label="infoOpen ? t('lightbox.info.close') : t('lightbox.info.expand')"
               @click="infoOpen = !infoOpen"
             >
               <Icon name="info" :size="16" />
@@ -374,7 +376,7 @@ async function downloadCurrent() {
               type="button"
               class="grid h-11 w-11 place-items-center rounded-full border border-paper/20 text-paper transition hover:bg-paper/10"
               :aria-pressed="isZoomed"
-              aria-label="切换缩放"
+              :aria-label="t('lightbox.toggleZoom')"
               @click="isZoomed ? resetTransform() : setScale(DOUBLE_TAP_SCALE)"
             >
               <Icon :name="isZoomed ? 'shrink' : 'expand'" :size="16" />
@@ -382,7 +384,7 @@ async function downloadCurrent() {
             <button
               type="button"
               class="grid h-11 w-11 place-items-center rounded-full border border-paper/20 text-paper transition hover:bg-paper/10"
-              aria-label="下载图片"
+              :aria-label="t('lightbox.download')"
               @click="downloadCurrent"
             >
               <Icon name="download" :size="16" />
@@ -390,7 +392,7 @@ async function downloadCurrent() {
             <button
               type="button"
               class="grid h-11 w-11 place-items-center rounded-full border border-paper/20 text-paper transition hover:bg-paper/10"
-              aria-label="关闭详情"
+              :aria-label="t('lightbox.close')"
               @click="lightbox.close"
             >
               <Icon name="close" :size="16" />
@@ -415,7 +417,7 @@ async function downloadCurrent() {
               ref="imageRef"
               :key="lightbox.state.index"
               :src="activeSrc"
-              alt="生成图片详情"
+              :alt="t('lightbox.label')"
               loading="eager"
               decoding="async"
               draggable="false"
@@ -429,7 +431,7 @@ async function downloadCurrent() {
             v-if="lightbox.state.images.length > 1 && !isZoomed"
             type="button"
             class="absolute left-2 top-1/2 grid h-12 w-12 -translate-y-1/2 place-items-center rounded-full border border-paper/20 bg-ink/40 text-paper transition hover:bg-paper/15"
-            aria-label="上一张"
+            :aria-label="t('lightbox.prev')"
             @click="lightbox.prev"
           >
             <Icon name="arrowLeft" :size="18" />
@@ -438,7 +440,7 @@ async function downloadCurrent() {
             v-if="lightbox.state.images.length > 1 && !isZoomed"
             type="button"
             class="absolute right-2 top-1/2 grid h-12 w-12 -translate-y-1/2 place-items-center rounded-full border border-paper/20 bg-ink/40 text-paper transition hover:bg-paper/15"
-            aria-label="下一张"
+            :aria-label="t('lightbox.next')"
             @click="lightbox.next"
           >
             <Icon name="arrowRight" :size="18" />
@@ -450,7 +452,7 @@ async function downloadCurrent() {
               v-if="infoOpen"
               class="lb-info"
               role="complementary"
-              aria-label="图片元数据"
+              :aria-label="t('lightbox.info.metadata')"
               @click.stop
             >
               <header class="lb-info__head">
@@ -458,7 +460,7 @@ async function downloadCurrent() {
                 <button
                   type="button"
                   class="grid h-8 w-8 place-items-center rounded-full text-paper/70 transition hover:bg-paper/10 hover:text-paper"
-                  aria-label="关闭元数据"
+                  :aria-label="t('lightbox.info.close')"
                   @click="infoOpen = false"
                 >
                   <Icon name="close" :size="13" />
@@ -468,28 +470,28 @@ async function downloadCurrent() {
               <dl class="lb-info__body">
                 <div v-if="activeImage?.revisedPrompt" class="lb-info__group">
                   <dt class="lb-info__label">
-                    <span>Revised prompt</span>
+                    <span>{{ t('lightbox.info.revisedPrompt') }}</span>
                     <button
                       type="button"
                       class="text-paper/65 transition hover:text-paper"
                       @click="copyPrompt"
-                    >复制</button>
+                    >{{ t('lightbox.copy') }}</button>
                   </dt>
                   <dd class="lb-info__prompt">{{ activeImage.revisedPrompt }}</dd>
                 </div>
 
                 <div class="lb-info__group">
-                  <dt class="lb-info__label"><span>Image</span></dt>
+                  <dt class="lb-info__label"><span>{{ t('lightbox.info.image') }}</span></dt>
                   <dd class="lb-info__rows">
-                    <span><em>类型</em><b>{{ activeImage?.mimeType || '—' }}</b></span>
-                    <span><em>序号</em><b class="font-mono">{{ lightbox.state.index + 1 }} / {{ lightbox.state.images.length }}</b></span>
+                    <span><em>{{ t('lightbox.info.type') }}</em><b>{{ activeImage?.mimeType || '—' }}</b></span>
+                    <span><em>{{ t('lightbox.info.index') }}</em><b class="font-mono">{{ lightbox.state.index + 1 }} / {{ lightbox.state.images.length }}</b></span>
                   </dd>
                 </div>
 
                 <div v-if="counter" class="lb-info__group">
-                  <dt class="lb-info__label"><span>Tip</span></dt>
+                  <dt class="lb-info__label"><span>{{ t('lightbox.info.tip') }}</span></dt>
                   <dd class="lb-info__hint">
-                    ←→ 切换 · Space 缩放 · I 收起此面板
+                    {{ t('lightbox.info.tipText') }}
                   </dd>
                 </div>
               </dl>
@@ -501,14 +503,13 @@ async function downloadCurrent() {
           <p
             v-if="lightbox.state.images.length > 1"
             class="hidden text-center font-mono text-[10px] uppercase tracking-[0.24em] text-paper/55 sm:block"
-          >
-            ← →&nbsp;切换 · Space 缩放 · I 信息 · 0 复位 · Esc 关闭
-          </p>
+            v-html="t('lightbox.foot.tipMulti')"
+          ></p>
           <p
             v-else-if="isZoomed"
             class="hidden text-center font-mono text-[10px] uppercase tracking-[0.24em] text-paper/55 sm:block"
           >
-            双指缩放 · 单指拖动 · 双击复位
+            {{ t('lightbox.foot.tipZoomed') }}
           </p>
         </footer>
       </div>

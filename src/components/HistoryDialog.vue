@@ -3,6 +3,7 @@ import { onBeforeUnmount, ref, watch } from 'vue'
 import Icon from './Icon.vue'
 import { useFocusTrap } from '../composables/useFocusTrap'
 import { useBodyLock } from '../composables/useBodyLock'
+import { useI18n } from '../lib/i18n'
 import { resolveImageSource } from '../api'
 import type { GenerationHistoryItem } from '../types'
 
@@ -12,6 +13,7 @@ interface Props {
 }
 
 const props = defineProps<Props>()
+const { t } = useI18n()
 const clearConfirming = ref(false)
 const dialogRef = ref<HTMLElement | null>(null)
 let clearConfirmTimer: number | undefined
@@ -102,7 +104,7 @@ onBeforeUnmount(() => {
         class="fixed inset-0 z-sheet flex items-end justify-center px-0 py-0 sm:items-center sm:px-4 sm:py-6"
         role="dialog"
         aria-modal="true"
-        aria-label="历史"
+        :aria-label="t('history.title')"
         @click.self="close"
       >
         <div class="scrim" aria-hidden="true" @click="close"></div>
@@ -118,10 +120,10 @@ onBeforeUnmount(() => {
                 <span class="h-1.5 w-10 rounded-full bg-line-strong/60"></span>
               </div>
               <div>
-                <p class="display-eyebrow">History · 最近 {{ history.length }} 条</p>
+                <p class="display-eyebrow">{{ t('history.eyebrow', { count: history.length }) }}</p>
                 <h2 class="mt-1.5 inline-flex items-center gap-2 font-display text-2xl tracking-tightish">
                   <Icon name="clock" :size="18" class="text-muted" />
-                  <span>历史生成</span>
+                  <span>{{ t('history.title') }}</span>
                 </h2>
               </div>
               <div class="flex items-center gap-2">
@@ -133,9 +135,9 @@ onBeforeUnmount(() => {
                   @click="requestClearHistory"
                 >
                   <Icon name="trash" :size="11" />
-                  <span>{{ clearConfirming ? '确认清空' : '清空' }}</span>
+                  <span>{{ clearConfirming ? t('history.clearConfirm') : t('history.clear') }}</span>
                 </button>
-                <button type="button" class="icon-btn-sm" aria-label="关闭" @click="close">
+                <button type="button" class="icon-btn-sm" :aria-label="t('settings.close')" @click="close">
                   <Icon name="close" :size="14" />
                 </button>
               </div>
@@ -179,7 +181,7 @@ onBeforeUnmount(() => {
                           v-if="item.images[0].storageKey"
                           class="absolute left-1 top-1 rounded-full bg-vellum/90 px-1.5 py-px font-mono text-[8px] uppercase tracking-[0.12em] text-forest shadow-paper-1"
                         >
-                          saved
+                          {{ t('history.saved') }}
                         </span>
                       </div>
                       <div
@@ -205,9 +207,9 @@ onBeforeUnmount(() => {
                         <span class="text-line">·</span>
                         <span class="font-mono">{{ item.size }}</span>
                         <span v-if="item.referenceImageCount" class="text-line">·</span>
-                        <span v-if="item.referenceImageCount">参考 {{ item.referenceImageCount }}</span>
+                        <span v-if="item.referenceImageCount">{{ t('history.refCount', { count: item.referenceImageCount }) }}</span>
                         <span v-if="item.seed" class="text-line">·</span>
-                        <span v-if="item.seed" class="font-mono">seed {{ item.seed }}</span>
+                        <span v-if="item.seed" class="font-mono">{{ t('history.seed', { value: item.seed }) }}</span>
                       </div>
                     </div>
                   </button>
@@ -217,7 +219,7 @@ onBeforeUnmount(() => {
                 v-else
                 class="rounded-2xl border border-dashed border-line bg-cream/40 px-4 py-6 text-center text-[12px] leading-5 text-muted"
               >
-                生成成功后，最近 12 条参数和可缓存图片会保存在浏览器本地。
+                {{ t('history.empty') }}
               </p>
             </div>
           </div>

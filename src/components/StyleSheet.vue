@@ -1,31 +1,77 @@
 <script setup lang="ts">
-import { onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import Icon from './Icon.vue'
 import StyleSwatch from './StyleSwatch.vue'
 import { useFocusTrap } from '../composables/useFocusTrap'
 import { useBodyLock } from '../composables/useBodyLock'
-import { styleOptions } from '../presets'
+import { useVibration } from '../composables/useVibration'
+import { styleOptions, stylePresetById } from '../presets'
 import type { ImageStyle } from '../types'
 
 interface Props {
   open: boolean
   current: ImageStyle
+  promptValue?: string
+  templateAnchor?: string
 }
 
-const props = defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), {
+  promptValue: '',
+  templateAnchor: '',
+})
+
 const sheetRef = ref<HTMLElement | null>(null)
+const previewRef = ref<HTMLElement | null>(null)
+const focused = ref<ImageStyle>(props.current)
+const dragOffset = ref(0)
+const dragging = ref(false)
+let dragStartY = 0
+
+const { vibrate } = useVibration()
 
 const emit = defineEmits<{
   (e: 'update:open', value: boolean): void
-  (e: 'select', style: ImageStyle): void
+  (e: 'select', payload: { style: ImageStyle; mode: 'apply' | 'switch' }): void
 }>()
+
+const focusedPreset = computed(() => stylePresetById.get(focused.value) ?? styleOptions[0])
+const isFocusedActive = computed(() => focused.value === props.current)
+const isFocusedRaw = computed(() => focused.value === 'raw')
+
+const hasUserOriginalPrompt = computed(() => {
+  const trimmed = (props.promptValue || '').trim()
+  if (!trimmed) return false
+  return trimmed !== (props.templateAnchor || '').trim()
+})
+
+const willOverwritePrompt = computed(() => {
+  if (!focusedPreset.value.examplePrompt) return false
+  return hasUserOriginalPrompt.value
+})
+
+const previewText = computed(() => {
+  const preset = focusedPreset.value
+  if (preset.value === 'raw') {
+    return '不附加任何风格指引：你输入什么就发什么。适合自己已经写得很完整、不希望被模板覆盖时。'
+  }
+  return preset.examplePrompt || preset.description
+})
 
 function close() {
   emit('update:open', false)
 }
 
-function pick(style: ImageStyle) {
-  emit('select', style)
+function focus(style: ImageStyle) {
+  if (focused.value === style) return
+  focused.value = style
+  vibrate('tap')
+  nextTick(() => {
+    previewRef.value?.scrollTo({ top: 0, behavior: 'auto' })
+  })
+}
+
+function apply(mode: 'apply' | 'switch') {
+  emit('select', { style: focused.value, mode })
   emit('update:open', false)
 }
 
@@ -33,19 +79,59 @@ function onKeydown(event: KeyboardEvent) {
   if (event.key === 'Escape') {
     event.preventDefault()
     close()
+    return
+  }
+  if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+    event.preventDefault()
+    apply(willOverwritePrompt.value ? 'switch' : 'apply')
   }
 }
+
+function onGrabStart(event: PointerEvent) {
+  if (event.pointerType === 'mouse' && event.button !== 0) return
+  dragging.value = true
+  dragStartY = event.clientY
+  ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
+}
+
+function onGrabMove(event: PointerEvent) {
+  if (!dragging.value) return
+  dragOffset.value = Math.max(0, event.clientY - dragStartY)
+}
+
+function onGrabEnd(event: PointerEvent) {
+  if (!dragging.value) return
+  ;(event.currentTarget as HTMLElement).releasePointerCapture?.(event.pointerId)
+  dragging.value = false
+  if (dragOffset.value > 96) {
+    close()
+  }
+  dragOffset.value = 0
+}
+
+const sheetTransform = computed(() =>
+  dragOffset.value > 0 ? `translateY(${dragOffset.value}px)` : undefined,
+)
 
 watch(
   () => props.open,
   (isOpen) => {
     if (isOpen) {
+      focused.value = props.current
+      dragOffset.value = 0
       window.addEventListener('keydown', onKeydown)
     } else {
       window.removeEventListener('keydown', onKeydown)
     }
   },
   { immediate: true },
+)
+
+watch(
+  () => props.current,
+  (next) => {
+    if (props.open) focused.value = next
+  },
 )
 
 useFocusTrap(() => props.open, sheetRef)
@@ -72,25 +158,38 @@ onBeforeUnmount(() => {
         ref="sheetRef"
         v-if="open"
         class="style-sheet fixed inset-x-0 bottom-0 z-sheet flex flex-col rounded-t-[28px] border-t border-line bg-paper text-ink shadow-paper-3"
+        :class="{ 'style-sheet--dragging': dragging }"
+        :style="sheetTransform ? { transform: sheetTransform } : undefined"
         role="dialog"
         aria-modal="true"
         aria-label="选择画面风格"
         @click.stop
       >
-        <header class="style-sheet__header relative flex items-start justify-between gap-3 px-5 pt-5">
-          <div class="absolute inset-x-0 top-2 grid place-items-center">
-            <span class="h-1.5 w-10 rounded-full bg-line-strong/60"></span>
-          </div>
-          <div class="mt-3 min-w-0 flex-1">
-            <p class="display-eyebrow">Style · 风格</p>
+        <div
+          class="style-sheet__grabber"
+          aria-hidden="true"
+          @pointerdown="onGrabStart"
+          @pointermove="onGrabMove"
+          @pointerup="onGrabEnd"
+          @pointercancel="onGrabEnd"
+        >
+          <span class="style-sheet__grabber-handle"></span>
+        </div>
+
+        <header class="style-sheet__header flex items-start justify-between gap-3 px-5 pt-1">
+          <div class="min-w-0 flex-1">
+            <p class="display-eyebrow">Template · 提示词模板</p>
             <h2 class="mt-1 inline-flex items-center gap-2 font-display text-xl tracking-tightish">
               <Icon name="palette" :size="16" class="text-muted" />
               <span>挑一种画面气质</span>
             </h2>
+            <p class="mt-1 text-[11px] leading-snug text-muted">
+              先轻点预览，再决定是「套用模板」还是只「切换风格」
+            </p>
           </div>
           <button
             type="button"
-            class="icon-btn-sm mt-3 shrink-0"
+            class="icon-btn-sm shrink-0"
             aria-label="关闭"
             @click="close"
           >
@@ -98,50 +197,107 @@ onBeforeUnmount(() => {
           </button>
         </header>
 
-        <div class="touch-scroll-y flex-1 overflow-y-auto px-5 pb-[max(env(safe-area-inset-bottom,0px),1.25rem)] pt-4">
-          <ul class="style-sheet__grid">
-            <li v-for="item in styleOptions" :key="item.value">
-              <button
-                type="button"
-                class="style-mode-card"
-                :class="{ 'style-mode-card--active': current === item.value }"
-                :aria-pressed="current === item.value"
-                @click="pick(item.value)"
-              >
-                <span class="style-mode-card__rail" aria-hidden="true"></span>
-                <StyleSwatch :variant="item.value" :active="current === item.value" :size="48" />
-                <span class="style-mode-card__body">
-                  <span class="style-mode-card__top">
-                    <span class="style-mode-card__title">{{ item.label }}</span>
-                    <Icon
-                      v-if="current === item.value"
-                      name="check"
-                      :size="12"
-                      class="style-mode-card__check"
-                    />
+        <div class="style-sheet__main">
+          <div class="touch-scroll-y style-sheet__scroller">
+            <ul class="style-sheet__grid">
+              <li v-for="item in styleOptions" :key="item.value">
+                <button
+                  type="button"
+                  class="style-tile"
+                  :class="{
+                    'style-tile--focused': focused === item.value,
+                    'style-tile--current': current === item.value,
+                  }"
+                  :aria-pressed="focused === item.value"
+                  :aria-label="`${item.label} · ${item.accent}${current === item.value ? '（当前）' : ''}`"
+                  @click="focus(item.value)"
+                >
+                  <span class="style-tile__rail" aria-hidden="true"></span>
+                  <span class="style-tile__swatch">
+                    <StyleSwatch :variant="item.value" :active="focused === item.value" :size="42" />
                   </span>
-                  <span class="style-mode-card__accent">{{ item.accent }} · {{ item.description }}</span>
-                  <span
-                    v-if="item.value === 'raw'"
-                    class="style-mode-card__preview sheet-style-preview"
-                  >
-                    不附加任何风格指引，原样发送
+                  <span class="style-tile__body">
+                    <span class="style-tile__title">{{ item.label }}</span>
+                    <span class="style-tile__accent">{{ item.accent }}</span>
                   </span>
-                  <span
-                    v-else
-                    class="style-mode-card__preview sheet-style-preview"
-                  >
-                    {{ item.examplePrompt || item.description }}
+                  <span v-if="current === item.value" class="style-tile__current-flag" aria-hidden="true">
+                    <Icon name="check" :size="11" />
                   </span>
-                </span>
-              </button>
-            </li>
-          </ul>
+                </button>
+              </li>
+            </ul>
+          </div>
 
-          <p class="style-sheet__note mt-5 text-[11px] leading-5 text-muted">
-            选风格只切换画面气质，不会替换你已经写好的提示词。如需更多参数（尺寸、数量、Seed 等），请在顶部进入设置。
-          </p>
+          <section
+            ref="previewRef"
+            class="style-sheet__preview"
+            aria-live="polite"
+          >
+            <header class="style-sheet__preview-head">
+              <span class="style-sheet__preview-eyebrow">
+                <Icon name="sparkle" :size="11" />
+                <span>{{ isFocusedRaw ? '不套模板' : '示例提示词' }}</span>
+              </span>
+              <span class="style-sheet__preview-title">
+                {{ focusedPreset.label }} · {{ focusedPreset.accent }}
+              </span>
+            </header>
+
+            <p class="style-sheet__preview-text">{{ previewText }}</p>
+
+            <p
+              v-if="willOverwritePrompt"
+              class="style-sheet__preview-warning"
+            >
+              <Icon name="warning" :size="11" />
+              <span>套用会覆盖你已写的提示词，可改为「仅切换风格」保留原文</span>
+            </p>
+          </section>
         </div>
+
+        <footer class="style-sheet__footer">
+          <template v-if="isFocusedRaw">
+            <button
+              type="button"
+              class="style-sheet__btn style-sheet__btn--primary"
+              :disabled="isFocusedActive"
+              @click="apply('switch')"
+            >
+              <Icon name="check" :size="13" />
+              <span>{{ isFocusedActive ? '当前已是「不套模板」' : '切换为「不套模板」' }}</span>
+            </button>
+          </template>
+
+          <template v-else-if="willOverwritePrompt">
+            <button
+              type="button"
+              class="style-sheet__btn style-sheet__btn--ghost"
+              @click="apply('switch')"
+            >
+              <Icon name="palette" :size="13" />
+              <span>仅切换风格</span>
+            </button>
+            <button
+              type="button"
+              class="style-sheet__btn style-sheet__btn--primary"
+              @click="apply('apply')"
+            >
+              <Icon name="sparkle" :size="13" />
+              <span>覆盖并套用</span>
+            </button>
+          </template>
+
+          <template v-else>
+            <button
+              type="button"
+              class="style-sheet__btn style-sheet__btn--primary"
+              @click="apply('apply')"
+            >
+              <Icon name="sparkle" :size="13" />
+              <span>{{ isFocusedActive ? '重新写入示例' : '套用模板' }}</span>
+            </button>
+          </template>
+        </footer>
       </section>
     </Transition>
   </Teleport>
@@ -149,124 +305,165 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .style-sheet {
-  max-height: min(84dvh, 720px);
+  max-height: min(86dvh, 760px);
   background:
-    linear-gradient(180deg, rgb(var(--color-ivory) / 0.74), rgb(var(--color-vellum) / 0.96)),
+    linear-gradient(180deg, rgb(var(--color-ivory) / 0.78), rgb(var(--color-vellum) / 0.97)),
     rgb(var(--color-paper));
+  transition: transform 280ms var(--motion-soft);
+  will-change: transform;
+}
+
+.style-sheet--dragging {
+  transition: none;
+}
+
+.style-sheet__grabber {
+  position: relative;
+  display: grid;
+  place-items: center;
+  height: 22px;
+  padding-top: 8px;
+  cursor: grab;
+  touch-action: none;
+}
+
+.style-sheet__grabber:active {
+  cursor: grabbing;
+}
+
+.style-sheet__grabber-handle {
+  width: 44px;
+  height: 4px;
+  border-radius: 999px;
+  background: rgb(var(--color-line-strong) / 0.6);
+  transition: background-color 160ms var(--motion-soft);
+}
+
+.style-sheet__grabber:hover .style-sheet__grabber-handle,
+.style-sheet--dragging .style-sheet__grabber-handle {
+  background: rgb(var(--color-ink) / 0.55);
 }
 
 .style-sheet__header {
-  background:
-    linear-gradient(180deg, rgb(var(--color-ivory) / 0.52), transparent),
-    linear-gradient(90deg, rgb(var(--color-sage) / 0.12), transparent 46%);
+  background: linear-gradient(180deg, rgb(var(--color-ivory) / 0.55), transparent 78%);
+  padding-bottom: 0.85rem;
+  border-bottom: 1px solid rgb(var(--color-line) / 0.7);
+}
+
+.style-sheet__main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+@media (min-width: 720px) {
+  .style-sheet__main {
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+  }
+}
+
+.style-sheet__scroller {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0.85rem 0.85rem 0.5rem;
 }
 
 .style-sheet__grid {
   display: grid;
-  grid-template-columns: 1fr;
-  gap: 0.62rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-@media (min-width: 420px) {
+@media (min-width: 480px) {
+  .style-sheet__grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 720px) {
   .style-sheet__grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
-.style-mode-card {
+.style-tile {
   position: relative;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 0.85rem;
-  min-height: 116px;
+  gap: 0.6rem;
   width: 100%;
+  min-height: 64px;
   overflow: hidden;
-  border-radius: 18px;
+  border-radius: 16px;
   border: 1px solid rgb(var(--color-line));
   background:
-    linear-gradient(135deg, rgb(var(--color-ivory) / 0.72), rgb(var(--color-vellum) / 0.48)),
-    rgb(var(--color-cream) / 0.2);
-  padding: 0.85rem 0.92rem 0.85rem 1.05rem;
+    linear-gradient(135deg, rgb(var(--color-ivory) / 0.7), rgb(var(--color-vellum) / 0.45)),
+    rgb(var(--color-cream) / 0.18);
+  padding: 0.55rem 0.7rem 0.55rem 0.85rem;
   color: rgb(var(--color-ink));
   text-align: left;
   box-shadow: var(--shadow-inner-paper);
-  transition: transform 170ms var(--motion-press), border-color 170ms var(--motion-soft), background-color 170ms var(--motion-soft), box-shadow 190ms var(--motion-soft), color 170ms var(--motion-soft);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    transform 160ms var(--motion-press),
+    border-color 160ms var(--motion-soft),
+    background-color 160ms var(--motion-soft),
+    box-shadow 180ms var(--motion-soft),
+    color 160ms var(--motion-soft);
 }
 
-.style-mode-card:hover {
-  transform: translateY(-1px);
-  border-color: rgb(var(--color-line-strong));
-  background: rgb(var(--color-ivory) / 0.82);
-  box-shadow: var(--shadow-paper-1), var(--shadow-inner-paper);
+.style-tile:active {
+  transform: scale(0.97);
 }
 
-.style-mode-card--active {
+.style-tile--focused {
   border-color: rgb(var(--color-ink));
-  background:
-    linear-gradient(135deg, rgb(var(--color-ink)), rgb(var(--color-blueprint))),
-    rgb(var(--color-ink));
+  background: rgb(var(--color-ink));
   color: rgb(var(--color-paper));
-  box-shadow: var(--shadow-paper-2);
+  box-shadow: var(--shadow-paper-2), 0 0 0 3px rgb(var(--color-ink) / 0.08);
 }
 
-.style-mode-card__rail {
+.style-tile__rail {
   position: absolute;
   inset: 0 auto 0 0;
   width: 3px;
   background: rgb(var(--color-forest));
-  opacity: 0.75;
+  opacity: 0.7;
 }
 
-.style-sheet__grid li:nth-child(2n) .style-mode-card__rail {
-  background: rgb(var(--color-accent));
-}
-
-.style-sheet__grid li:nth-child(3n) .style-mode-card__rail {
-  background: rgb(var(--color-ochre));
-}
-
-.style-sheet__grid li:nth-child(4n) .style-mode-card__rail {
-  background: rgb(var(--color-blueprint));
-}
-
-.style-mode-card--active .style-mode-card__rail {
+.style-tile--focused .style-tile__rail {
   width: 4px;
-  background: rgb(var(--color-ochre));
   opacity: 1;
 }
 
-.style-mode-card__body {
+.style-tile__swatch {
+  display: grid;
+  place-items: center;
+}
+
+.style-tile__body {
   display: grid;
   min-width: 0;
-  gap: 0.24rem;
+  gap: 0.12rem;
 }
 
-.style-mode-card__top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  min-width: 0;
-  gap: 0.4rem;
-}
-
-.style-mode-card__title {
+.style-tile__title {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 14px;
+  font-size: 13.5px;
   font-weight: 740;
-  line-height: 1.1;
+  line-height: 1.15;
 }
 
-.style-mode-card__check {
-  color: rgb(var(--color-paper) / 0.9);
-}
-
-.style-mode-card__accent {
+.style-tile__accent {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -278,34 +475,175 @@ onBeforeUnmount(() => {
   color: rgb(var(--color-muted));
 }
 
-.style-mode-card--active .style-mode-card__accent {
-  color: rgb(var(--color-paper) / 0.6);
+.style-tile--focused .style-tile__accent {
+  color: rgb(var(--color-paper) / 0.62);
 }
 
-.style-mode-card__preview {
-  margin-top: 0.2rem;
-  display: block;
+.style-tile__current-flag {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: rgb(var(--color-forest));
+  color: rgb(var(--color-paper));
+  box-shadow: 0 0 0 2px rgb(var(--color-paper));
+}
+
+.style-tile--focused .style-tile__current-flag {
+  background: rgb(var(--color-ochre));
+  color: rgb(var(--color-ink));
+  box-shadow: 0 0 0 2px rgb(var(--color-ink));
+}
+
+.style-sheet__preview {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  margin: 0.4rem 0.85rem 0;
+  padding: 0.85rem 0.95rem 0.95rem;
+  border-radius: 18px;
+  border: 1px solid rgb(var(--color-line) / 0.85);
+  background:
+    linear-gradient(180deg, rgb(var(--color-vellum) / 0.86), rgb(var(--color-ivory) / 0.72));
+  box-shadow: var(--shadow-inner-paper);
+  max-height: min(34dvh, 240px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+@media (min-width: 720px) {
+  .style-sheet__preview {
+    margin: 0.85rem 0.85rem 0 0;
+    max-height: none;
+  }
+}
+
+.style-sheet__preview-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.55rem;
+}
+
+.style-sheet__preview-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 9px;
+  font-weight: 620;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
   color: rgb(var(--color-muted));
 }
 
-.style-mode-card--active .style-mode-card__preview {
-  color: rgb(var(--color-paper) / 0.72);
+.style-sheet__preview-title {
+  font-family: 'Fraunces', 'IBM Plex Sans', system-ui, sans-serif;
+  font-size: 14px;
+  font-weight: 620;
+  letter-spacing: -0.01em;
+  color: rgb(var(--color-ink));
 }
 
-.style-sheet__note {
-  border-radius: 14px;
-  border: 1px solid rgb(var(--color-line) / 0.72);
-  background: rgb(var(--color-ivory) / 0.42);
-  padding: 0.75rem 0.85rem;
-}
-
-.sheet-style-preview {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.style-sheet__preview-text {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: rgb(var(--color-ink) / 0.86);
+  white-space: pre-wrap;
   word-break: break-word;
+  animation: preview-fade 220ms var(--motion-soft);
+}
+
+@keyframes preview-fade {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.style-sheet__preview-warning {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0.45rem 0.6rem;
+  border-radius: 12px;
+  background: rgb(var(--color-accent) / 0.1);
+  border: 1px solid rgb(var(--color-accent) / 0.3);
+  color: rgb(var(--color-accent));
+  font-size: 11.5px;
+  font-weight: 540;
+  line-height: 1.4;
+}
+
+.style-sheet__footer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.5rem;
+  padding: 0.7rem 0.85rem calc(env(safe-area-inset-bottom, 0px) + 0.85rem);
+  border-top: 1px solid rgb(var(--color-line) / 0.8);
+  background:
+    linear-gradient(180deg, rgb(var(--color-paper) / 0.9), rgb(var(--color-vellum) / 0.95));
+  backdrop-filter: blur(8px);
+}
+
+.style-sheet__footer:has(.style-sheet__btn + .style-sheet__btn) {
+  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+}
+
+.style-sheet__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  height: 46px;
+  padding: 0 1rem;
+  border-radius: 999px;
+  font-size: 13.5px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    transform 150ms var(--motion-press),
+    background-color 160ms var(--motion-soft),
+    color 160ms var(--motion-soft),
+    border-color 160ms var(--motion-soft),
+    box-shadow 180ms var(--motion-soft);
+}
+
+.style-sheet__btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.style-sheet__btn--primary {
+  border: 1px solid rgb(var(--color-ink));
+  background: rgb(var(--color-ink));
+  color: rgb(var(--color-paper));
+  box-shadow: 0 12px 24px -16px rgb(var(--color-ink) / 0.65);
+}
+
+.style-sheet__btn--primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.style-sheet__btn--ghost {
+  border: 1px solid rgb(var(--color-line-strong));
+  background: rgb(var(--color-ivory) / 0.7);
+  color: rgb(var(--color-ink));
+}
+
+.style-sheet__btn--ghost:active:not(:disabled) {
+  background: rgb(var(--color-vellum));
 }
 
 .style-scrim-enter-from,
@@ -332,12 +670,16 @@ onBeforeUnmount(() => {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .style-mode-card,
+  .style-tile,
+  .style-sheet__btn,
+  .style-sheet,
   .style-scrim-enter-active,
   .style-scrim-leave-active,
   .style-sheet-enter-active,
-  .style-sheet-leave-active {
+  .style-sheet-leave-active,
+  .style-sheet__preview-text {
     transition: none;
+    animation: none;
   }
 }
 </style>

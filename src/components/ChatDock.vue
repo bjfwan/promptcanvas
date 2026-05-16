@@ -415,6 +415,19 @@ defineExpose({ focusInput })
         @change="onReferenceInputChange"
       />
 
+      <div class="chat-dock__handle-bar" aria-hidden="true">
+        <button
+          type="button"
+          class="chat-dock__handle"
+          :class="{ 'chat-dock__handle--active': tall }"
+          :aria-label="tall ? '收起输入框' : '展开输入框'"
+          :aria-pressed="tall"
+          @click.stop="toggleTall"
+        >
+          <span class="chat-dock__handle-grip" aria-hidden="true"></span>
+        </button>
+      </div>
+
       <Transition name="chat-dock-custom">
         <div
           v-if="isCustomModel && customModelOpen"
@@ -438,53 +451,8 @@ defineExpose({ focusInput })
         </div>
       </Transition>
 
-      <div class="chat-dock__modebar relative z-20">
-        <button
-          type="button"
-          class="chat-dock__action-btn shrink-0"
-          :class="{ 'chat-dock__action-btn--active': tall }"
-          :aria-label="tall ? '收起输入框' : '展开输入框'"
-          @click.stop="toggleTall"
-        >
-          <Icon :name="tall ? 'shrink' : 'expand'" :size="15" />
-        </button>
-
-        <button
-          type="button"
-          class="asset-chip shrink-0"
-          :disabled="props.referenceImages.length >= maxReferenceImages"
-          :aria-label="hasReferenceImages ? `已添加 ${props.referenceImages.length} 张参考图，继续添加` : '添加参考图'"
-          @click.stop="openReferencePicker"
-        >
-          <Icon :name="hasReferenceImages ? 'image' : 'upload'" :size="13" />
-          <span class="asset-chip__label">{{ hasReferenceImages ? `参考 ${props.referenceImages.length}` : '参考图' }}</span>
-        </button>
-
-        <div class="model-chip-wrap relative min-w-0">
-          <Select
-            v-model="modelChoice"
-            :options="modelSelectOptions"
-            size="sm"
-            placeholder="模型"
-            aria-label="选择生成模型"
-            :show-hints="true"
-          />
-        </div>
-
-        <button
-          type="button"
-          class="style-chip"
-          :aria-label="`当前风格：${currentStyleMeta.label}，点击更换`"
-          @click.stop="emit('open-style-sheet')"
-        >
-          <StyleSwatch :variant="currentStyleMeta.value" :size="20" />
-          <span class="style-chip__label">{{ currentStyleMeta.label }}</span>
-          <Icon name="chevronDown" :size="11" class="text-muted" />
-        </button>
-      </div>
-
       <div
-        class="chat-dock__input relative z-30 mx-2.5 mb-2 border border-line bg-paper-soft focus-within:border-ink/30 focus-within:bg-paper sm:mx-3"
+        class="chat-dock__input relative z-30 mx-2.5 mt-1 mb-2 border border-line bg-paper-soft focus-within:border-ink/30 focus-within:bg-paper sm:mx-3"
         :class="{ 'magic-pulse': isMagicPulsing }"
       >
         <textarea
@@ -507,86 +475,121 @@ defineExpose({ focusInput })
           @keydown="onKeydown"
         ></textarea>
 
-        <div class="chat-dock__composer-actions">
-          <div class="chat-dock__indicators mr-auto flex items-center">
-            <span
-              v-if="isGenerating"
-              class="inline-flex items-center gap-1 whitespace-nowrap px-1 font-mono text-[9px] uppercase tracking-[0.15em] text-muted"
-            >
-              <Icon name="sparkle" :size="10" class="animate-breathe" />
-              <span>{{ elapsedSeconds }}s</span>
-            </span>
-            <span
-              v-else-if="promptCount > 0"
-              class="whitespace-nowrap px-1 font-mono text-[9px] tabular-nums text-muted/60"
-            >
-              {{ promptCount }}/1200
-            </span>
-          </div>
+        <span
+          v-if="isGenerating"
+          class="chat-dock__indicator"
+          aria-live="polite"
+        >
+          <Icon name="sparkle" :size="10" class="animate-breathe" />
+          <span>{{ elapsedSeconds }}s</span>
+        </span>
+        <span
+          v-else-if="promptCount > 0"
+          class="chat-dock__indicator chat-dock__indicator--count"
+          aria-hidden="true"
+        >
+          {{ promptCount }}/1200
+        </span>
 
-          <div class="relative">
-            <button
-              v-if="promptCount > 0"
-              type="button"
-              class="chat-dock__magic-inner"
-              aria-label="智能优化提示词"
-              :aria-expanded="magicMenuOpen"
-              @click.stop="magicEnhance"
-            >
-              <Icon name="sparkle" :size="14" />
-              <span>优化</span>
-            </button>
-            <MagicEnhanceMenu
-              v-if="magicMenuOpen"
-              :prompt="prompt"
-              :image-style="props.currentStyle"
-              :has-reference-images="hasReferenceImages"
-              :size="props.size"
-              :quality="props.quality"
-              :model-name="props.modelName"
-              :context="props.promptContext ?? null"
-              compact
-              @enhance="handleEnhanceResult"
-              @ab-test="handleAbTest"
-              @update-prompt="(value: string) => { prompt = value }"
-              @close="magicMenuOpen = false"
-            />
-          </div>
+        <button
+          type="button"
+          class="chat-dock__send-floating"
+          :class="{
+            'chat-dock__send-floating--ready': promptHasContent && !sendDisabled && !isGenerating,
+            'chat-dock__send-floating--busy': isGenerating,
+          }"
+          :disabled="sendDisabled"
+          :aria-label="sendLabel"
+          @click.stop="send"
+        >
+          <Icon
+            v-if="isGenerating"
+            name="close"
+            :size="16"
+            class="chat-dock__send-busy-icon"
+          />
+          <Icon
+            v-else
+            name="send"
+            :size="16"
+          />
+        </button>
+      </div>
 
-          <button
-            v-if="props.canUndoEnhance"
-            type="button"
-            class="chat-dock__undo-inner"
-            aria-label="撤销魔法增强"
-            @click.stop="emit('undo-enhance')"
-          >
-            <Icon name="reset" :size="14" />
-          </button>
-
-          <button
-            type="button"
-            class="chat-dock__send-inner"
-            :class="{
-              'chat-dock__send-inner--ready': promptHasContent && !sendDisabled && !isGenerating,
-              'chat-dock__send-inner--busy': isGenerating,
-            }"
-            :disabled="sendDisabled"
-            :aria-label="sendLabel"
-            @click.stop="send"
-          >
-            <Icon
-              v-if="isGenerating"
-              name="close"
-              :size="16"
-              class="chat-dock__send-busy-icon"
-            />
-            <Icon
-              v-else
-              name="send"
-              :size="16"
-            />
-          </button>
+      <div class="chat-dock__bar relative z-20">
+        <div class="model-chip-wrap relative min-w-0">
+          <Select
+            v-model="modelChoice"
+            :options="modelSelectOptions"
+            size="sm"
+            placeholder="模型"
+            aria-label="选择生成模型"
+            :show-hints="true"
+          />
         </div>
+
+        <button
+          type="button"
+          class="style-chip"
+          :aria-label="`当前风格：${currentStyleMeta.label}，点击更换`"
+          @click.stop="emit('open-style-sheet')"
+        >
+          <StyleSwatch :variant="currentStyleMeta.value" :size="20" />
+          <span class="style-chip__label">{{ currentStyleMeta.label }}</span>
+          <Icon name="chevronDown" :size="11" class="text-muted" />
+        </button>
+
+        <button
+          type="button"
+          class="asset-chip"
+          :disabled="props.referenceImages.length >= maxReferenceImages"
+          :aria-label="hasReferenceImages ? `已添加 ${props.referenceImages.length} 张参考图，继续添加` : '添加参考图'"
+          @click.stop="openReferencePicker"
+        >
+          <Icon :name="hasReferenceImages ? 'image' : 'upload'" :size="13" />
+          <span class="asset-chip__label">{{ hasReferenceImages ? `参考 ${props.referenceImages.length}` : '参考图' }}</span>
+        </button>
+
+        <span class="chat-dock__bar-spacer" aria-hidden="true"></span>
+
+        <div class="relative">
+          <button
+            v-if="promptCount > 0"
+            type="button"
+            class="chat-dock__magic-inner"
+            aria-label="智能优化提示词"
+            :aria-expanded="magicMenuOpen"
+            @click.stop="magicEnhance"
+          >
+            <Icon name="sparkle" :size="14" />
+            <span>优化</span>
+          </button>
+          <MagicEnhanceMenu
+            v-if="magicMenuOpen"
+            :prompt="prompt"
+            :image-style="props.currentStyle"
+            :has-reference-images="hasReferenceImages"
+            :size="props.size"
+            :quality="props.quality"
+            :model-name="props.modelName"
+            :context="props.promptContext ?? null"
+            compact
+            @enhance="handleEnhanceResult"
+            @ab-test="handleAbTest"
+            @update-prompt="(value: string) => { prompt = value }"
+            @close="magicMenuOpen = false"
+          />
+        </div>
+
+        <button
+          v-if="props.canUndoEnhance"
+          type="button"
+          class="chat-dock__undo-inner"
+          aria-label="撤销魔法增强"
+          @click.stop="emit('undo-enhance')"
+        >
+          <Icon name="reset" :size="14" />
+        </button>
       </div>
 
       <Transition name="chat-dock-attachments">
@@ -657,22 +660,78 @@ defineExpose({ focusInput })
   contain: layout paint style;
 }
 
-.chat-dock__modebar {
-  display: grid;
-  grid-template-columns: auto auto minmax(0, 1fr) auto;
+.chat-dock__bar {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 0.45rem;
-  padding: 0.68rem 0.78rem 0.46rem;
-  overflow-x: auto;
-  scrollbar-width: none;
+  gap: 0.4rem;
+  padding: 0.45rem 0.6rem 0.55rem;
 }
 
-.chat-dock__modebar::-webkit-scrollbar {
-  display: none;
+.chat-dock__bar > * {
+  min-width: 0;
+}
+
+.chat-dock__bar-spacer {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.chat-dock__handle-bar {
+  display: grid;
+  place-items: center;
+  padding: 0.4rem 0 0.2rem;
+}
+
+.chat-dock__handle {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 22px;
+  border-radius: 999px;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform var(--dur-feedback) var(--motion-press);
+}
+
+.chat-dock__handle::before {
+  /* Tap target extends a bit beyond the visual grip. */
+  content: '';
+  position: absolute;
+  inset: -8px;
+}
+
+.chat-dock__handle-grip {
+  display: block;
+  width: 38px;
+  height: 4px;
+  border-radius: 999px;
+  background: rgb(var(--color-line-strong) / 0.55);
+  transition: background-color var(--dur-feedback) var(--motion-soft), width var(--dur-feedback) var(--motion-soft);
+}
+
+.chat-dock__handle:hover .chat-dock__handle-grip,
+.chat-dock__handle--active .chat-dock__handle-grip {
+  background: rgb(var(--color-ink) / 0.7);
+}
+
+.chat-dock__handle--active .chat-dock__handle-grip {
+  width: 22px;
+}
+
+.chat-dock__handle:active {
+  transform: scale(0.94);
 }
 
 @media (prefers-reduced-motion: reduce) {
   .chat-dock {
+    transition: none;
+  }
+
+  .chat-dock__handle,
+  .chat-dock__handle-grip {
     transition: none;
   }
 }
@@ -689,9 +748,9 @@ defineExpose({ focusInput })
   position: relative;
   z-index: 1;
   width: 100%;
-  min-height: 52px;
+  min-height: 56px;
   max-height: 280px;
-  padding: 0.8rem 1rem 0.45rem 1rem;
+  padding: 0.85rem 3.4rem 1.7rem calc(1rem + 4px);
   resize: none;
   background: transparent;
   border: none;
@@ -718,25 +777,90 @@ defineExpose({ focusInput })
 }
 
 .chat-dock__input {
+  position: relative;
   cursor: text;
   -webkit-tap-highlight-color: transparent;
-  transition: border-color 180ms var(--motion-soft), background-color 180ms var(--motion-soft), box-shadow 200ms var(--motion-soft);
+  transition: border-color var(--dur-transition) var(--motion-soft),
+    background-color var(--dur-transition) var(--motion-soft),
+    box-shadow var(--dur-transition) var(--motion-soft);
   box-shadow: var(--shadow-inner-paper);
   border-radius: 18px;
   overflow: hidden;
 }
 
-.chat-dock__composer-actions {
-  position: relative;
-  z-index: 4;
-  display: flex;
+.chat-dock__input::before {
+  /* Account-ledger red strap on focus. */
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 4px;
+  background: rgb(var(--color-forest));
+  transform-origin: top center;
+  transform: scaleY(0);
+  transition: transform var(--dur-transition) var(--motion-soft);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.chat-dock__input:focus-within::before {
+  transform: scaleY(1);
+}
+
+.chat-dock__indicator {
+  position: absolute;
+  left: calc(0.85rem + 4px);
+  bottom: 0.55rem;
+  z-index: 2;
+  display: inline-flex;
   align-items: center;
-  gap: 0.45rem;
-  border-top: 1px solid rgb(var(--color-line) / 0.72);
-  background:
-    linear-gradient(180deg, rgb(var(--color-vellum) / 0.36), rgb(var(--color-cream) / 0.34)),
-    rgb(var(--color-ivory) / 0.32);
-  padding: 0.5rem;
+  gap: 0.3rem;
+  padding: 0.12rem 0.45rem;
+  border-radius: 999px;
+  background: rgb(var(--color-vellum) / 0.7);
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 9px;
+  font-feature-settings: 'tnum';
+  letter-spacing: 0.06em;
+  color: rgb(var(--color-muted) / 0.78);
+  pointer-events: none;
+}
+
+.chat-dock__indicator--count {
+  background: transparent;
+  color: rgb(var(--color-muted) / 0.55);
+  padding: 0;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.chat-dock__send-floating {
+  position: absolute;
+  right: 0.55rem;
+  bottom: 0.55rem;
+  z-index: 3;
+  display: inline-grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  background: rgb(var(--color-ink) / 0.04);
+  color: rgb(var(--color-ink) / 0.22);
+  border: 1px solid transparent;
+  transition: transform var(--dur-feedback) var(--motion-press),
+    background-color var(--dur-feedback) var(--motion-soft),
+    color var(--dur-feedback) var(--motion-soft),
+    box-shadow var(--dur-transition) var(--motion-soft);
+  cursor: not-allowed;
+}
+
+.chat-dock__send-floating::before {
+  /* Comfortable tap target. */
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border-radius: inherit;
 }
 
 .chat-dock__magic-inner {
@@ -789,65 +913,54 @@ defineExpose({ focusInput })
   background: rgb(var(--color-accent) / 0.15);
 }
 
-.chat-dock__send-inner {
-  position: relative;
-  display: inline-grid;
-  place-items: center;
-  width: 40px;
-  height: 40px;
-  border-radius: 999px;
-  background: rgb(var(--color-ink) / 0.04);
-  color: rgb(var(--color-ink) / 0.2);
-  border: 1px solid transparent;
-  transition: transform 170ms var(--motion-press), background-color 170ms var(--motion-soft), color 170ms var(--motion-soft), box-shadow 190ms var(--motion-soft);
-  cursor: not-allowed;
-}
-
 @media (max-width: 640px) {
-  .chat-dock__send-inner,
-  .chat-dock__magic-inner,
-  .chat-dock__undo-inner {
+  .chat-dock__send-floating {
+    width: 44px;
     height: 44px;
-    min-height: 44px;
   }
 
-  .chat-dock__send-inner,
+  .chat-dock__magic-inner,
   .chat-dock__undo-inner {
-    width: 44px;
+    height: 38px;
+    min-height: 38px;
+  }
+
+  .chat-dock__undo-inner {
+    width: 38px;
   }
 
   .chat-dock__magic-inner {
-    min-width: 72px;
+    min-width: 68px;
   }
 }
 
-.chat-dock__send-inner--ready {
+.chat-dock__send-floating--ready {
   background: rgb(var(--color-ink));
   color: rgb(var(--color-paper));
   cursor: pointer;
   box-shadow: 0 10px 22px -16px rgb(var(--color-ink) / 0.65);
 }
 
-.chat-dock__send-inner--ready:active {
+.chat-dock__send-floating--ready:active {
   transform: scale(0.92);
 }
 
-.chat-dock__send-inner--busy {
+.chat-dock__send-floating--busy {
   background: rgb(var(--color-ink));
   color: rgb(var(--color-paper));
   cursor: pointer;
 }
 
-.chat-dock__send-inner--busy::after {
+.chat-dock__send-floating--busy::after {
   content: '';
   position: absolute;
-  inset: -4px;
+  inset: -3px;
   border-radius: 999px;
-  border: 1px solid rgb(var(--color-paper) / 0.48);
-  animation: send-hold 1.4s var(--motion-soft) infinite;
+  border: 1px dashed rgb(var(--color-forest) / 0.7);
+  animation: send-spin calc(var(--dur-stage) / 2) linear infinite;
 }
 
-.chat-dock__send-inner--busy:hover {
+.chat-dock__send-floating--busy:hover {
   background: rgb(var(--color-accent));
 }
 
@@ -856,15 +969,8 @@ defineExpose({ focusInput })
   z-index: 1;
 }
 
-@keyframes send-hold {
-  0%, 100% {
-    opacity: 0.38;
-    transform: scale(0.96);
-  }
-  50% {
-    opacity: 1;
-    transform: scale(1.08);
-  }
+@keyframes send-spin {
+  to { transform: rotate(360deg); }
 }
 
 .chat-dock__input:focus-within {
@@ -888,39 +994,6 @@ defineExpose({ focusInput })
   animation: progress-sweep 1s ease-out forwards;
   pointer-events: none;
   z-index: 0;
-}
-
-.chat-dock__action-btn {
-  display: inline-grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 999px;
-  background: rgb(var(--color-ivory) / 0.66);
-  border: 1px solid rgb(var(--color-line-strong) / 0.6);
-  color: rgb(var(--color-muted));
-  transition: transform 150ms var(--motion-press), background-color 150ms var(--motion-soft), color 150ms var(--motion-soft), border-color 150ms var(--motion-soft);
-  cursor: pointer;
-}
-
-.chat-dock__action-btn:hover {
-  background: rgb(var(--color-vellum));
-  color: rgb(var(--color-ink));
-  border-color: rgb(var(--color-ink) / 0.3);
-}
-
-.chat-dock__action-btn:active {
-  transform: translateY(1px);
-}
-
-.chat-dock__action-btn--active {
-  background: rgb(var(--color-ink));
-  color: rgb(var(--color-paper));
-  border-color: rgb(var(--color-ink));
-}
-
-.chat-dock__action-btn--active:hover {
-  background: rgb(var(--color-ink) / 0.9);
 }
 
 .chat-dock__textarea::-webkit-scrollbar {
@@ -1168,7 +1241,7 @@ defineExpose({ focusInput })
 
 @media (max-width: 360px) {
   .chat-dock__textarea {
-    padding-bottom: 0.5rem;
+    padding-bottom: 1.5rem;
   }
 
   .chat-dock__magic-inner {
@@ -1200,11 +1273,22 @@ defineExpose({ focusInput })
   .chat-dock__textarea {
     min-height: 36px;
     max-height: 96px;
+    padding-top: 0.55rem;
+    padding-bottom: 1.4rem;
   }
 
   .chat-dock__textarea--tall {
     min-height: 44dvh;
     max-height: 64dvh;
+  }
+
+  .chat-dock__handle-bar {
+    padding: 0.2rem 0 0.1rem;
+  }
+
+  .chat-dock__bar {
+    padding-top: 0.35rem;
+    padding-bottom: 0.35rem;
   }
 }
 
@@ -1351,10 +1435,11 @@ defineExpose({ focusInput })
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .chat-dock__send-inner,
-  .chat-dock__send-inner--busy::after,
+  .chat-dock__send-floating,
+  .chat-dock__send-floating--busy::after,
   .asset-chip,
   .style-chip,
+  .chat-dock__input::before,
   .chat-dock-attachments-enter-active,
   .chat-dock-attachments-leave-active,
   .chat-dock-custom-enter-active,

@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { useToast } from '../composables/useToast'
 import Icon from './Icon.vue'
+import { useI18n } from '../lib/i18n'
 import type { IconName } from '../icons'
 
 const toast = useToast()
+const { t } = useI18n()
 
 function iconFor(kind: 'info' | 'success' | 'error'): IconName {
   if (kind === 'success') return 'check'
@@ -52,7 +54,7 @@ function iconFor(kind: 'info' | 'success' | 'error'): IconName {
           <button
             type="button"
             class="-mr-1 -mt-1 rounded-full p-1 text-muted transition hover:text-ink"
-            aria-label="关闭通知"
+            :aria-label="t('toast.dismiss')"
             @click="toast.dismiss(item.id)"
           >
             <Icon name="close" :size="14" />

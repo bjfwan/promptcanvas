@@ -424,17 +424,6 @@ function isImageReady(image: GeneratedImage, index: number) {
       class="canvas-frame surface-1 bg-cream/60 canvas-hero"
       :data-orient="orient"
     >
-      <div class="canvas-hero__art" aria-hidden="true">
-        <span class="canvas-hero__sun"></span>
-        <span class="canvas-hero__horizon"></span>
-        <span class="canvas-hero__paper canvas-hero__paper--1"></span>
-        <span class="canvas-hero__paper canvas-hero__paper--2"></span>
-        <span class="canvas-hero__paper canvas-hero__paper--3"></span>
-        <span class="canvas-hero__sparkle canvas-hero__sparkle--a"></span>
-        <span class="canvas-hero__sparkle canvas-hero__sparkle--b"></span>
-        <span class="canvas-hero__sparkle canvas-hero__sparkle--c"></span>
-      </div>
-
       <div class="absolute inset-0 grid place-items-center text-center">
         <div class="max-w-md px-6">
           <template v-if="!providerConfigured">
@@ -670,14 +659,6 @@ function isImageReady(image: GeneratedImage, index: number) {
   opacity: 0.7;
 }
 
-.canvas-prompt-card:nth-child(2n)::before {
-  background: rgb(var(--color-accent));
-}
-
-.canvas-prompt-card:nth-child(3n)::before {
-  background: rgb(var(--color-ochre));
-}
-
 .canvas-prompt-card:hover {
   transform: translateY(-1px);
   border-color: rgb(var(--color-line-strong));
@@ -816,94 +797,9 @@ function isImageReady(image: GeneratedImage, index: number) {
   overflow: hidden;
   border-style: solid;
   background:
-    radial-gradient(120% 80% at 30% 12%, rgb(var(--color-sage) / 0.18), transparent 56%),
-    radial-gradient(100% 70% at 80% 90%, rgb(var(--color-clay) / 0.12), transparent 60%),
-    rgb(var(--color-cream) / 0.62);
-}
-
-.canvas-hero__art {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-}
-
-.canvas-hero__sun {
-  position: absolute;
-  width: 38%;
-  aspect-ratio: 1;
-  top: 12%;
-  right: 14%;
-  border-radius: 999px;
-  background: radial-gradient(circle, rgb(var(--color-ochre) / 0.36) 0%, rgb(var(--color-ochre) / 0.05) 60%, transparent 78%);
-  filter: blur(2px);
-  animation: hero-sun-breathe 6.4s ease-in-out infinite;
-}
-
-.canvas-hero__horizon {
-  position: absolute;
-  inset: auto 0 36% 0;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, rgb(var(--color-ink) / 0.18) 22%, rgb(var(--color-ink) / 0.18) 78%, transparent);
-  opacity: 0.42;
-}
-
-.canvas-hero__paper {
-  position: absolute;
-  border-radius: 18px;
-  border: 1px solid rgb(var(--color-line-strong) / 0.36);
-  background:
-    linear-gradient(135deg, rgb(var(--color-ivory) / 0.86), rgb(var(--color-vellum) / 0.62));
-  box-shadow: var(--shadow-paper-2);
-  animation: hero-paper-drift 9s ease-in-out infinite;
-}
-
-.canvas-hero__paper--1 {
-  width: 24%;
-  aspect-ratio: 3 / 4;
-  bottom: 18%;
-  left: 11%;
-  transform: rotate(-9deg);
-  animation-delay: 0s;
-}
-
-.canvas-hero__paper--2 {
-  width: 22%;
-  aspect-ratio: 1;
-  bottom: 24%;
-  left: 28%;
-  transform: rotate(4deg);
-  animation-delay: 1.2s;
-  border-color: rgb(var(--color-forest) / 0.32);
-  background:
-    linear-gradient(180deg, rgb(var(--color-vellum) / 0.86), rgb(var(--color-paper-soft) / 0.5)),
-    repeating-linear-gradient(0deg, transparent 0 14px, rgb(var(--color-ink) / 0.06) 14px 15px);
-}
-
-.canvas-hero__paper--3 {
-  width: 20%;
-  aspect-ratio: 4 / 5;
-  top: 22%;
-  left: 18%;
-  transform: rotate(7deg);
-  animation-delay: 2.4s;
-  background:
-    linear-gradient(135deg, rgb(var(--color-ochre) / 0.18), rgb(var(--color-vellum) / 0.6)),
+    radial-gradient(140% 90% at 30% 0%, rgb(var(--color-ivory) / 0.9), transparent 62%),
     rgb(var(--color-vellum));
 }
-
-.canvas-hero__sparkle {
-  position: absolute;
-  width: 8px;
-  height: 8px;
-  background: radial-gradient(circle, rgb(var(--color-accent)) 0 22%, transparent 60%);
-  filter: blur(0.4px);
-  opacity: 0.0;
-  animation: hero-sparkle 4.4s ease-in-out infinite;
-}
-
-.canvas-hero__sparkle--a { top: 28%; right: 26%; animation-delay: 0.4s; }
-.canvas-hero__sparkle--b { top: 50%; right: 12%; animation-delay: 1.6s; background: radial-gradient(circle, rgb(var(--color-forest)) 0 22%, transparent 60%); }
-.canvas-hero__sparkle--c { bottom: 20%; right: 30%; animation-delay: 2.8s; background: radial-gradient(circle, rgb(var(--color-ochre)) 0 22%, transparent 60%); }
 
 .canvas-hero__badge {
   border: 1px solid rgb(var(--color-line-strong) / 0.6);
@@ -932,33 +828,6 @@ function isImageReady(image: GeneratedImage, index: number) {
   letter-spacing: 0.04em;
   vertical-align: middle;
   margin-inline: 0.18rem;
-}
-
-@keyframes hero-paper-drift {
-  0%, 100% { transform: translateY(0) rotate(var(--rot, -9deg)); }
-  50% { transform: translateY(-8px) rotate(calc(var(--rot, -9deg) + 1.5deg)); }
-}
-
-.canvas-hero__paper--1 { --rot: -9deg; }
-.canvas-hero__paper--2 { --rot: 4deg; }
-.canvas-hero__paper--3 { --rot: 7deg; }
-
-@keyframes hero-sun-breathe {
-  0%, 100% { transform: scale(1); opacity: 0.9; }
-  50% { transform: scale(1.06); opacity: 1; }
-}
-
-@keyframes hero-sparkle {
-  0%, 100% { opacity: 0; transform: scale(0.6); }
-  18%, 38% { opacity: 1; transform: scale(1.1); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .canvas-hero__sun,
-  .canvas-hero__paper,
-  .canvas-hero__sparkle {
-    animation: none;
-  }
 }
 
 .canvas-stage-root {

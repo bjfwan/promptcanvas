@@ -61,6 +61,7 @@ const selectedMode = ref<EnhanceMode>('balanced')
 const selectedIntent = ref<EnhanceIntent>('create')
 const selectedVariantId = ref('current')
 const intentTouched = ref(false)
+const advancedOpen = ref(false)
 const dialogRef = ref<HTMLElement | null>(null)
 const slotOverrides = ref<Partial<Record<SlotName, string>>>({})
 const editingSlot = ref<SlotName | null>(null)
@@ -374,7 +375,7 @@ useFocusTrap(() => true, dialogRef)
             </span>
             <span class="min-w-0">
               <span class="magic-menu__title">提示词优化引擎</span>
-              <span class="magic-menu__sub">{{ missingHint }}</span>
+              <span v-if="!hasMissing" class="magic-menu__sub">{{ missingHint }}</span>
             </span>
           </div>
 
@@ -406,7 +407,46 @@ useFocusTrap(() => true, dialogRef)
             </div>
           </section>
 
-          <section class="magic-menu__section">
+          <section v-if="hasMissing" class="magic-menu__section magic-menu__section--first">
+            <div class="magic-menu__section-head">
+              <span>一键补齐</span>
+              <small>点选缺失的维度直接应用</small>
+            </div>
+            <div class="magic-menu__dimensions">
+              <button
+                v-for="dim in missingDimensions"
+                :key="dim"
+                type="button"
+                class="magic-menu__dim-chip"
+                @click="handleDimensionClick(dim)"
+              >
+                <Icon :name="dimensionMeta(dim).icon" :size="12" />
+                <span>{{ dimensionMeta(dim).label }}</span>
+              </button>
+            </div>
+          </section>
+
+          <section v-else class="magic-menu__section magic-menu__section--first">
+            <div class="magic-menu__ready">
+              <Icon name="check" :size="14" />
+              <span class="min-w-0">
+                <strong>主体与画面控制已就绪</strong>
+                <small>直接应用即可，或展开「精细调节」继续打磨</small>
+              </span>
+            </div>
+          </section>
+
+          <details class="magic-menu__advanced" :open="advancedOpen" @toggle="advancedOpen = ($event.target as HTMLDetailsElement).open">
+            <summary class="magic-menu__advanced-summary">
+              <span class="magic-menu__advanced-title">
+                <Icon name="settings" :size="12" />
+                <span>精细调节</span>
+              </span>
+              <small>方向 · 强度 · 候选方案 · 槽位</small>
+              <Icon class="magic-menu__advanced-caret" :name="advancedOpen ? 'chevronUp' : 'chevronDown'" :size="12" />
+            </summary>
+
+            <section class="magic-menu__section">
             <div class="magic-menu__section-head">
               <span>任务方向</span>
               <small>{{ enhanceIntentMeta[selectedIntent].hint }}</small>
@@ -496,25 +536,6 @@ useFocusTrap(() => true, dialogRef)
               <div class="magic-menu__mini-tags is-warm">
                 <span v-for="item in issueItems" :key="item">{{ item }}</span>
               </div>
-            </div>
-          </section>
-
-          <section v-if="hasMissing" class="magic-menu__section">
-            <div class="magic-menu__section-head">
-              <span>精准补维度</span>
-              <small>点一个维度直接应用</small>
-            </div>
-            <div class="magic-menu__dimensions">
-              <button
-                v-for="dim in missingDimensions"
-                :key="dim"
-                type="button"
-                class="magic-menu__dim-chip"
-                @click="handleDimensionClick(dim)"
-              >
-                <Icon :name="dimensionMeta(dim).icon" :size="12" />
-                <span>{{ dimensionMeta(dim).label }}</span>
-              </button>
             </div>
           </section>
 
@@ -722,17 +743,6 @@ useFocusTrap(() => true, dialogRef)
             </div>
           </section>
 
-          <section class="magic-menu__compare">
-            <div>
-              <span class="magic-menu__mini-title">原提示词</span>
-              <p>{{ beforeText }}</p>
-            </div>
-            <div>
-              <span class="magic-menu__mini-title">优化后</span>
-              <p>{{ selectedResult.enhanced }}</p>
-            </div>
-          </section>
-
           <div v-if="activeDimensions.length || previewParts.length" class="magic-menu__parts">
             <span v-for="dim in activeDimensions" :key="dim.id" class="is-dim">
               <Icon :name="dim.icon" :size="11" />
@@ -750,6 +760,19 @@ useFocusTrap(() => true, dialogRef)
               </span>
             </label>
           </div>
+
+          </details>
+
+          <section class="magic-menu__compare">
+            <div>
+              <span class="magic-menu__mini-title">原提示词</span>
+              <p>{{ beforeText }}</p>
+            </div>
+            <div>
+              <span class="magic-menu__mini-title">优化后</span>
+              <p>{{ selectedResult.enhanced }}</p>
+            </div>
+          </section>
 
           <button
             type="button"
@@ -801,7 +824,32 @@ useFocusTrap(() => true, dialogRef)
     0 32px 72px -32px rgb(var(--color-ink) / 0.46),
     0 10px 24px -14px rgb(var(--color-ink) / 0.26);
   scrollbar-width: thin;
+  scrollbar-color: rgb(var(--color-line-strong) / 0.55) transparent;
+  scrollbar-gutter: stable;
   touch-action: pan-y;
+}
+
+.magic-menu::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.magic-menu::-webkit-scrollbar-track {
+  background: transparent;
+  margin-block: 14px;
+}
+
+.magic-menu::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgb(var(--color-line-strong) / 0.4);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.magic-menu::-webkit-scrollbar-thumb:hover {
+  background: rgb(var(--color-line-strong) / 0.7);
+  background-clip: padding-box;
+  border: 2px solid transparent;
 }
 
 .magic-menu--compact {
@@ -1019,6 +1067,91 @@ useFocusTrap(() => true, dialogRef)
 .magic-menu__section {
   padding: 0.65rem 0;
   border-top: 1px solid rgb(var(--color-line) / 0.7);
+}
+
+.magic-menu__section--first {
+  border-top: 0;
+  padding-top: 0.25rem;
+}
+
+.magic-menu__ready {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.7rem 0.85rem;
+  border-radius: 16px;
+  border: 1px solid rgb(var(--color-forest) / 0.35);
+  background: rgb(var(--color-forest) / 0.08);
+  color: rgb(var(--color-forest));
+}
+
+.magic-menu__ready strong {
+  display: block;
+  font-size: 12px;
+  font-weight: 760;
+  color: rgb(var(--color-ink));
+}
+
+.magic-menu__ready small {
+  display: block;
+  margin-top: 2px;
+  font-size: 10.5px;
+  color: rgb(var(--color-muted));
+}
+
+.magic-menu__advanced {
+  margin-top: 0.55rem;
+  border-top: 1px solid rgb(var(--color-line) / 0.7);
+}
+
+.magic-menu__advanced-summary {
+  list-style: none;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.65rem 0.2rem;
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  border-radius: 12px;
+  transition: background 140ms ease;
+}
+
+.magic-menu__advanced-summary::-webkit-details-marker {
+  display: none;
+}
+
+.magic-menu__advanced-summary:hover {
+  background: rgb(var(--color-paper) / 0.5);
+}
+
+.magic-menu__advanced-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 12px;
+  font-weight: 760;
+  color: rgb(var(--color-ink));
+}
+
+.magic-menu__advanced-summary > small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10.5px;
+  color: rgb(var(--color-muted));
+}
+
+.magic-menu__advanced-caret {
+  flex-shrink: 0;
+  color: rgb(var(--color-muted));
+  transition: transform 180ms var(--motion-soft, ease);
+}
+
+.magic-menu__advanced[open] .magic-menu__advanced-caret {
+  color: rgb(var(--color-ink));
 }
 
 .magic-menu__section--split {
