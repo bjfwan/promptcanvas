@@ -1,7 +1,7 @@
 import http from 'node:http'
 
 const PORT = Number(process.env.PORT || 8080)
-const VERSION = '0.2.0'
+const VERSION = '0.2.1'
 
 const HOP_BY_HOP = new Set([
   'host',
@@ -24,6 +24,10 @@ const FORBIDDEN_FORWARD = new Set([
   'referer',
   'cookie',
   'user-agent',
+])
+
+// Stripped only when BUILTIN mode is active (Authorization is replaced with env key).
+const FORBIDDEN_FORWARD_BUILTIN_ONLY = new Set([
   'authorization',
 ])
 const IDENTITY_PROFILES = {
@@ -137,6 +141,7 @@ const server = http.createServer(async (req, res) => {
   for (const [name, value] of Object.entries(req.headers)) {
     const lower = name.toLowerCase()
     if (FORBIDDEN_FORWARD.has(lower)) continue
+    if (isBuiltin && FORBIDDEN_FORWARD_BUILTIN_ONLY.has(lower)) continue
     if (Array.isArray(value)) headers[name] = value.join(',')
     else if (value !== undefined) headers[name] = String(value)
   }

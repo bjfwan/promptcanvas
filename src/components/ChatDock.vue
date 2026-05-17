@@ -313,6 +313,77 @@ function pickAiModel(id: RewriteModelId) {
   aiPickerOpen.value = false
 }
 
+// ── 长按 / 右键 → 模型选择，普通 click 走 startAiRewrite ──
+const aiAnchorRef = ref<HTMLElement | null>(null)
+const aiPickerPosition = ref<{ top: number; right: number } | null>(null)
+let longPressTimer: number | undefined
+let longPressTriggered = false
+
+function openAiPicker() {
+  const anchor = aiAnchorRef.value
+  if (!anchor) {
+    aiPickerOpen.value = true
+    return
+  }
+  const rect = anchor.getBoundingClientRect()
+  // 移动端浮层向上展开（贴 dock 顶部，避开虚拟键盘）
+  aiPickerPosition.value = {
+    top: rect.top - 8,
+    right: Math.max(8, window.innerWidth - rect.right),
+  }
+  aiPickerOpen.value = true
+}
+
+function onAiPointerDown(event: PointerEvent) {
+  longPressTriggered = false
+  if (event.button === 2) return
+  if (longPressTimer) window.clearTimeout(longPressTimer)
+  longPressTimer = window.setTimeout(() => {
+    longPressTriggered = true
+    vibrate('tap')
+    openAiPicker()
+  }, 380) as unknown as number
+}
+
+function onAiPointerUp() {
+  if (longPressTimer) {
+    window.clearTimeout(longPressTimer)
+    longPressTimer = undefined
+  }
+}
+
+function onAiContextMenu(event: MouseEvent) {
+  event.preventDefault()
+  openAiPicker()
+}
+
+function onAiClick() {
+  if (longPressTriggered) {
+    longPressTriggered = false
+    return
+  }
+  if (inlineRewrite.isStreaming.value) {
+    abortAiRewrite()
+  } else {
+    startAiRewrite()
+  }
+}
+
+function onPickerOutside(event: PointerEvent) {
+  const t = event.target as Node | null
+  if (!aiPickerOpen.value) return
+  if (t && aiAnchorRef.value?.contains(t)) return
+  const picker = document.getElementById('cd-ai-picker-portal')
+  if (picker && t && picker.contains(t)) return
+  aiPickerOpen.value = false
+}
+
+watch(aiPickerOpen, (open) => {
+  if (typeof window === 'undefined') return
+  if (open) window.addEventListener('pointerdown', onPickerOutside)
+  else window.removeEventListener('pointerdown', onPickerOutside)
+})
+
 function handleEnhanceResult(result: EnhanceResult) {
   isMagicPulsing.value = true
   setTimeout(() => { isMagicPulsing.value = false }, 1000)
@@ -607,40 +678,58 @@ defineExpose({ focusInput })
               </span>
             </button>
 
-            <div v-if="promptCount > 0" class="chat-dock__chip-wrap">
-              <button
-                type="button"
-                class="chat-dock__chip chat-dock__chip--ai"
-                :class="{ 'is-busy': inlineRewrite.isStreaming.value }"
-                :aria-label="inlineRewrite.isStreaming.value ? '正在 AI 改写，点击取消' : `让 ${REWRITE_MODELS[aiRewriteState.modelId].label} 改写提示词`"
-                @click.stop="inlineRewrite.isStreaming.value ? abortAiRewrite() : startAiRewrite()"
-                @contextmenu.prevent="aiPickerOpen = !aiPickerOpen"
-              >
-                <Icon
-                  :name="inlineRewrite.isStreaming.value ? 'close' : 'sparkle'"
-                  :size="13"
-                />
-                <span class="chat-dock__chip-label">
-                  {{ inlineRewrite.isStreaming.value ? '取消' : 'AI 优化' }}
-                </span>
-                <button
-                  v-if="!inlineRewrite.isStreaming.value"
-                  type="button"
-                  class="chat-dock__chip-caret"
-                  :aria-label="`切换 AI 改写模型，当前 ${REWRITE_MODELS[aiRewriteState.modelId].label}`"
-                  @click.stop="aiPickerOpen = !aiPickerOpen"
-                >
-                  <Icon name="chevronDown" :size="9" />
-                </button>
-              </button>
+            <button
+              v-if="promptCount > 0"
+              ref="aiAnchorRef"
+              type="button"
+              class="chat-dock__chip chat-dock__chip--ai"
+              :class="{
+                'is-busy': inlineRewrite.isStreaming.value,
+                'is-picker-open': aiPickerOpen,
+              }"
+              :aria-label="inlineRewrite.isStreaming.value ? '正在 AI 改写，点击取消' : `让 ${REWRITE_MODELS[aiRewriteState.modelId].label} 改写提示词。长按可切换模型。`"
+              :aria-haspopup="!inlineRewrite.isStreaming.value ? 'menu' : undefined"
+              :aria-expanded="aiPickerOpen ? 'true' : 'false'"
+              @click.stop="onAiClick"
+              @pointerdown="onAiPointerDown"
+              @pointerup="onAiPointerUp"
+              @pointercancel="onAiPointerUp"
+              @pointerleave="onAiPointerUp"
+              @contextmenu="onAiContextMenu"
+            >
+              <Icon
+                :name="inlineRewrite.isStreaming.value ? 'close' : 'sparkle'"
+                :size="13"
+              />
+              <span class="chat-dock__chip-label">
+                {{ inlineRewrite.isStreaming.value ? '取消' : 'AI 优化' }}
+              </span>
+              <span
+                v-if="!inlineRewrite.isStreaming.value"
+                class="chat-dock__chip-tag"
+                aria-hidden="true"
+              >{{ REWRITE_MODELS[aiRewriteState.modelId].label }}</span>
+            </button>
+            <Teleport to="body">
               <Transition name="dock-fade">
                 <div
-                  v-if="aiPickerOpen && !inlineRewrite.isStreaming.value"
+                  v-if="aiPickerOpen && !inlineRewrite.isStreaming.value && aiPickerPosition"
+                  id="cd-ai-picker-portal"
                   class="chat-dock__ai-picker"
                   role="menu"
                   aria-label="选择 AI 改写模型"
+                  :style="{
+                    top: 'auto',
+                    bottom: `calc(100vh - ${aiPickerPosition.top}px)`,
+                    right: `${aiPickerPosition.right}px`,
+                    left: 'auto',
+                  }"
                   @click.stop
                 >
+                  <p class="chat-dock__ai-picker-title">
+                    <span>选择 AI 改写模型</span>
+                    <small>项目方赞助 · 你不用付钱</small>
+                  </p>
                   <button
                     v-for="m in REWRITE_MODEL_LIST"
                     :key="m.id"
@@ -657,7 +746,7 @@ defineExpose({ focusInput })
                   </button>
                 </div>
               </Transition>
-            </div>
+            </Teleport>
 
             <div v-if="promptCount > 0" class="chat-dock__chip-wrap">
               <button
@@ -1288,17 +1377,22 @@ defineExpose({ focusInput })
   border-color: rgb(var(--color-ochre) / 0.42);
   color: rgb(var(--color-ochre));
   font-weight: 700;
-  padding-right: 6px;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .chat-dock__chip--ai:hover {
   border-color: rgb(var(--color-ink) / 0.3);
 }
 
-.chat-dock__chip--ai.is-busy {
+.chat-dock__chip--ai.is-busy,
+.chat-dock__chip--ai.is-picker-open {
   background: rgb(var(--color-ink));
   border-color: rgb(var(--color-ink));
   color: rgb(var(--color-paper));
+}
+
+.chat-dock__chip--ai.is-busy {
   animation: ai-chip-pulse 1.4s var(--motion-soft) infinite;
 }
 
@@ -1307,44 +1401,71 @@ defineExpose({ focusInput })
   50% { box-shadow: 0 0 0 6px rgb(var(--color-ochre) / 0); }
 }
 
-.chat-dock__chip-caret {
-  display: inline-grid;
-  place-items: center;
-  width: 18px;
-  height: 18px;
-  border: 0;
+.chat-dock__chip-tag {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 4px;
+  padding: 0 6px;
+  height: 16px;
   border-radius: 999px;
-  background: rgb(var(--color-paper) / 0.4);
-  color: inherit;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  margin-left: 2px;
-  transition: background 140ms var(--motion-soft);
+  background: rgb(var(--color-paper) / 0.62);
+  color: rgb(var(--color-ochre));
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border: 1px solid rgb(var(--color-ochre) / 0.32);
 }
 
-.chat-dock__chip-caret:hover {
-  background: rgb(var(--color-paper) / 0.65);
+.chat-dock__chip--ai.is-busy .chat-dock__chip-tag,
+.chat-dock__chip--ai.is-picker-open .chat-dock__chip-tag {
+  background: rgb(var(--color-paper) / 0.16);
+  color: rgb(var(--color-paper));
+  border-color: rgb(var(--color-paper) / 0.3);
 }
 
-/* ── AI 模型选择浮层（贴 dock 顶部，向上展开） ── */
+/* ── AI 模型选择浮层 —— 用 Teleport 到 body，绝对定位 ── */
 
 .chat-dock__ai-picker {
-  position: absolute;
-  bottom: calc(100% + 8px);
-  left: 0;
-  right: auto;
-  min-width: 180px;
+  position: fixed;
+  z-index: 200;
+  min-width: 220px;
+  max-width: min(280px, calc(100vw - 16px));
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 6px;
+  padding: 8px 6px 6px;
   border-radius: 14px;
-  border: 1px solid rgb(var(--color-line-strong) / 0.65);
+  border: 1px solid rgb(var(--color-line-strong) / 0.7);
   background: rgb(var(--color-paper));
   box-shadow:
-    0 22px 38px -22px rgb(var(--color-ink) / 0.45),
-    0 6px 14px -10px rgb(var(--color-ink) / 0.22);
-  z-index: 60;
+    0 24px 40px -22px rgb(var(--color-ink) / 0.45),
+    0 8px 16px -10px rgb(var(--color-ink) / 0.22);
+}
+
+.chat-dock__ai-picker-title {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 0 0 4px;
+  padding: 0 8px;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgb(var(--color-muted));
+}
+
+.chat-dock__ai-picker-title small {
+  font-family: 'IBM Plex Sans', system-ui, sans-serif;
+  font-size: 9px;
+  font-weight: 540;
+  letter-spacing: 0.02em;
+  color: rgb(var(--color-forest));
+  text-transform: none;
+  white-space: nowrap;
 }
 
 .chat-dock__ai-pick {
@@ -1352,12 +1473,12 @@ defineExpose({ focusInput })
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 6px 10px;
-  padding: 7px 10px;
+  padding: 9px 10px;
   border: 0;
   border-radius: 10px;
   background: transparent;
   color: rgb(var(--color-ink));
-  font-size: 12.5px;
+  font-size: 13px;
   text-align: left;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
@@ -1372,7 +1493,7 @@ defineExpose({ focusInput })
 
 .chat-dock__ai-pick-tag {
   grid-column: 1;
-  font-size: 10px;
+  font-size: 10.5px;
   font-weight: 540;
   color: rgb(var(--color-muted));
   letter-spacing: 0.02em;

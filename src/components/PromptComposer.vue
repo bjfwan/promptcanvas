@@ -343,6 +343,92 @@ function pickAiModel(id: RewriteModelId) {
   aiPickerOpen.value = false
 }
 
+// ── long-press / right-click → open picker ──
+//   click 触发 startAiRewrite，长按或右键单独走 picker
+const aiAnchorRef = ref<HTMLElement | null>(null)
+const aiPickerPosition = ref<{ left: number; top: number } | null>(null)
+let longPressTimer: number | undefined
+let longPressTriggered = false
+
+function openAiPicker() {
+  const anchor = aiAnchorRef.value
+  if (!anchor) {
+    aiPickerOpen.value = true
+    return
+  }
+  const rect = anchor.getBoundingClientRect()
+  // 浮层右对齐到 anchor 右边沿，相对视口存储 right offset，避免模板引用 window
+  aiPickerPosition.value = {
+    top: rect.bottom + 6,
+    left: Math.max(8, window.innerWidth - rect.right),
+  }
+  aiPickerOpen.value = true
+}
+
+function onAiPointerDown(event: PointerEvent) {
+  longPressTriggered = false
+  if (event.button === 2) return // right-click handled in contextmenu
+  if (longPressTimer) window.clearTimeout(longPressTimer)
+  longPressTimer = window.setTimeout(() => {
+    longPressTriggered = true
+    openAiPicker()
+  }, 380) as unknown as number
+}
+
+function onAiPointerUp() {
+  if (longPressTimer) {
+    window.clearTimeout(longPressTimer)
+    longPressTimer = undefined
+  }
+}
+
+function onAiContextMenu(event: MouseEvent) {
+  event.preventDefault()
+  openAiPicker()
+}
+
+function onAiClick() {
+  if (longPressTriggered) {
+    longPressTriggered = false
+    return
+  }
+  if (inlineRewrite.isStreaming.value) {
+    abortAiRewrite()
+  } else {
+    startAiRewrite()
+  }
+}
+
+function onAiKeydown(event: KeyboardEvent) {
+  // Alt+Down / Shift+F10 / ContextMenu key 都打开选择器（无障碍）
+  if (event.altKey && event.key === 'ArrowDown') {
+    event.preventDefault()
+    openAiPicker()
+  } else if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+    event.preventDefault()
+    openAiPicker()
+  }
+}
+
+function onPickerOutside(event: PointerEvent) {
+  const t = event.target as Node | null
+  if (!aiPickerOpen.value) return
+  // 点击 anchor 自身不要立刻关
+  if (t && aiAnchorRef.value?.contains(t)) return
+  const picker = document.getElementById('pc-ai-picker-portal')
+  if (picker && t && picker.contains(t)) return
+  aiPickerOpen.value = false
+}
+
+watch(aiPickerOpen, (open) => {
+  if (typeof window === 'undefined') return
+  if (open) {
+    window.addEventListener('pointerdown', onPickerOutside)
+  } else {
+    window.removeEventListener('pointerdown', onPickerOutside)
+  }
+})
+
 watch(modelChoice, (newValue, oldValue) => {
   if (newValue === customModelSentinel && oldValue !== customModelSentinel) {
     emit('open-settings')
@@ -492,38 +578,53 @@ watch(prompt, () => {
               <Icon :name="hasReferenceImages ? 'image' : 'upload'" :size="12" />
               <span>{{ hasReferenceImages ? `参考 ${props.referenceImages.length}` : '参考图' }}</span>
             </button>
-            <span class="relative" v-if="prompt.length">
-              <button
-                type="button"
-                class="prompt-tool-btn prompt-tool-btn--ai"
-                :class="{ 'is-busy': inlineRewrite.isStreaming.value }"
-                :aria-label="inlineRewrite.isStreaming.value ? '正在 AI 改写，点击取消' : `让 ${REWRITE_MODELS[aiRewriteState.modelId].label} 改写提示词`"
-                @click.stop="inlineRewrite.isStreaming.value ? abortAiRewrite() : startAiRewrite()"
-              >
-                <Icon
-                  :name="inlineRewrite.isStreaming.value ? 'close' : 'sparkle'"
-                  :size="12"
-                />
-                <span>{{ inlineRewrite.isStreaming.value ? '取消' : 'AI 优化' }}</span>
-              </button>
-              <button
+            <button
+              v-if="prompt.length"
+              ref="aiAnchorRef"
+              type="button"
+              class="prompt-tool-btn prompt-tool-btn--ai"
+              :class="{ 'is-busy': inlineRewrite.isStreaming.value, 'is-picker-open': aiPickerOpen }"
+              :aria-label="inlineRewrite.isStreaming.value ? '正在 AI 改写，点击取消' : `让 ${REWRITE_MODELS[aiRewriteState.modelId].label} 改写提示词。长按可切换模型。`"
+              :aria-haspopup="!inlineRewrite.isStreaming.value ? 'menu' : undefined"
+              :aria-expanded="aiPickerOpen ? 'true' : 'false'"
+              @click.stop="onAiClick"
+              @pointerdown="onAiPointerDown"
+              @pointerup="onAiPointerUp"
+              @pointercancel="onAiPointerUp"
+              @pointerleave="onAiPointerUp"
+              @contextmenu="onAiContextMenu"
+              @keydown="onAiKeydown"
+            >
+              <Icon
+                :name="inlineRewrite.isStreaming.value ? 'close' : 'sparkle'"
+                :size="12"
+              />
+              <span>{{ inlineRewrite.isStreaming.value ? '取消' : 'AI 优化' }}</span>
+              <span
                 v-if="!inlineRewrite.isStreaming.value"
-                type="button"
-                class="prompt-tool-btn prompt-tool-btn--ai-caret"
-                :aria-label="`切换 AI 改写模型，当前 ${REWRITE_MODELS[aiRewriteState.modelId].label}`"
-                @click.stop="aiPickerOpen = !aiPickerOpen"
-              >
-                <span class="prompt-ai-current">{{ REWRITE_MODELS[aiRewriteState.modelId].label }}</span>
-                <Icon name="chevronDown" :size="10" />
-              </button>
+                class="prompt-tool-btn__model-tag"
+                aria-hidden="true"
+              >{{ REWRITE_MODELS[aiRewriteState.modelId].label }}</span>
+            </button>
+            <Teleport to="body">
               <Transition name="dlg-fade">
                 <div
-                  v-if="aiPickerOpen"
+                  v-if="aiPickerOpen && !inlineRewrite.isStreaming.value && aiPickerPosition"
+                  id="pc-ai-picker-portal"
                   class="prompt-ai-picker"
                   role="menu"
                   aria-label="选择 AI 改写模型"
+                  :style="{
+                    top: `${aiPickerPosition.top}px`,
+                    right: `${aiPickerPosition.left}px`,
+                    left: 'auto',
+                  }"
                   @click.stop
                 >
+                  <p class="prompt-ai-picker__title">
+                    <span>选择 AI 改写模型</span>
+                    <small>项目方赞助 · 你不用付钱</small>
+                  </p>
                   <button
                     v-for="m in REWRITE_MODEL_LIST"
                     :key="m.id"
@@ -540,7 +641,7 @@ watch(prompt, () => {
                   </button>
                 </div>
               </Transition>
-            </span>
+            </Teleport>
 
             <span class="relative">
               <button
@@ -1004,10 +1105,18 @@ watch(prompt, () => {
 /* ── AI 优化按钮（桌面） ── */
 
 .prompt-tool-btn--ai {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
   border-color: rgb(var(--color-ochre) / 0.45);
   background: linear-gradient(135deg, rgb(var(--color-ochre) / 0.18), rgb(var(--color-accent) / 0.12));
   color: rgb(var(--color-ochre));
   font-weight: 740;
+  padding-right: 0.5rem;
+  /* hint: long-press to switch model */
+  position: relative;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .prompt-tool-btn--ai:hover:not(:disabled) {
@@ -1021,57 +1130,81 @@ watch(prompt, () => {
   animation: prompt-ai-pulse 1.4s var(--motion-soft) infinite;
 }
 
+.prompt-tool-btn--ai.is-picker-open {
+  border-color: rgb(var(--color-ink));
+  background: rgb(var(--color-ink));
+  color: rgb(var(--color-paper));
+}
+
 @keyframes prompt-ai-pulse {
   0%, 100% { box-shadow: 0 0 0 0 rgb(var(--color-ochre) / 0.32); }
   50% { box-shadow: 0 0 0 6px rgb(var(--color-ochre) / 0); }
 }
 
-.prompt-tool-btn--ai-caret {
+/* 当前模型小药丸：紧贴在文字右边，整体仍然只占一颗 chip 的宽度 */
+.prompt-tool-btn__model-tag {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  height: 30px;
-  padding: 0 0.5rem 0 0.55rem;
-  margin-left: 4px;
+  margin-left: 0.05rem;
+  padding: 1px 7px 1px 6px;
   border-radius: 999px;
-  border: 1px solid rgb(var(--color-line) / 0.85);
-  background: rgb(var(--color-vellum) / 0.6);
-  color: rgb(var(--color-muted));
-  font-size: 11px;
-  font-weight: 660;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  transition: background 140ms var(--motion-soft), color 140ms var(--motion-soft), border-color 140ms var(--motion-soft);
-}
-
-.prompt-tool-btn--ai-caret:hover {
-  color: rgb(var(--color-ink));
-  border-color: rgb(var(--color-ink) / 0.4);
-  background: rgb(var(--color-paper-soft));
-}
-
-.prompt-ai-current {
+  background: rgb(var(--color-paper) / 0.62);
+  color: rgb(var(--color-ochre));
   font-family: 'JetBrains Mono', ui-monospace, monospace;
-  font-size: 10px;
+  font-size: 9.5px;
+  font-weight: 700;
   letter-spacing: 0.04em;
+  line-height: 1.4;
+  text-transform: uppercase;
+  border: 1px solid rgb(var(--color-ochre) / 0.32);
+}
+
+.prompt-tool-btn--ai.is-busy .prompt-tool-btn__model-tag,
+.prompt-tool-btn--ai.is-picker-open .prompt-tool-btn__model-tag {
+  background: rgb(var(--color-paper) / 0.16);
+  color: rgb(var(--color-paper));
+  border-color: rgb(var(--color-paper) / 0.3);
 }
 
 .prompt-ai-picker {
-  position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
-  min-width: 200px;
+  position: fixed;
+  z-index: 200;
+  min-width: 220px;
+  max-width: min(280px, calc(100vw - 16px));
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 6px;
+  padding: 8px 6px 6px;
   border-radius: 14px;
   border: 1px solid rgb(var(--color-line-strong) / 0.7);
   background: rgb(var(--color-paper));
   box-shadow:
     0 24px 40px -22px rgb(var(--color-ink) / 0.45),
     0 8px 16px -10px rgb(var(--color-ink) / 0.22);
-  z-index: 60;
+}
+
+.prompt-ai-picker__title {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 0 0 4px;
+  padding: 0 8px;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgb(var(--color-muted));
+}
+
+.prompt-ai-picker__title small {
+  font-family: 'IBM Plex Sans', system-ui, sans-serif;
+  font-size: 9px;
+  font-weight: 540;
+  letter-spacing: 0.02em;
+  color: rgb(var(--color-forest));
+  text-transform: none;
+  white-space: nowrap;
 }
 
 .prompt-ai-pick {

@@ -1,4 +1,4 @@
-const VERSION = '0.2.0'
+const VERSION = '0.2.1'
 
 const HOP_BY_HOP = new Set([
   'host',
@@ -21,7 +21,12 @@ const FORBIDDEN_FORWARD = new Set([
   'referer',
   'cookie',
   'user-agent',
-  'authorization', // we replace this with the built-in key when X-Pc-Builtin is set
+])
+
+// Headers we additionally strip ONLY when running in BUILTIN mode, because
+// in that mode we replace Authorization with the env-stored key.
+const FORBIDDEN_FORWARD_BUILTIN_ONLY = new Set([
+  'authorization',
 ])
 
 const IDENTITY_PROFILES = {
@@ -141,9 +146,10 @@ export default {
 
     const forwardHeaders = new Headers()
     for (const [name, value] of request.headers.entries()) {
-      if (!FORBIDDEN_FORWARD.has(name.toLowerCase())) {
-        forwardHeaders.set(name, value)
-      }
+      const lower = name.toLowerCase()
+      if (FORBIDDEN_FORWARD.has(lower)) continue
+      if (isBuiltin && FORBIDDEN_FORWARD_BUILTIN_ONLY.has(lower)) continue
+      forwardHeaders.set(name, value)
     }
 
     if (isBuiltin) {
