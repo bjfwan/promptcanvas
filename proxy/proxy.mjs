@@ -18,10 +18,19 @@ const HOP_BY_HOP = new Set([
 const FORBIDDEN_FORWARD = new Set([
   ...HOP_BY_HOP,
   'x-upstream-base',
+  'x-pc-identity',
   'origin',
   'referer',
   'cookie',
+  'user-agent',
 ])
+const IDENTITY_PROFILES = {
+  kilocode: {
+    'user-agent': 'Kilo-Code/4.0.0',
+    'http-referer': 'https://kilocode.ai',
+    'x-title': 'Kilo Code',
+  },
+}
 
 const BASE_CORS_HEADERS = {
   'access-control-allow-origin': '*',
@@ -97,6 +106,14 @@ const server = http.createServer(async (req, res) => {
     else if (value !== undefined) headers[name] = String(value)
   }
   headers.host = upstreamUrl.host
+
+  const identityHint = String(req.headers['x-pc-identity'] || '').trim().toLowerCase()
+  const profile = identityHint && IDENTITY_PROFILES[identityHint]
+  if (profile) {
+    for (const [headerName, headerValue] of Object.entries(profile)) {
+      headers[headerName] = headerValue
+    }
+  }
 
   let body
   if (req.method !== 'GET' && req.method !== 'HEAD') {

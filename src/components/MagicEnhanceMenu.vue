@@ -28,6 +28,7 @@ import { listCameraRecipes } from '../lib/cameraLookbook'
 import type { ImageQuality, ImageStyle } from '../types'
 import { useBodyLock } from '../composables/useBodyLock'
 import { useFocusTrap } from '../composables/useFocusTrap'
+import AiRewritePanel from './AiRewritePanel.vue'
 
 interface Props {
   prompt: string
@@ -53,6 +54,8 @@ const emit = defineEmits<{
   (e: 'enhance', result: EnhanceResult): void
   (e: 'ab-test', original: string, optimized: EnhanceResult): void
   (e: 'update-prompt', value: string): void
+  (e: 'request-settings'): void
+  (e: 'rewrite-error', message: string, hint?: string): void
   (e: 'close'): void
 }>()
 
@@ -248,6 +251,23 @@ function applyResult(result = selectedResult.value) {
   emit('close')
 }
 
+function handleAiApply(rewritten: string) {
+  // AI 改写应用：直接更新 prompt + 关闭菜单。
+  // 不走"应用智能优化"那条 EnhanceResult 路径，因为 AI 输出是整段文本，
+  // 没有 score/dimensions 这些本地引擎产物，单独走 update-prompt 更直白。
+  emit('update-prompt', rewritten)
+  emit('close')
+}
+
+function handleAiError(message: string, hint?: string) {
+  emit('rewrite-error', message, hint)
+}
+
+function handleAiRequestSettings() {
+  emit('request-settings')
+  emit('close')
+}
+
 function startEditSlot(slot: SlotName) {
   editingSlot.value = slot
   const card = slotCards.value.find((item) => item.slot === slot)
@@ -388,6 +408,19 @@ useFocusTrap(() => true, dialogRef)
             <Icon name="close" :size="14" />
           </button>
         </header>
+
+        <AiRewritePanel
+          :prompt="prompt"
+          :image-style="imageStyle"
+          :intent="selectedIntent"
+          :has-reference-images="hasReferenceImages"
+          :size="size"
+          :quality="quality"
+          :model-name="modelName"
+          :on-error="handleAiError"
+          @apply="handleAiApply"
+          @request-settings="handleAiRequestSettings"
+        />
 
         <p v-if="!prompt.trim()" class="magic-menu__empty">先写下主体或修改目标，优化引擎会自动拆解画面短板。</p>
 

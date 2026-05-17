@@ -52,6 +52,15 @@ function iconFor(kind: 'info' | 'success' | 'error'): IconName {
             </p>
           </div>
           <button
+            v-if="item.action"
+            type="button"
+            class="toast-card__action"
+            :aria-label="item.action.ariaLabel || item.action.label"
+            @click="toast.runAction(item.id)"
+          >
+            {{ item.action.label }}
+          </button>
+          <button
             type="button"
             class="-mr-1 -mt-1 rounded-full p-1 text-muted transition hover:text-ink"
             :aria-label="t('toast.dismiss')"
@@ -113,6 +122,45 @@ function iconFor(kind: 'info' | 'success' | 'error'): IconName {
 
 .toast-card--error::after {
   background: rgb(var(--color-accent));
+}
+
+.toast-card__action {
+  flex-shrink: 0;
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid rgb(var(--color-ink) / 0.65);
+  background: rgb(var(--color-ink));
+  color: rgb(var(--color-paper));
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  transition: transform 140ms var(--motion-press), background-color 140ms var(--motion-soft);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.toast-card__action:hover {
+  background: rgb(var(--color-ink) / 0.88);
+}
+
+.toast-card__action:active {
+  transform: scale(0.95);
+}
+
+.toast-card--error .toast-card__action {
+  background: rgb(var(--color-accent));
+  border-color: rgb(var(--color-accent));
+  color: rgb(var(--color-paper));
+}
+
+.toast-card--success .toast-card__action {
+  background: rgb(var(--color-forest));
+  border-color: rgb(var(--color-forest));
+  color: rgb(var(--color-paper));
 }
 
 @keyframes toast-life {

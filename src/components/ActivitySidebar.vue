@@ -111,7 +111,7 @@ function previewSrc(item: GenerationHistoryItem): string {
                 <span v-if="item.referenceImageCount" class="text-line">·</span>
                 <span v-if="item.referenceImageCount" class="text-forest">参考</span>
               </span>
-              <span class="mt-1 block truncate-2 text-[12px] leading-[1.5] text-ink/85">{{ item.prompt }}</span>
+              <span class="activity-sidebar__prompt">{{ item.prompt }}</span>
             </span>
           </button>
         </li>
@@ -334,6 +334,43 @@ function previewSrc(item: GenerationHistoryItem): string {
 
 .activity-sidebar__foot {
   margin-top: 0.5rem;
+}
+
+.activity-sidebar__prompt {
+  display: block;
+  margin-top: 4px;
+  max-height: calc(1.5em * 3);
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 4px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: rgb(var(--color-ink) / 0.85);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  scrollbar-width: thin;
+  scrollbar-color: rgb(var(--color-line-strong) / 0.55) transparent;
+  /* 仅在内容溢出时才把滚轮事件留给自己，否则交回给外层 sidebar */
+  overscroll-behavior: contain;
+}
+
+.activity-sidebar__prompt::-webkit-scrollbar {
+  width: 4px;
+}
+
+.activity-sidebar__prompt::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.activity-sidebar__prompt::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgb(var(--color-line-strong) / 0.45);
+}
+
+.activity-sidebar__card:hover .activity-sidebar__prompt::-webkit-scrollbar-thumb,
+.activity-sidebar__item--active .activity-sidebar__prompt::-webkit-scrollbar-thumb {
+  background: rgb(var(--color-ink) / 0.5);
 }
 
 @keyframes activity-pulse {

@@ -289,11 +289,17 @@ async function handleRemix(
     return
   }
 
-  prompt.value = content || prompt.value
+  // Snapshot before mutating, so we can roll back when blob fetching fails.
+  const previousPrompt = prompt.value
+  const previousAnchor = templateAnchorPrompt.value
+  const promptShouldChange = !!content && content !== previousPrompt
+  if (promptShouldChange) prompt.value = content
 
   try {
-    toast.info('正在准备「接着画」', '把这张图加入参考')
+    const preparingId = toast.info('正在准备「接着画」', '把这张图加入参考')
     const blob = await fetchContinuationBlob(source)
+    toast.dismiss(preparingId)
+
     const mimeType = (blob.type || image.mimeType || 'image/png').split(';')[0] || 'image/png'
     const ext = mimeType.split('/')[1] || 'png'
 
@@ -314,7 +320,18 @@ async function handleRemix(
     toast.success('已接上这张图', '修改提示词后发送即可继续创作')
   } catch (err) {
     console.error('Continue from image failed:', err)
-    toast.error('准备失败', '图片可能存在跨域限制，无法直接接着画')
+    if (promptShouldChange) {
+      prompt.value = previousPrompt
+      templateAnchorPrompt.value = previousAnchor
+    }
+    // Surface a path forward instead of just "failed".
+    toast.error('图片读取失败', '图源跨域受限，建议先下载再上传', {
+      label: '下载这张图',
+      ariaLabel: '下载这张图，再手动上传作为参考',
+      handler: () => {
+        downloadImage(image, fromImageIndex)
+      },
+    })
   }
 }
 
@@ -493,28 +510,37 @@ function handleImportPrompt(text: string) {
   } else {
     nextValue = trimmed
   }
-  suppressTreeAutoCommit = true
-  prompt.value = nextValue
-  promptTree.commit({
-    prompt: nextValue,
-    action: 'import',
-    label: looksStructured ? `反向导入 · ${slotCount} 槽位` : '反向导入',
-  })
-  if (looksStructured) {
-    toast.success('已导入并解析槽位', `识别 ${slotCount} 个槽位，已规整为可读 prompt`)
-  } else {
-    toast.success('已导入到 Composer', '原文不含结构化标记，按原样写入')
+
+  if (nextValue === prompt.value) {
+    toast.info('当前已是这条提示词')
+    focusPrompt()
+    return
   }
-  templateAnchorPrompt.value = prompt.value
-  lastEnhanceResult.value = null
+
   vibrate('tap')
+  replacePromptWithUndo(nextValue, {
+    treeAction: 'import',
+    treeLabel: looksStructured ? `反向导入 · ${slotCount} 槽位` : '反向导入',
+    successTitle: looksStructured ? '已导入并解析槽位' : '已导入到 Composer',
+    successHint: looksStructured
+      ? `识别 ${slotCount} 个槽位，已规整为可读 prompt`
+      : '原文不含结构化标记，按原样写入',
+  })
   focusPrompt()
 }
 
 function handlePickQuickPrompt(value: string) {
-  prompt.value = value
-  templateAnchorPrompt.value = value
+  if (value === prompt.value) {
+    toast.info('当前已是这条提示词')
+    focusPrompt()
+    return
+  }
   vibrate('tap')
+  replacePromptWithUndo(value, {
+    treeAction: 'manual',
+    treeLabel: '快速提示',
+    successTitle: '已写入快速提示词',
+  })
   focusPrompt()
 }
 
@@ -522,12 +548,39 @@ async function handleGenerate(options?: { clearAfter?: boolean }) {
   lastEnhanceResult.value = null
   if (!canGenerate.value) {
     if (!provider.isConfigured.value) {
-      toast.error('请先配置 API 服务', '右上角「设置」→ 服务商')
-      settingsOpen.value = true
+      toast.error('请先配置 API 服务', '右上角「设置」→ 服务商', {
+        label: '打开设置',
+        ariaLabel: '打开设置弹窗配置服务商',
+        handler: () => { settingsOpen.value = true },
+      })
       return
     }
-    if (!trimmedPrompt.value) toast.error('请先写下提示词', '至少 4 个字')
-    else if (healthStatus.value === 'offline') toast.error('API 未配置', '请先在「设置」中填写 baseUrl 与 Key')
+    if (healthStatus.value === 'offline') {
+      toast.error('上游连接异常', '检查 baseUrl / Key 或刷新连接', {
+        label: '重新探活',
+        ariaLabel: '重新探测上游连接状态',
+        handler: () => { void refreshHealth() },
+      })
+      return
+    }
+    if (!trimmedPrompt.value) {
+      toast.error('提示词为空', '至少 4 个字才能开始生成', {
+        label: '聚焦输入框',
+        handler: () => focusPrompt(),
+      })
+      return
+    }
+    if (trimmedPrompt.value.length < 4) {
+      toast.error(
+        `提示词太短（当前 ${trimmedPrompt.value.length} 字）`,
+        '至少 4 个字，描述主体 / 氛围 / 风格',
+        { label: '继续编辑', handler: () => focusPrompt() },
+      )
+      return
+    }
+    if (isGenerating.value) {
+      toast.info('正在生成中，请稍候')
+    }
     return
   }
 
@@ -608,14 +661,23 @@ function sendFromChat() {
 function pickStyleFromChat(value: ImageStyle) {
   const preset = stylePresetById.get(value)
   if (!preset) return
-  if (style.value !== value) {
+  const styleChanged = style.value !== value
+  if (styleChanged) {
     skipNextStyleSync = true
     style.value = value
   }
-  if (preset.examplePrompt) {
-    prompt.value = preset.examplePrompt
-    templateAnchorPrompt.value = preset.examplePrompt
-    if (preset.defaultSize) size.value = preset.defaultSize
+  if (preset.examplePrompt && preset.examplePrompt !== prompt.value) {
+    replacePromptWithUndo(preset.examplePrompt, {
+      treeAction: 'manual',
+      treeLabel: `风格示例 · ${preset.label}`,
+      successTitle: '已套用示例提示词',
+      successHint: preset.label,
+      applyExtras: () => {
+        if (preset.defaultSize) size.value = preset.defaultSize
+      },
+    })
+  } else if (styleChanged) {
+    toast.info('已切换画面气质', preset.label)
   }
   nextTick(() => chatDockRef.value?.focusInput?.())
 }
@@ -629,11 +691,16 @@ function handleStyleSheetSelect(payload: { style: ImageStyle; mode: 'apply' | 's
     skipNextStyleSync = true
     style.value = payload.style
     if (preset.examplePrompt) {
-      prompt.value = preset.examplePrompt
-      templateAnchorPrompt.value = preset.examplePrompt
-      if (preset.defaultSize) size.value = preset.defaultSize
       vibrate('success')
-      toast.success('已套用模板', `${preset.label} · 输入框已写入示例`)
+      replacePromptWithUndo(preset.examplePrompt, {
+        treeAction: 'manual',
+        treeLabel: `模板 · ${preset.label}`,
+        successTitle: '已套用模板',
+        successHint: preset.label,
+        applyExtras: () => {
+          if (preset.defaultSize) size.value = preset.defaultSize
+        },
+      })
     } else {
       vibrate('tap')
       toast.info('已切换为「不套模板」', '直接发送你的原始提示词，不附加风格指引')
@@ -756,7 +823,118 @@ async function restoreHistory(item: GenerationHistoryItem) {
   nextTick(() => chatStreamRef.value?.scrollToBottom?.(false))
 }
 
-function resetDraft() {
+// Apply only the *parameters* of a history item (style, size, model, etc.)
+// without overwriting the user's current prompt or chat. Useful for "make
+// what I'm typing now look like that earlier render".
+function applyHistoryParams(item: GenerationHistoryItem) {
+  if (style.value !== item.style) skipNextStyleSync = true
+  style.value = item.style
+  size.value = item.size
+  count.value = item.count
+  outputFormat.value = item.outputFormat
+  quality.value = item.quality || 'auto'
+  creativity.value = item.creativity ?? 7
+  seed.value = item.seed || ''
+  negativePrompt.value = item.negativePrompt || ''
+
+  const restoredModel = (item.model || '').trim()
+  if (!restoredModel) {
+    modelChoice.value = ''
+    customModel.value = ''
+  } else if (discoveredModels.mergedModelOptions.value.some((option) => option.value === restoredModel)) {
+    modelChoice.value = restoredModel
+    customModel.value = ''
+  } else {
+    modelChoice.value = customModelSentinel
+    customModel.value = restoredModel
+  }
+
+  vibrate('tap')
+  toast.success('已套用参数', '提示词和对话保持原样')
+}
+
+// Open the lightbox on a history item without touching any state.
+async function previewHistory(item: GenerationHistoryItem) {
+  const hydrated = (await hydrateHistoryImages([item]))[0] || item
+  if (!hydrated.images || !hydrated.images.length) {
+    toast.info('这条历史没有可预览的图片')
+    return
+  }
+  vibrate('tap')
+  lightbox.open(hydrated.images, 0)
+}
+
+async function copyHistoryPrompt(item: GenerationHistoryItem) {
+  await copyToClipboard(item.prompt, t('toast.copyPrompt'))
+}
+
+// "接着画" from history: load the first image as a reference and let the
+// user keep their current prompt. Mirrors handleRemix but sourced from a
+// stored history item.
+async function remixFromHistory(item: GenerationHistoryItem) {
+  const hydrated = (await hydrateHistoryImages([item]))[0] || item
+  const firstImage = hydrated.images?.[0]
+  if (!firstImage) {
+    toast.error('这条历史没有可继续编辑的图片')
+    return
+  }
+  await handleRemix(firstImage, prompt.value || hydrated.prompt, `history_${hydrated.id}`, 0)
+}
+
+// Regenerate using a history item's full payload without writing anything
+// into the composer. The user's draft (prompt + reference images + chat)
+// is preserved.
+async function regenerateFromHistory(item: GenerationHistoryItem) {
+  if (isGenerating.value) {
+    toast.info('正在生成中，请稍候')
+    return
+  }
+  if (!provider.isConfigured.value) {
+    toast.error('请先配置 API 服务', '右上角「设置」→ 服务商')
+    settingsOpen.value = true
+    return
+  }
+  if (healthStatus.value === 'offline') {
+    toast.error('API 未配置', '请先在「设置」中填写 baseUrl 与 Key')
+    return
+  }
+
+  const resolvedModel = (item.model || '').trim() || undefined
+  const payload: GenerateImageRequest = {
+    prompt: item.prompt,
+    style: item.style,
+    size: item.size,
+    count: item.count,
+    outputFormat: item.outputFormat,
+    negativePrompt: item.negativePrompt,
+    quality: item.quality,
+    creativity: item.creativity,
+    seed: item.seed,
+    model: resolvedModel,
+  }
+
+  const userId = createId()
+  messages.value = [
+    ...messages.value,
+    {
+      id: userId,
+      role: 'user',
+      content: payload.prompt,
+      createdAt: new Date().toISOString(),
+      meta: payloadToMeta(payload),
+    },
+  ]
+  vibrate('tap')
+  toast.info('从历史发起生成', '原草稿已保留')
+  await runGeneration({ payload, userMessageId: userId })
+}
+
+// Two-step protected reset. First call surfaces an "Confirm reset" toast that
+// must be clicked within ~5s. This stops accidental hits from wiping the
+// composer, the chat, the canvas and all parameters in one go.
+let resetConfirmingId: number | null = null
+
+function performResetDraft() {
   clearDraft()
   prompt.value = defaultPrompt
   templateAnchorPrompt.value = defaultPrompt
@@ -785,6 +963,49 @@ function resetDraft() {
   toast.info(t('toast.draftReset'))
 }
 
+function resetDraft() {
+  // Empty workspace? Nothing meaningful would be lost — just reset.
+  const hasMessages = messages.value.length > 0
+  const hasImages = images.value.length > 0
+  const hasReferences = referenceImages.value.length > 0
+  const hasUnsavedPrompt = isPromptWorthProtecting(prompt.value)
+  const isDirty = hasMessages || hasImages || hasReferences || hasUnsavedPrompt
+
+  if (!isDirty) {
+    performResetDraft()
+    return
+  }
+
+  // Already in confirming mode — second tap performs the reset.
+  if (resetConfirmingId !== null) {
+    toast.dismiss(resetConfirmingId)
+    resetConfirmingId = null
+    performResetDraft()
+    return
+  }
+
+  vibrate('tap')
+  const reasons: string[] = []
+  if (hasMessages) reasons.push(`${messages.value.length} 条对话`)
+  if (hasImages) reasons.push(`${images.value.length} 张画布`)
+  if (hasReferences) reasons.push(`${referenceImages.value.length} 张参考图`)
+  if (hasUnsavedPrompt && !reasons.length) reasons.push('当前提示词')
+
+  resetConfirmingId = toast.error('再点一次「重置」会清空当前会话', reasons.join(' · '), {
+    label: '确认清空',
+    ariaLabel: '确认重置：清空对话、参考图与画布',
+    handler: () => {
+      resetConfirmingId = null
+      performResetDraft()
+    },
+  })
+
+  // After the toast auto-dismisses, drop the confirming state too.
+  window.setTimeout(() => {
+    if (resetConfirmingId !== null) resetConfirmingId = null
+  }, 6500)
+}
+
 function clearLocalHistory() {
   clearHistory()
   history.value = []
@@ -811,9 +1032,39 @@ async function copyToClipboard(text: string, message: string) {
   try {
     await navigator.clipboard.writeText(text)
     toast.success(message)
+    return
   } catch {
-    toast.error(t('toast.copyFailed'))
+    /* fall through to fallback */
   }
+
+  // Older browsers / non-secure contexts (HTTP) fall back to execCommand.
+  try {
+    const textarea = document.createElement('textarea')
+    textarea.value = text
+    textarea.style.position = 'fixed'
+    textarea.style.opacity = '0'
+    textarea.style.pointerEvents = 'none'
+    document.body.appendChild(textarea)
+    textarea.focus()
+    textarea.select()
+    const ok = document.execCommand && document.execCommand('copy')
+    document.body.removeChild(textarea)
+    if (ok) {
+      toast.success(message)
+      return
+    }
+  } catch {
+    /* swallow — surface the actionable error below */
+  }
+
+  // Final fallback: show the text in a toast so the user can manually copy.
+  toast.error(t('toast.copyFailed'), '点击「显示文本」后长按选择', {
+    label: '显示文本',
+    ariaLabel: '显示要复制的内容',
+    handler: () => {
+      window.prompt('请手动复制以下内容：', text)
+    },
+  })
 }
 
 function exportCurrentConfig() {
@@ -844,6 +1095,74 @@ function exportCurrentConfig() {
   anchor.remove()
   URL.revokeObjectURL(objectUrl)
   toast.success('参数已导出', 'JSON')
+}
+
+// ---------------------------------------------------------------------------
+// Prompt replacement helpers
+//
+// Several flows used to silently overwrite the user's prompt: picking a quick
+// suggestion, applying a style template, importing from history, etc.
+// `replacePromptWithUndo` makes that gentler — if the user had real work in
+// the textarea, the previous value is captured and surfaced as an "Undo" toast
+// for ~6 seconds. The default scaffolding text is treated as throwaway so we
+// don't nag with toasts on first-run swaps.
+// ---------------------------------------------------------------------------
+
+function isPromptWorthProtecting(value: string): boolean {
+  const trimmed = value.trim()
+  if (trimmed.length < 8) return false
+  if (trimmed === defaultPrompt.trim()) return false
+  if (trimmed === templateAnchorPrompt.value.trim()) return false
+  return true
+}
+
+interface ReplaceOptions {
+  treeAction: 'manual' | 'enhance' | 'import' | 'undo'
+  treeLabel: string
+  successTitle: string
+  successHint?: string
+  /** Optional updates to other parameters that should travel with the prompt. */
+  applyExtras?: () => void
+  /** Reset the template anchor to the new prompt so the next change is detected. */
+  anchorTo?: 'next' | 'preserve'
+}
+
+function replacePromptWithUndo(nextPrompt: string, options: ReplaceOptions) {
+  const previousPrompt = prompt.value
+  const previousAnchor = templateAnchorPrompt.value
+  const hadRealWork = isPromptWorthProtecting(previousPrompt)
+
+  suppressTreeAutoCommit = true
+  prompt.value = nextPrompt
+  if (options.applyExtras) options.applyExtras()
+  if (options.anchorTo !== 'preserve') templateAnchorPrompt.value = nextPrompt
+  promptTree.commit({
+    prompt: nextPrompt,
+    action: options.treeAction,
+    label: options.treeLabel,
+  })
+  lastEnhanceResult.value = null
+
+  if (hadRealWork) {
+    toast.success(options.successTitle, options.successHint, {
+      label: '撤销',
+      ariaLabel: '撤销刚才的提示词替换',
+      handler: () => {
+        suppressTreeAutoCommit = true
+        prompt.value = previousPrompt
+        templateAnchorPrompt.value = previousAnchor
+        promptTree.commit({
+          prompt: previousPrompt,
+          action: 'undo',
+          label: '撤销替换',
+        })
+        toast.info('已恢复之前的提示词')
+        focusPrompt()
+      },
+    })
+  } else {
+    toast.success(options.successTitle, options.successHint)
+  }
 }
 
 function focusPrompt() {
@@ -1029,6 +1348,7 @@ watch(sw.updateAvailable, (available) => {
           @magic-enhance="handleMagicEnhance"
           @magic-ab-test="handleMagicAbTest"
           @toast-info="(title: string, message?: string) => toast.info(title, message)"
+          @rewrite-error="(message: string, hint?: string) => toast.error(message, hint)"
           @undo-enhance="handleUndoEnhance"
           @tree-undo="handleTreeUndo"
           @tree-redo="handleTreeRedo"
@@ -1144,6 +1464,8 @@ watch(sw.updateAvailable, (available) => {
       @magic-enhance="handleMagicEnhance"
       @magic-ab-test="handleMagicAbTest"
       @undo-enhance="handleUndoEnhance"
+      @open-settings="settingsOpen = true"
+      @rewrite-error="(message: string, hint?: string) => toast.error(message, hint)"
       @cancel-continuation="handleCancelContinuation"
       @jump-to-continuation="handleScrollToMessage"
     />
@@ -1177,7 +1499,11 @@ watch(sw.updateAvailable, (available) => {
       v-if="historyOpen"
       v-model:open="historyOpen"
       :history="history"
-      @restore="restoreHistory"
+      @preview="previewHistory"
+      @copy-prompt="copyHistoryPrompt"
+      @reuse-params="applyHistoryParams"
+      @remix="remixFromHistory"
+      @regenerate="regenerateFromHistory"
       @clear="clearLocalHistory"
     />
 

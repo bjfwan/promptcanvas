@@ -398,3 +398,25 @@ export function rawApiKeyIsEncrypted(): boolean {
   if (!apiKeyField) return true
   return isEncrypted(apiKeyField)
 }
+
+
+const rewriteModelKey = 'promptcanvas:rewrite-model-v1'
+
+/**
+ * AI 改写模型的偏好读写 —— 跟 theme 一样的轻量字符串持久化。
+ * 仅存 RewriteModelId（'flash' | 'haiku'），不存任何敏感信息。
+ */
+export function loadRewriteModelChoice(): string {
+  try {
+    return localStorage.getItem(rewriteModelKey) || ''
+  } catch {
+    return ''
+  }
+}
+
+export function saveRewriteModelChoice(value: string) {
+  try {
+    if (value) localStorage.setItem(rewriteModelKey, value)
+    else localStorage.removeItem(rewriteModelKey)
+  } catch {}
+}

@@ -88,6 +88,7 @@ const emit = defineEmits<{
   (e: 'magic-enhance', result: EnhanceResult): void
   (e: 'magic-ab-test', original: string, optimized: EnhanceResult): void
   (e: 'toast-info', title: string, message?: string): void
+  (e: 'rewrite-error', message: string, hint?: string): void
   (e: 'undo-enhance'): void
   (e: 'tree-undo'): void
   (e: 'tree-redo'): void
@@ -440,6 +441,8 @@ watch(prompt, () => {
                 @enhance="(result: EnhanceResult) => { emit('magic-enhance', result); magicMenuOpen = false }"
                 @ab-test="(original: string, optimized: EnhanceResult) => { emit('magic-ab-test', original, optimized); magicMenuOpen = false }"
                 @update-prompt="(value: string) => { prompt = value }"
+                @request-settings="() => { emit('open-settings'); magicMenuOpen = false }"
+                @rewrite-error="(message: string, hint?: string) => emit('rewrite-error', message, hint)"
                 @close="magicMenuOpen = false"
               />
             </span>

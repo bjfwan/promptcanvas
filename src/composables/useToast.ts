@@ -2,12 +2,20 @@ import { reactive } from 'vue'
 
 export type ToastKind = 'info' | 'success' | 'error'
 
+export interface ToastAction {
+  label: string
+  ariaLabel?: string
+  /** Returns true to keep the toast open (rare — almost always `void`). */
+  handler: () => void | Promise<void>
+}
+
 export interface ToastItem {
   id: number
   text: string
   kind: ToastKind
   hint?: string
   duration: number
+  action?: ToastAction
 }
 
 interface ToastState {
@@ -31,15 +39,21 @@ function dismiss(id: number) {
   }
 }
 
-function push(text: string, options: { kind?: ToastKind; hint?: string; duration?: number } = {}) {
+function push(
+  text: string,
+  options: { kind?: ToastKind; hint?: string; duration?: number; action?: ToastAction } = {},
+) {
   const id = nextId++
-  const duration = options.duration ?? (options.kind === 'error' ? 4200 : 2400)
+  // Toasts with an action linger longer so the user can actually click them.
+  const actionAwareDefault = options.action ? 6200 : options.kind === 'error' ? 4200 : 2400
+  const duration = options.duration ?? actionAwareDefault
   const item: ToastItem = {
     id,
     text,
     kind: options.kind ?? 'info',
     hint: options.hint,
     duration,
+    action: options.action,
   }
 
   state.items.push(item)
@@ -63,13 +77,27 @@ function push(text: string, options: { kind?: ToastKind; hint?: string; duration
   return id
 }
 
+async function runAction(id: number) {
+  const item = state.items.find((entry) => entry.id === id)
+  if (!item || !item.action) return
+  try {
+    await item.action.handler()
+  } finally {
+    dismiss(id)
+  }
+}
+
 export function useToast() {
   return {
     items: state.items,
     push,
     dismiss,
-    success: (text: string, hint?: string) => push(text, { kind: 'success', hint }),
-    error: (text: string, hint?: string) => push(text, { kind: 'error', hint }),
-    info: (text: string, hint?: string) => push(text, { kind: 'info', hint }),
+    runAction,
+    success: (text: string, hint?: string, action?: ToastAction) =>
+      push(text, { kind: 'success', hint, action }),
+    error: (text: string, hint?: string, action?: ToastAction) =>
+      push(text, { kind: 'error', hint, action }),
+    info: (text: string, hint?: string, action?: ToastAction) =>
+      push(text, { kind: 'info', hint, action }),
   }
 }

@@ -58,6 +58,8 @@ const emit = defineEmits<{
   (e: 'undo-enhance'): void
   (e: 'cancel-continuation'): void
   (e: 'jump-to-continuation', id: string): void
+  (e: 'open-settings'): void
+  (e: 'rewrite-error', message: string, hint?: string): void
 }>()
 
 const dockRef = ref<HTMLDivElement | null>(null)
@@ -530,6 +532,8 @@ defineExpose({ focusInput })
                 @enhance="handleEnhanceResult"
                 @ab-test="handleAbTest"
                 @update-prompt="(value: string) => { prompt = value }"
+                @request-settings="() => { emit('open-settings'); magicMenuOpen = false }"
+                @rewrite-error="(message: string, hint?: string) => emit('rewrite-error', message, hint)"
                 @close="magicMenuOpen = false"
               />
             </div>

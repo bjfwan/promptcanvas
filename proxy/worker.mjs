@@ -15,10 +15,20 @@ const HOP_BY_HOP = new Set([
 const FORBIDDEN_FORWARD = new Set([
   ...HOP_BY_HOP,
   'x-upstream-base',
+  'x-pc-identity',
   'origin',
   'referer',
   'cookie',
+  'user-agent',
 ])
+
+const IDENTITY_PROFILES = {
+  kilocode: {
+    'user-agent': 'Kilo-Code/4.0.0',
+    'http-referer': 'https://kilocode.ai',
+    'x-title': 'Kilo Code',
+  },
+}
 
 const BASE_CORS = {
   'access-control-allow-origin': '*',
@@ -94,12 +104,16 @@ export default {
         forwardHeaders.set(name, value)
       }
     }
+    const identityHint = (request.headers.get('x-pc-identity') || '').trim().toLowerCase()
+    const profile = identityHint && IDENTITY_PROFILES[identityHint]
+    if (profile) {
+      for (const [headerName, headerValue] of Object.entries(profile)) {
+        forwardHeaders.set(headerName, headerValue)
+      }
+    }
 
     let upstreamBody = undefined
     if (request.method !== 'GET' && request.method !== 'HEAD') {
-      // Read body as ArrayBuffer to preserve multipart/form-data boundary intact.
-      // Passing request.body (ReadableStream) directly can corrupt the boundary
-      // in Cloudflare Workers, causing upstream to fail with 500 on /images/edits.
       upstreamBody = await request.arrayBuffer()
     }
 

@@ -713,3 +713,161 @@ export function resolveImageSource(image: {
 if (typeof window !== 'undefined') {
   logBanner('debug logs ON · 关闭：localStorage.setItem("promptcanvas:debug","false") 然后刷新')
 }
+
+
+// ─────────────────────────────────────────────────────────────────
+//  AI 改写通道（chat completions）
+//
+//  与图像生成共用 baseUrl + apiKey + proxyUrl，但单独走 /chat/completions。
+//  关键差异：当且仅当走 proxy 时，附带 X-Pc-Identity: kilocode 让代理把
+//  User-Agent 改写成 Kilo-Code/4.0.0 —— 这是绕过 agentrouter 等中转站
+//  网关白名单的唯一办法（浏览器 fetch 不允许设置 UA）。
+// ─────────────────────────────────────────────────────────────────
+
+export interface ChatCompleteRequest {
+  model: string
+  systemPrompt: string
+  userMessage: string
+  temperature?: number
+  maxTokens?: number
+}
+
+export interface ChatCompleteResult {
+  content: string
+  elapsedMs: number
+  promptTokens?: number
+  completionTokens?: number
+  model: string
+}
+
+export async function chatComplete(
+  payload: ChatCompleteRequest,
+  options?: { signal?: AbortSignal },
+): Promise<ChatCompleteResult> {
+  const provider = snapshotProviderConfig()
+  const apiKey = (provider.apiKey ?? '').trim()
+  const baseUrl = (provider.baseUrl ?? '').trim().replace(/\/+$/, '')
+  const proxyUrl = (provider.proxyUrl ?? '').trim().replace(/\/+$/, '')
+  const requestId = generateRequestId()
+
+  const group = logGroup(`chatComplete → ${safeHostname(baseUrl)} · ${payload.model} · ${requestId}`)
+  group.log('requestId', requestId)
+  group.log('model', payload.model)
+  group.log('baseUrl', baseUrl)
+  group.log('apiKey', maskKey(apiKey))
+  group.log('proxyUrl', proxyUrl || '<direct, no proxy>')
+
+  try {
+    if (!apiKey || !baseUrl) {
+      group.warn('missing credentials')
+      throw new ApiRequestError(
+        '尚未配置 API 服务商，请打开「设置」填入 API 端点和 API Key。',
+        PROVIDER_NOT_CONFIGURED,
+        requestId,
+      )
+    }
+
+    const built = buildRequest(baseUrl, proxyUrl, '/chat/completions', {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    })
+
+    // Identity injection — only meaningful when going through our proxy.
+    // Direct mode preserves the original behavior (browsers can't set UA anyway).
+    if (built.via === 'proxy') {
+      built.headers['X-Pc-Identity'] = 'kilocode'
+    }
+
+    const requestBody = {
+      model: payload.model,
+      messages: [
+        { role: 'system' as const, content: payload.systemPrompt },
+        { role: 'user' as const, content: payload.userMessage },
+      ],
+      temperature: payload.temperature ?? 0.5,
+      max_tokens: payload.maxTokens ?? 600,
+      stream: false,
+      user: requestId,
+    }
+
+    group.log(`route via ${built.via}`)
+    group.log('upstream targetUrl', built.url)
+    group.log('upstream headers', {
+      ...built.headers,
+      Authorization: `Bearer ${maskKey(apiKey)}`,
+    })
+    group.log('upstream body (parsed)', requestBody)
+
+    const t0 = nowMs()
+    let upstream: Response
+    try {
+      upstream = await fetch(built.url, {
+        method: 'POST',
+        headers: built.headers,
+        body: JSON.stringify(requestBody),
+        signal: options?.signal,
+      })
+    } catch (error) {
+      const err = error as Error
+      const elapsedMs = Math.round(nowMs() - t0)
+      if (err?.name === 'AbortError' || options?.signal?.aborted) {
+        group.warn(`fetch aborted after ${elapsedMs}ms`)
+        throw new ApiRequestError('已取消改写', 'ABORTED', requestId)
+      }
+      group.error(`fetch threw after ${elapsedMs}ms`, { name: err?.name, message: err?.message })
+      const mapped = resolveOpenAIError({ name: err?.name, message: err?.message })
+      throw new ApiRequestError(mapped.message, mapped.code, requestId)
+    }
+
+    const elapsedMs = Math.round(nowMs() - t0)
+    group.log(`response ${upstream.status} ${upstream.statusText} (${elapsedMs}ms)`)
+
+    if (!upstream.ok) {
+      const htmlError = await getHtmlErrorMessage(upstream.clone())
+      const errorBody = htmlError ? null : await readJson<UpstreamErrorBody>(upstream)
+      group.error('upstream returned non-ok', { status: upstream.status, body: errorBody || htmlError })
+      const mapped = resolveOpenAIError({
+        status: upstream.status,
+        code: errorBody?.error?.code,
+        message: htmlError || errorBody?.error?.message,
+      })
+      throw new ApiRequestError(mapped.message, mapped.code, requestId)
+    }
+
+    interface ChatCompletionResponse {
+      choices?: Array<{ message?: { content?: string } }>
+      usage?: { prompt_tokens?: number; completion_tokens?: number }
+      model?: string
+    }
+    const data = await readJson<ChatCompletionResponse>(upstream)
+    const content = data?.choices?.[0]?.message?.content ?? ''
+    const trimmed = content.trim()
+    if (!trimmed) {
+      group.warn('empty content from upstream')
+      throw new ApiRequestError('AI 没有返回任何内容，请重试', 'OPENAI_REQUEST_FAILED', requestId)
+    }
+    group.log('✓ chatComplete success', {
+      contentChars: trimmed.length,
+      promptTokens: data?.usage?.prompt_tokens,
+      completionTokens: data?.usage?.completion_tokens,
+      elapsedMs,
+    })
+
+    return {
+      content: trimmed,
+      elapsedMs,
+      promptTokens: data?.usage?.prompt_tokens,
+      completionTokens: data?.usage?.completion_tokens,
+      model: data?.model || payload.model,
+    }
+  } catch (error) {
+    if (error instanceof ApiRequestError) {
+      group.error('chatComplete rejected', { code: error.code, message: error.message })
+    } else {
+      group.error('chatComplete unexpected error', error)
+    }
+    throw error
+  } finally {
+    group.end()
+  }
+}
