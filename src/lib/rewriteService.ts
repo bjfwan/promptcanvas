@@ -36,7 +36,7 @@ const MAX_TOOL_ROUNDS = 6
 
 // ── 公开模型注册（用户可见） ──
 
-export type RewriteModelId = 'flash' | 'pro' | 'haiku' | 'opus' | 'glm'
+export type RewriteModelId = 'flash' | 'haiku'
 
 export interface RewriteModelMeta {
   id: RewriteModelId
@@ -54,50 +54,23 @@ export const REWRITE_MODELS: Record<RewriteModelId, RewriteModelMeta> = {
     id: 'flash',
     apiName: 'deepseek-v4-flash',
     label: 'Flash',
-    tagline: '极速',
+    tagline: '快 · 听话',
     expectedSeconds: [1, 3],
     recommended: true,
-  },
-  pro: {
-    id: 'pro',
-    apiName: 'deepseek-v4-pro',
-    label: 'Pro',
-    tagline: '稳健',
-    expectedSeconds: [2, 4],
-    recommended: false,
   },
   haiku: {
     id: 'haiku',
     apiName: 'claude-haiku-4-5-20251001',
     label: 'Haiku',
-    tagline: '细腻',
+    tagline: '细腻 · 描述更丰富',
     expectedSeconds: [2, 4],
-    recommended: false,
-  },
-  glm: {
-    id: 'glm',
-    apiName: 'glm-5.1',
-    label: 'GLM',
-    tagline: '中文味道',
-    expectedSeconds: [4, 13],
-    recommended: false,
-  },
-  opus: {
-    id: 'opus',
-    apiName: 'claude-opus-4-6',
-    label: 'Opus',
-    tagline: '深度（慢）',
-    expectedSeconds: [5, 10],
     recommended: false,
   },
 }
 
 export const REWRITE_MODEL_LIST: RewriteModelMeta[] = [
   REWRITE_MODELS.flash,
-  REWRITE_MODELS.pro,
   REWRITE_MODELS.haiku,
-  REWRITE_MODELS.glm,
-  REWRITE_MODELS.opus,
 ]
 
 export const DEFAULT_REWRITE_MODEL: RewriteModelId = 'flash'
@@ -690,7 +663,9 @@ export async function runRewrite(
 }
 
 /**
- * 已拿到完整文本时也要按字 emit，让 UI 体感统一。每帧 ~3 字。
+ * 已拿到完整文本时也要按字 emit，让 UI 体感统一。
+ * 中文一字一帧，但中长答案太久，做指数 chunk：前 60 字一字一帧，
+ * 之后每帧 2-3 字加速收尾。
  */
 async function emitAsStream(
   text: string,
@@ -698,15 +673,17 @@ async function emitAsStream(
   signal: AbortSignal | undefined,
 ): Promise<void> {
   if (!onChunk) return
-  const step = 3
   let cursor = 0
   while (cursor < text.length) {
     if (signal?.aborted) throw new RewriteError('已取消', 'ABORTED')
+    // 前 60 字逐字落，后面加速到 3 字/帧，避免太长改写干等 5 秒
+    const step = cursor < 60 ? 1 : cursor < 140 ? 2 : 3
     const next = Math.min(cursor + step, text.length)
-    const delta = text.slice(cursor, next)
     cursor = next
+    const delta = text.slice(cursor - step, cursor)
     onChunk({ fullText: text.slice(0, cursor), delta })
-    await new Promise((resolve) => setTimeout(resolve, 16)) // ~60fps
+    // 25ms ≈ 40fps，可见的"打字"感
+    await new Promise((resolve) => setTimeout(resolve, 25))
   }
 }
 

@@ -10,6 +10,8 @@ import { useBodyLock } from '../composables/useBodyLock'
 import { ApiRequestError, testProvider } from '../api'
 import { loadBrandKit, saveBrandKit, brandKitHasContent } from '../lib/brandKit'
 import { loadRewriteCustomInstruction, saveRewriteCustomInstruction } from '../storage'
+import { useInlineRewrite } from '../composables/useInlineRewrite'
+import { REWRITE_MODEL_LIST, type RewriteModelId } from '../lib/rewriteService'
 import {
   loadLearnedPreference,
   summarizeLearnedPreference,
@@ -60,6 +62,11 @@ const rewriteInstructionDraft = ref<string>(loadRewriteCustomInstruction())
 
 function persistRewriteInstruction() {
   saveRewriteCustomInstruction(rewriteInstructionDraft.value)
+}
+
+const rewriteEngine = useInlineRewrite()
+function pickRewriteModel(id: RewriteModelId) {
+  rewriteEngine.selectModel(id)
 }
 
 function persistBrandKit() {
@@ -554,11 +561,41 @@ onBeforeUnmount(() => {
                 class="rounded-2xl border border-line bg-paper-soft/40 p-4"
               >
                 <div class="mb-3 flex flex-col">
-                  <span class="display-eyebrow text-[10px]">AI Rewrite · 自定义指令</span>
+                  <span class="display-eyebrow text-[10px]">AI Rewrite · 改写引擎</span>
                   <span class="mt-1 text-[13px] font-medium text-ink">
-                    告诉 AI 改写器你独特的口味
+                    项目方赞助 · 你不用配置 API
                   </span>
                 </div>
+
+                <p class="mb-2 inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-muted">
+                  <Icon name="lightning" :size="11" />
+                  <span>选用模型</span>
+                </p>
+                <div class="rewrite-segmented" role="radiogroup" aria-label="AI 改写模型">
+                  <button
+                    v-for="m in REWRITE_MODEL_LIST"
+                    :key="m.id"
+                    type="button"
+                    role="radio"
+                    class="rewrite-seg"
+                    :class="{ 'is-active': rewriteEngine.state.modelId === m.id }"
+                    :aria-checked="rewriteEngine.state.modelId === m.id"
+                    @click="pickRewriteModel(m.id)"
+                  >
+                    <span class="rewrite-seg__label">{{ m.label }}</span>
+                    <span class="rewrite-seg__hint">
+                      <span>{{ m.tagline }}</span>
+                      <small>{{ m.expectedSeconds[0] }}–{{ m.expectedSeconds[1] }}s</small>
+                    </span>
+                  </button>
+                </div>
+
+                <hr class="my-4 border-line/60" />
+
+                <p class="mb-2 inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-muted">
+                  <Icon name="pencil" :size="11" />
+                  <span>自定义指令（可选）</span>
+                </p>
 
                 <p class="mb-3 text-[11px] leading-[1.6] text-muted">
                   填进来的内容会以最高优先级追加到 AI 改写的 system prompt 末尾。可以写"画面只用奶白和铁锈橙""人像保留毛孔与雀斑""我喜欢 35mm 胶片质感"等。空着也没事，引擎已经按 intent 自动分流。
@@ -837,6 +874,73 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.rewrite-segmented {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  padding: 4px;
+  border-radius: 14px;
+  background: rgb(var(--color-paper-soft) / 0.7);
+  border: 1px solid rgb(var(--color-line) / 0.7);
+}
+
+.rewrite-seg {
+  display: grid;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: rgb(var(--color-muted));
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    background-color 200ms var(--motion-soft),
+    color 200ms var(--motion-soft),
+    box-shadow 200ms var(--motion-soft);
+}
+
+.rewrite-seg:hover {
+  color: rgb(var(--color-ink));
+}
+
+.rewrite-seg.is-active {
+  background: rgb(var(--color-ink));
+  color: rgb(var(--color-paper));
+  box-shadow:
+    0 6px 14px -10px rgb(var(--color-ink) / 0.4),
+    inset 0 1px 0 rgb(255 255 255 / 0.08);
+}
+
+.rewrite-seg__label {
+  font-family: 'Fraunces', 'IBM Plex Sans', system-ui, serif;
+  font-size: 14px;
+  font-weight: 720;
+  letter-spacing: -0.005em;
+  line-height: 1;
+}
+
+.rewrite-seg__hint {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 10px;
+  font-weight: 540;
+  letter-spacing: 0.02em;
+  line-height: 1.2;
+}
+
+.rewrite-seg__hint small {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 9.5px;
+  opacity: 0.8;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rewrite-seg { transition: none; }
+}
+
 .settings-range {
   height: 28px;
   appearance: none;

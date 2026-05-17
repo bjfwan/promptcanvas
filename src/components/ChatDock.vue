@@ -5,7 +5,6 @@ import StyleSwatch from './StyleSwatch.vue'
 import Select, { type SelectOption } from './Select.vue'
 import AiRewriteRibbon from './AiRewriteRibbon.vue'
 import { useInlineRewrite } from '../composables/useInlineRewrite'
-import { REWRITE_MODEL_LIST, REWRITE_MODELS, type RewriteModelId } from '../lib/rewriteService'
 import { maxReferenceImages } from '../lib/imagesApi'
 import { customModelSentinel, styleOptions } from '../presets'
 import { useDiscoveredModels } from '../composables/useDiscoveredModels'
@@ -236,32 +235,13 @@ function magicEnhance() {
 // ── AI 改写 ──
 const inlineRewrite = useInlineRewrite()
 const aiRewriteState = inlineRewrite.state
-const aiPickerOpen = ref(false)
-
-// 改写中：textarea 由 streamingText 驱动；改写完后 / 取消 / 出错保留
-// streamingText 显示给用户看，但不会自动覆盖 prompt —— 用户点"应用"才覆盖。
-const displayedPrompt = computed({
-  get() {
-    if (inlineRewrite.isStreaming.value) return aiRewriteState.streamingText
-    return prompt.value
-  },
-  set(v: string) {
-    if (inlineRewrite.isStreaming.value) {
-      // 流式中如果用户敲键盘，立刻打断改写并把控制权还回去
-      inlineRewrite.abort()
-      prompt.value = v
-    } else {
-      prompt.value = v
-    }
-  },
-})
 
 function startAiRewrite() {
   if (!prompt.value.trim()) return
   vibrate('tap')
   textareaRef.value?.blur()
   inlineRewrite.start({
-    prompt: prompt.value,
+    promptRef: prompt,
     intent: inferEnhanceIntent(props.currentStyle, hasReferenceImages.value),
     hasReferenceImages: hasReferenceImages.value,
     style: props.currentStyle,
@@ -271,25 +251,15 @@ function startAiRewrite() {
   }).catch(() => {})
 }
 
-function applyAiResult() {
-  if (!inlineRewrite.hasResult.value) return
-  vibrate('success')
-  prompt.value = aiRewriteState.resultText
-  inlineRewrite.reset()
-}
-
 function revertAiResult() {
   vibrate('tap')
-  prompt.value = aiRewriteState.snapshot
-  inlineRewrite.reset()
+  inlineRewrite.revert()
 }
 
 function retryAiRewrite() {
   if (inlineRewrite.isStreaming.value) return
-  // 用 snapshot（用户原文）作为输入再来一次
-  const source = aiRewriteState.snapshot || prompt.value
-  inlineRewrite.start({
-    prompt: source,
+  vibrate('tap')
+  inlineRewrite.retry({
     intent: inferEnhanceIntent(props.currentStyle, hasReferenceImages.value),
     hasReferenceImages: hasReferenceImages.value,
     style: props.currentStyle,
@@ -307,82 +277,6 @@ function abortAiRewrite() {
 function dismissAiRibbon() {
   inlineRewrite.reset()
 }
-
-function pickAiModel(id: RewriteModelId) {
-  inlineRewrite.selectModel(id)
-  aiPickerOpen.value = false
-}
-
-// ── 长按 / 右键 → 模型选择，普通 click 走 startAiRewrite ──
-const aiAnchorRef = ref<HTMLElement | null>(null)
-const aiPickerPosition = ref<{ top: number; right: number } | null>(null)
-let longPressTimer: number | undefined
-let longPressTriggered = false
-
-function openAiPicker() {
-  const anchor = aiAnchorRef.value
-  if (!anchor) {
-    aiPickerOpen.value = true
-    return
-  }
-  const rect = anchor.getBoundingClientRect()
-  // 移动端浮层向上展开（贴 dock 顶部，避开虚拟键盘）
-  aiPickerPosition.value = {
-    top: rect.top - 8,
-    right: Math.max(8, window.innerWidth - rect.right),
-  }
-  aiPickerOpen.value = true
-}
-
-function onAiPointerDown(event: PointerEvent) {
-  longPressTriggered = false
-  if (event.button === 2) return
-  if (longPressTimer) window.clearTimeout(longPressTimer)
-  longPressTimer = window.setTimeout(() => {
-    longPressTriggered = true
-    vibrate('tap')
-    openAiPicker()
-  }, 380) as unknown as number
-}
-
-function onAiPointerUp() {
-  if (longPressTimer) {
-    window.clearTimeout(longPressTimer)
-    longPressTimer = undefined
-  }
-}
-
-function onAiContextMenu(event: MouseEvent) {
-  event.preventDefault()
-  openAiPicker()
-}
-
-function onAiClick() {
-  if (longPressTriggered) {
-    longPressTriggered = false
-    return
-  }
-  if (inlineRewrite.isStreaming.value) {
-    abortAiRewrite()
-  } else {
-    startAiRewrite()
-  }
-}
-
-function onPickerOutside(event: PointerEvent) {
-  const t = event.target as Node | null
-  if (!aiPickerOpen.value) return
-  if (t && aiAnchorRef.value?.contains(t)) return
-  const picker = document.getElementById('cd-ai-picker-portal')
-  if (picker && t && picker.contains(t)) return
-  aiPickerOpen.value = false
-}
-
-watch(aiPickerOpen, (open) => {
-  if (typeof window === 'undefined') return
-  if (open) window.addEventListener('pointerdown', onPickerOutside)
-  else window.removeEventListener('pointerdown', onPickerOutside)
-})
 
 function handleEnhanceResult(result: EnhanceResult) {
   isMagicPulsing.value = true
@@ -528,11 +422,11 @@ defineExpose({ focusInput })
         :phase="aiRewriteState.phase"
         :model-id="aiRewriteState.modelId"
         :elapsed-ms="aiRewriteState.elapsedMs"
-        :tools-used="aiRewriteState.tools.length"
+        :done-elapsed-ms="aiRewriteState.doneElapsedMs"
+        :tool-call-count="aiRewriteState.toolCallCount"
         :error-message="aiRewriteState.errorMessage"
         :error-code="aiRewriteState.errorCode"
         variant="mobile"
-        @apply="applyAiResult"
         @revert="revertAiResult"
         @retry="retryAiRewrite"
         @abort="abortAiRewrite"
@@ -604,7 +498,7 @@ defineExpose({ focusInput })
       <div class="chat-dock__shell" :class="{ 'is-focused': focused, 'is-pulsing': isMagicPulsing, 'is-ai-streaming': inlineRewrite.isStreaming.value }">
         <textarea
           ref="textareaRef"
-          v-model="displayedPrompt"
+          v-model="prompt"
           rows="1"
           :placeholder="inputPlaceholder"
           class="chat-dock__textarea"
@@ -655,6 +549,61 @@ defineExpose({ focusInput })
 
             <button
               type="button"
+              class="chat-dock__chip chat-dock__chip--ai"
+              :class="{
+                'is-busy': inlineRewrite.isStreaming.value,
+                'is-muted': !promptHasContent && !inlineRewrite.isStreaming.value,
+              }"
+              :disabled="!promptHasContent && !inlineRewrite.isStreaming.value"
+              :aria-label="inlineRewrite.isStreaming.value
+                ? '正在 AI 改写，点击取消'
+                : (promptHasContent ? 'AI 改写提示词' : '先写下至少 4 个字，再用 AI 改写')"
+              @click.stop="inlineRewrite.isStreaming.value ? abortAiRewrite() : startAiRewrite()"
+            >
+              <Icon
+                :name="inlineRewrite.isStreaming.value ? 'close' : 'sparkle'"
+                :size="13"
+              />
+              <span class="chat-dock__chip-label">
+                {{ inlineRewrite.isStreaming.value ? '取消' : 'AI 改写' }}
+              </span>
+            </button>
+
+            <div class="chat-dock__chip-wrap">
+              <button
+                type="button"
+                class="chat-dock__chip chat-dock__chip--magic"
+                :class="{
+                  'is-open': magicMenuOpen,
+                  'is-muted': !promptHasContent,
+                }"
+                :disabled="!promptHasContent"
+                :aria-label="promptHasContent ? '深度优化提示词' : '先写下至少 4 个字，再深度优化'"
+                :aria-expanded="magicMenuOpen"
+                @click.stop="magicEnhance"
+              >
+                <Icon name="sliders" :size="13" />
+                <span class="chat-dock__chip-label">深度</span>
+              </button>
+              <MagicEnhanceMenu
+                v-if="magicMenuOpen"
+                :prompt="prompt"
+                :image-style="props.currentStyle"
+                :has-reference-images="hasReferenceImages"
+                :size="props.size"
+                :quality="props.quality"
+                :model-name="props.modelName"
+                :context="props.promptContext ?? null"
+                compact
+                @enhance="handleEnhanceResult"
+                @ab-test="handleAbTest"
+                @update-prompt="(value: string) => { prompt = value }"
+                @close="magicMenuOpen = false"
+              />
+            </div>
+
+            <button
+              type="button"
               class="chat-dock__chip"
               :aria-label="`当前风格：${currentStyleMeta.label}，点击更换`"
               @click.stop="emit('open-style-sheet')"
@@ -677,105 +626,6 @@ defineExpose({ focusInput })
                 {{ hasReferenceImages ? `参考 ${props.referenceImages.length}` : '参考图' }}
               </span>
             </button>
-
-            <button
-              v-if="promptCount > 0"
-              ref="aiAnchorRef"
-              type="button"
-              class="chat-dock__chip chat-dock__chip--ai"
-              :class="{
-                'is-busy': inlineRewrite.isStreaming.value,
-                'is-picker-open': aiPickerOpen,
-              }"
-              :aria-label="inlineRewrite.isStreaming.value ? '正在 AI 改写，点击取消' : `让 ${REWRITE_MODELS[aiRewriteState.modelId].label} 改写提示词。长按可切换模型。`"
-              :aria-haspopup="!inlineRewrite.isStreaming.value ? 'menu' : undefined"
-              :aria-expanded="aiPickerOpen ? 'true' : 'false'"
-              @click.stop="onAiClick"
-              @pointerdown="onAiPointerDown"
-              @pointerup="onAiPointerUp"
-              @pointercancel="onAiPointerUp"
-              @pointerleave="onAiPointerUp"
-              @contextmenu="onAiContextMenu"
-            >
-              <Icon
-                :name="inlineRewrite.isStreaming.value ? 'close' : 'sparkle'"
-                :size="13"
-              />
-              <span class="chat-dock__chip-label">
-                {{ inlineRewrite.isStreaming.value ? '取消' : 'AI 优化' }}
-              </span>
-              <span
-                v-if="!inlineRewrite.isStreaming.value"
-                class="chat-dock__chip-tag"
-                aria-hidden="true"
-              >{{ REWRITE_MODELS[aiRewriteState.modelId].label }}</span>
-            </button>
-            <Teleport to="body">
-              <Transition name="dock-fade">
-                <div
-                  v-if="aiPickerOpen && !inlineRewrite.isStreaming.value && aiPickerPosition"
-                  id="cd-ai-picker-portal"
-                  class="chat-dock__ai-picker"
-                  role="menu"
-                  aria-label="选择 AI 改写模型"
-                  :style="{
-                    top: 'auto',
-                    bottom: `calc(100vh - ${aiPickerPosition.top}px)`,
-                    right: `${aiPickerPosition.right}px`,
-                    left: 'auto',
-                  }"
-                  @click.stop
-                >
-                  <p class="chat-dock__ai-picker-title">
-                    <span>选择 AI 改写模型</span>
-                    <small>项目方赞助 · 你不用付钱</small>
-                  </p>
-                  <button
-                    v-for="m in REWRITE_MODEL_LIST"
-                    :key="m.id"
-                    type="button"
-                    role="menuitemradio"
-                    class="chat-dock__ai-pick"
-                    :class="{ 'is-active': aiRewriteState.modelId === m.id }"
-                    :aria-checked="aiRewriteState.modelId === m.id"
-                    @click="pickAiModel(m.id)"
-                  >
-                    <span class="chat-dock__ai-pick-name">{{ m.label }}</span>
-                    <span class="chat-dock__ai-pick-tag">{{ m.tagline }}</span>
-                    <span class="chat-dock__ai-pick-time">{{ m.expectedSeconds[0] }}–{{ m.expectedSeconds[1] }}s</span>
-                  </button>
-                </div>
-              </Transition>
-            </Teleport>
-
-            <div v-if="promptCount > 0" class="chat-dock__chip-wrap">
-              <button
-                type="button"
-                class="chat-dock__chip chat-dock__chip--magic"
-                :class="{ 'is-open': magicMenuOpen }"
-                aria-label="智能优化提示词"
-                :aria-expanded="magicMenuOpen"
-                @click.stop="magicEnhance"
-              >
-                <Icon name="sparkle" :size="13" />
-                <span class="chat-dock__chip-label">优化</span>
-              </button>
-              <MagicEnhanceMenu
-                v-if="magicMenuOpen"
-                :prompt="prompt"
-                :image-style="props.currentStyle"
-                :has-reference-images="hasReferenceImages"
-                :size="props.size"
-                :quality="props.quality"
-                :model-name="props.modelName"
-                :context="props.promptContext ?? null"
-                compact
-                @enhance="handleEnhanceResult"
-                @ab-test="handleAbTest"
-                @update-prompt="(value: string) => { prompt = value }"
-                @close="magicMenuOpen = false"
-              />
-            </div>
 
             <button
               v-if="props.canUndoEnhance"
@@ -1337,6 +1187,14 @@ defineExpose({ focusInput })
   cursor: not-allowed;
 }
 
+.chat-dock__chip.is-muted {
+  opacity: 0.6;
+}
+
+.chat-dock__chip.is-muted:disabled {
+  cursor: default;
+}
+
 .chat-dock__chip-label {
   white-space: nowrap;
   max-width: 8rem;
@@ -1362,6 +1220,13 @@ defineExpose({ focusInput })
   font-weight: 600;
 }
 
+.chat-dock__chip--magic.is-muted {
+  background: rgb(var(--color-ivory) / 0.7);
+  border-color: rgb(var(--color-line-strong));
+  color: rgb(var(--color-muted));
+  font-weight: 500;
+}
+
 .chat-dock__chip--magic.is-open {
   background: rgb(var(--color-ink));
   border-color: rgb(var(--color-ink));
@@ -1379,6 +1244,13 @@ defineExpose({ focusInput })
   font-weight: 700;
   user-select: none;
   -webkit-user-select: none;
+}
+
+.chat-dock__chip--ai.is-muted {
+  background: rgb(var(--color-ivory) / 0.7);
+  border-color: rgb(var(--color-line-strong));
+  color: rgb(var(--color-muted));
+  font-weight: 500;
 }
 
 .chat-dock__chip--ai:hover {
@@ -1399,128 +1271,6 @@ defineExpose({ focusInput })
 @keyframes ai-chip-pulse {
   0%, 100% { box-shadow: 0 0 0 0 rgb(var(--color-ochre) / 0.32); }
   50% { box-shadow: 0 0 0 6px rgb(var(--color-ochre) / 0); }
-}
-
-.chat-dock__chip-tag {
-  display: inline-flex;
-  align-items: center;
-  margin-left: 4px;
-  padding: 0 6px;
-  height: 16px;
-  border-radius: 999px;
-  background: rgb(var(--color-paper) / 0.62);
-  color: rgb(var(--color-ochre));
-  font-family: 'JetBrains Mono', ui-monospace, monospace;
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  border: 1px solid rgb(var(--color-ochre) / 0.32);
-}
-
-.chat-dock__chip--ai.is-busy .chat-dock__chip-tag,
-.chat-dock__chip--ai.is-picker-open .chat-dock__chip-tag {
-  background: rgb(var(--color-paper) / 0.16);
-  color: rgb(var(--color-paper));
-  border-color: rgb(var(--color-paper) / 0.3);
-}
-
-/* ── AI 模型选择浮层 —— 用 Teleport 到 body，绝对定位 ── */
-
-.chat-dock__ai-picker {
-  position: fixed;
-  z-index: 200;
-  min-width: 220px;
-  max-width: min(280px, calc(100vw - 16px));
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 8px 6px 6px;
-  border-radius: 14px;
-  border: 1px solid rgb(var(--color-line-strong) / 0.7);
-  background: rgb(var(--color-paper));
-  box-shadow:
-    0 24px 40px -22px rgb(var(--color-ink) / 0.45),
-    0 8px 16px -10px rgb(var(--color-ink) / 0.22);
-}
-
-.chat-dock__ai-picker-title {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  margin: 0 0 4px;
-  padding: 0 8px;
-  font-family: 'JetBrains Mono', ui-monospace, monospace;
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: rgb(var(--color-muted));
-}
-
-.chat-dock__ai-picker-title small {
-  font-family: 'IBM Plex Sans', system-ui, sans-serif;
-  font-size: 9px;
-  font-weight: 540;
-  letter-spacing: 0.02em;
-  color: rgb(var(--color-forest));
-  text-transform: none;
-  white-space: nowrap;
-}
-
-.chat-dock__ai-pick {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 6px 10px;
-  padding: 9px 10px;
-  border: 0;
-  border-radius: 10px;
-  background: transparent;
-  color: rgb(var(--color-ink));
-  font-size: 13px;
-  text-align: left;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  transition: background-color 140ms var(--motion-soft);
-}
-
-.chat-dock__ai-pick-name {
-  font-family: 'Fraunces', 'IBM Plex Sans', system-ui, serif;
-  font-weight: 700;
-  letter-spacing: -0.005em;
-}
-
-.chat-dock__ai-pick-tag {
-  grid-column: 1;
-  font-size: 10.5px;
-  font-weight: 540;
-  color: rgb(var(--color-muted));
-  letter-spacing: 0.02em;
-}
-
-.chat-dock__ai-pick-time {
-  grid-column: 2;
-  grid-row: 1 / span 2;
-  align-self: center;
-  font-family: 'JetBrains Mono', ui-monospace, monospace;
-  font-size: 10px;
-  color: rgb(var(--color-muted));
-  white-space: nowrap;
-}
-
-.chat-dock__ai-pick:hover {
-  background: rgb(var(--color-paper-soft));
-}
-
-.chat-dock__ai-pick.is-active {
-  background: rgb(var(--color-ink));
-  color: rgb(var(--color-paper));
-}
-
-.chat-dock__ai-pick.is-active .chat-dock__ai-pick-tag,
-.chat-dock__ai-pick.is-active .chat-dock__ai-pick-time {
-  color: rgb(var(--color-paper) / 0.72);
 }
 
 /* ── 流式中：textarea 边缘流光 ── */
@@ -1646,15 +1396,21 @@ defineExpose({ focusInput })
 
   .chat-dock__chip {
     padding: 0 9px;
+    gap: 4px;
   }
 
-  .chat-dock__chip--undo .chat-dock__chip-label,
-  .chat-dock__chip--magic .chat-dock__chip-label {
+  /* AI 改写 / 深度是关键入口，必须保留文字 */
+  .chat-dock__chip--undo .chat-dock__chip-label {
     display: none;
   }
 
+  .chat-dock__chip--ai .chat-dock__chip-label,
+  .chat-dock__chip--magic .chat-dock__chip-label {
+    max-width: none;
+  }
+
   .chat-dock__model-chip :deep(.select-trigger) {
-    max-width: clamp(5rem, 28vw, 8rem);
+    max-width: clamp(4.5rem, 22vw, 7rem);
   }
 }
 

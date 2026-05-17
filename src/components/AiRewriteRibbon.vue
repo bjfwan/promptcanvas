@@ -1,33 +1,29 @@
 <script setup lang="ts">
 /**
- * AI 改写状态条 —— 浮在 textarea 之下/dock 之上的轻量 ribbon。
+ * AI 改写状态条 —— textarea 下方贴一条轻量提示。
  *
- * 状态机：
- *   idle      → 不渲染
- *   analyzing → "正在分析画面 · 已调用 N 个工具" + 旋转点 + 取消
- *   streaming → "落笔中 · X.Xs" + 旋转点 + 取消
- *   done      → "✓ 已优化 · X.Xs · 应用 / 还原 / 再来一次 · 模型切换"
- *   error     → 红色 inline 错误 + 重试
- *   aborted   → 灰色 "已取消，原文已保留" + 还原
+ * 设计原则：
+ *  - 改写完成后 textarea 已经是最终值（composable 直接写）。
+ *    ribbon 不需要"应用"按钮，只是个状态/操作的轻量提示。
+ *  - 状态机：idle / analyzing / streaming / done / error / aborted
+ *  - done / aborted 8 秒后由 composable 自动 reset，ribbon 自然消失。
+ *  - error 不自动消失，等用户处理。
  *
- * 移动端：贴 dock 顶部全宽；桌面：贴 textarea 下沿、最大宽度自适应。
+ * 移动 / 桌面共用一个组件，仅 variant 控制贴 dock 还是贴 textarea。
  */
 import { computed } from 'vue'
 import Icon from './Icon.vue'
-import {
-  REWRITE_MODEL_LIST,
-  REWRITE_MODELS,
-  type RewriteModelId,
-} from '../lib/rewriteService'
+import type { RewriteModelId } from '../lib/rewriteService'
+import { REWRITE_MODELS } from '../lib/rewriteService'
 
 interface Props {
   phase: 'idle' | 'analyzing' | 'streaming' | 'done' | 'error' | 'aborted'
   modelId: RewriteModelId
   elapsedMs: number
-  toolsUsed: number
+  doneElapsedMs: number
+  toolCallCount: number
   errorMessage?: string
   errorCode?: string
-  /** 移动端贴 dock 顶；桌面贴 textarea 下 */
   variant?: 'desktop' | 'mobile'
 }
 
@@ -37,26 +33,32 @@ const props = withDefaults(defineProps<Props>(), {
   variant: 'desktop',
 })
 
-const emit = defineEmits<{
-  (e: 'apply'): void
+defineEmits<{
   (e: 'revert'): void
   (e: 'retry'): void
   (e: 'abort'): void
   (e: 'dismiss'): void
-  (e: 'select-model', id: RewriteModelId): void
 }>()
 
-const elapsedSeconds = computed(() => (props.elapsedMs / 1000).toFixed(1))
+const elapsedSeconds = computed(() => {
+  // done 阶段定格用 doneElapsedMs，进行中用实时 elapsedMs
+  if (props.phase === 'done') return (props.doneElapsedMs / 1000).toFixed(1)
+  return (props.elapsedMs / 1000).toFixed(1)
+})
 const currentModel = computed(() => REWRITE_MODELS[props.modelId])
 
 const visible = computed(() => props.phase !== 'idle')
 const isBusy = computed(() => props.phase === 'analyzing' || props.phase === 'streaming')
 const phaseLabel = computed(() => {
-  if (props.phase === 'analyzing') return '正在分析画面'
+  if (props.phase === 'analyzing') {
+    return props.toolCallCount > 0
+      ? `正在分析 · ${props.toolCallCount} 个工具`
+      : '正在分析'
+  }
   if (props.phase === 'streaming') return '落笔中'
   if (props.phase === 'done') return '已优化'
   if (props.phase === 'aborted') return '已取消'
-  if (props.phase === 'error') return '改写失败'
+  if (props.phase === 'error') return props.errorMessage || '改写失败'
   return ''
 })
 </script>
@@ -74,7 +76,7 @@ const phaseLabel = computed(() => {
       role="status"
       aria-live="polite"
     >
-      <!-- 进行中：分析 / 落笔 -->
+      <!-- 进行中：旋转点 + 阶段文案 + 取消 -->
       <template v-if="isBusy">
         <span class="ribbon__spinner" aria-hidden="true">
           <span></span><span></span><span></span>
@@ -85,25 +87,21 @@ const phaseLabel = computed(() => {
             <span class="ribbon__model-pill">{{ currentModel.label }}</span>
             <span class="ribbon__sep">·</span>
             <span class="ribbon__time">{{ elapsedSeconds }}s</span>
-            <template v-if="phase === 'analyzing' && toolsUsed > 0">
-              <span class="ribbon__sep">·</span>
-              <span>{{ toolsUsed }} 个工具</span>
-            </template>
           </span>
         </span>
-        <button type="button" class="ribbon__btn ribbon__btn--ghost" @click="emit('abort')">
+        <button type="button" class="ribbon__btn ribbon__btn--ghost" @click="$emit('abort')">
           <Icon name="close" :size="11" />
           <span>取消</span>
         </button>
       </template>
 
-      <!-- 完成 -->
+      <!-- 完成：✓ + 还原 / 再来 -->
       <template v-else-if="phase === 'done'">
         <span class="ribbon__check" aria-hidden="true">
           <Icon name="check" :size="12" />
         </span>
         <span class="ribbon__text">
-          <span class="ribbon__title">已优化</span>
+          <span class="ribbon__title">{{ phaseLabel }}</span>
           <span class="ribbon__sub">
             <span class="ribbon__model-pill">{{ currentModel.label }}</span>
             <span class="ribbon__sep">·</span>
@@ -111,15 +109,11 @@ const phaseLabel = computed(() => {
           </span>
         </span>
         <span class="ribbon__actions">
-          <button type="button" class="ribbon__btn ribbon__btn--primary" @click="emit('apply')">
-            <Icon name="check" :size="11" />
-            <span>应用</span>
-          </button>
-          <button type="button" class="ribbon__btn ribbon__btn--ghost" @click="emit('revert')">
+          <button type="button" class="ribbon__btn ribbon__btn--ghost" @click="$emit('revert')">
             <Icon name="reset" :size="11" />
             <span>还原</span>
           </button>
-          <button type="button" class="ribbon__btn ribbon__btn--ghost" @click="emit('retry')">
+          <button type="button" class="ribbon__btn ribbon__btn--ghost" @click="$emit('retry')">
             <Icon name="refresh" :size="11" />
             <span>再来</span>
           </button>
@@ -132,36 +126,27 @@ const phaseLabel = computed(() => {
           <Icon name="warning" :size="11" />
         </span>
         <span class="ribbon__text">
-          <span class="ribbon__title">{{ errorMessage || '改写失败' }}</span>
-          <span class="ribbon__sub">
-            <span class="ribbon__model-pill">{{ currentModel.label }}</span>
-          </span>
+          <span class="ribbon__title">{{ phaseLabel }}</span>
         </span>
         <span class="ribbon__actions">
-          <button type="button" class="ribbon__btn ribbon__btn--primary" @click="emit('retry')">
+          <button type="button" class="ribbon__btn ribbon__btn--primary" @click="$emit('retry')">
             <Icon name="refresh" :size="11" />
             <span>重试</span>
           </button>
-          <button type="button" class="ribbon__btn ribbon__btn--ghost" @click="emit('dismiss')">
+          <button type="button" class="ribbon__btn ribbon__btn--ghost" @click="$emit('dismiss')">
             <Icon name="close" :size="11" />
             <span>关闭</span>
           </button>
         </span>
       </template>
 
-      <!-- 取消后 -->
+      <!-- 取消后短暂显示 -->
       <template v-else-if="phase === 'aborted'">
         <span class="ribbon__icon-mute" aria-hidden="true">
           <Icon name="info" :size="11" />
         </span>
         <span class="ribbon__text">
           <span class="ribbon__title">已取消，原文已保留</span>
-        </span>
-        <span class="ribbon__actions">
-          <button type="button" class="ribbon__btn ribbon__btn--ghost" @click="emit('dismiss')">
-            <Icon name="close" :size="11" />
-            <span>关闭</span>
-          </button>
         </span>
       </template>
     </div>
@@ -190,7 +175,6 @@ const phaseLabel = computed(() => {
 
 .ribbon--mobile {
   margin: 0 6px 6px;
-  border-radius: 14px;
 }
 
 .ribbon--phase-error {
@@ -230,9 +214,7 @@ const phaseLabel = computed(() => {
   letter-spacing: 0.02em;
 }
 
-.ribbon__sep {
-  opacity: 0.5;
-}
+.ribbon__sep { opacity: 0.5; }
 
 .ribbon__model-pill {
   display: inline-flex;
@@ -245,11 +227,7 @@ const phaseLabel = computed(() => {
   font-weight: 700;
 }
 
-.ribbon__time {
-  white-space: nowrap;
-}
-
-/* ── 旋转点：墨水落下感 ── */
+.ribbon__time { white-space: nowrap; }
 
 .ribbon__spinner {
   position: relative;
@@ -278,30 +256,6 @@ const phaseLabel = computed(() => {
   0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
   40% { transform: translateY(-4px); opacity: 1; }
 }
-
-.ribbon--busy .ribbon__title {
-  color: rgb(var(--color-ink));
-  position: relative;
-}
-
-.ribbon--busy .ribbon__title::after {
-  content: '';
-  display: inline-block;
-  vertical-align: -1px;
-  margin-left: 4px;
-  width: 6px;
-  height: 1.1em;
-  background: rgb(var(--color-ink));
-  animation: ribbon-cursor 0.95s steps(1) infinite;
-  opacity: 0.55;
-}
-
-@keyframes ribbon-cursor {
-  0%, 50% { opacity: 0.55; }
-  51%, 100% { opacity: 0; }
-}
-
-/* ── ✓ 完成 ── */
 
 .ribbon__check {
   display: inline-grid;
@@ -337,8 +291,6 @@ const phaseLabel = computed(() => {
   color: rgb(var(--color-muted));
 }
 
-/* ── 操作按钮 ── */
-
 .ribbon__actions {
   display: inline-flex;
   align-items: center;
@@ -369,7 +321,6 @@ const phaseLabel = computed(() => {
 }
 
 .ribbon__btn::before {
-  /* 触摸命中扩展，移动端贴合拇指 */
   content: '';
   position: absolute;
   inset: -6px;
@@ -384,9 +335,7 @@ const phaseLabel = computed(() => {
   color: rgb(var(--color-paper));
 }
 
-.ribbon__btn--primary:hover {
-  background: rgb(var(--color-ink) / 0.92);
-}
+.ribbon__btn--primary:hover { background: rgb(var(--color-ink) / 0.92); }
 
 .ribbon__btn--ghost {
   background: transparent;
@@ -400,8 +349,6 @@ const phaseLabel = computed(() => {
   background: rgb(var(--color-paper-soft));
 }
 
-/* ── transitions ── */
-
 .ribbon-enter-from,
 .ribbon-leave-to {
   opacity: 0;
@@ -413,8 +360,6 @@ const phaseLabel = computed(() => {
   transition: opacity 200ms var(--motion-soft), transform 200ms var(--motion-soft);
 }
 
-/* ── 移动端紧凑 ── */
-
 @media (max-width: 480px) {
   .ribbon {
     gap: 0.55rem;
@@ -422,44 +367,16 @@ const phaseLabel = computed(() => {
     font-size: 12px;
   }
 
-  .ribbon__btn span {
-    /* 在窄屏只保留图标 + 图标级触觉点击 */
-    display: none;
-  }
+  /* 移动端只保留主按钮文字 + ghost 按钮文字（再来 / 还原），其它图标足够 */
+  .ribbon__btn span { display: inline; }
 
-  .ribbon__btn {
-    width: 32px;
-    height: 32px;
-    padding: 0;
-    justify-content: center;
-  }
-
-  .ribbon__btn--primary {
-    width: auto;
-    padding: 0 0.7rem;
-  }
-
-  .ribbon__btn--primary span {
-    display: inline;
-  }
-
-  .ribbon__title {
-    font-size: 12px;
-  }
-
-  .ribbon__sub {
-    font-size: 10px;
-  }
-
-  .ribbon__model-pill {
-    font-size: 10px;
-    padding: 1px 6px;
-  }
+  .ribbon__title { font-size: 12px; }
+  .ribbon__sub { font-size: 10px; }
+  .ribbon__model-pill { font-size: 10px; padding: 1px 6px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .ribbon__spinner span,
-  .ribbon--busy .ribbon__title::after,
   .ribbon-enter-active,
   .ribbon-leave-active {
     animation: none;
