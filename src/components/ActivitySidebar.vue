@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import Icon from './Icon.vue'
 import { resolveImageSource } from '../api'
 import type { GenerationHistoryItem } from '../types'
@@ -24,9 +24,33 @@ const emit = defineEmits<{
   (e: 'open-history'): void
   (e: 'view-image', item: GenerationHistoryItem): void
   (e: 'copy', text: string, message: string): void
+  (e: 'preview', item: GenerationHistoryItem): void
+  (e: 'copy-prompt', item: GenerationHistoryItem): void
+  (e: 'reuse-params', item: GenerationHistoryItem): void
+  (e: 'remix', item: GenerationHistoryItem): void
+  (e: 'regenerate', item: GenerationHistoryItem): void
 }>()
 
 const recent = computed(() => props.history.slice(0, 6))
+
+// 单击卡片展开详情，不再直接覆写当前工作。
+const expandedId = ref<string>('')
+
+function toggleExpand(item: GenerationHistoryItem) {
+  expandedId.value = expandedId.value === item.id ? '' : item.id
+}
+
+function hasPreviewableImage(item: GenerationHistoryItem) {
+  return !!(item.images && item.images.length && resolveImageSource(item.images[0]))
+}
+
+// 列表变化（如新生成）时收起展开，避免错位。
+watch(
+  () => props.history.map((item) => item.id).join('|'),
+  () => {
+    expandedId.value = ''
+  },
+)
 
 function formatTime(value: string) {
   try {
@@ -78,49 +102,125 @@ function previewSrc(item: GenerationHistoryItem): string {
           v-for="(item, index) in recent"
           :key="item.id"
           class="activity-sidebar__item"
-          :class="{ 'activity-sidebar__item--active': selectedRequestId && selectedRequestId === item.requestId }"
+          :class="{
+            'activity-sidebar__item--active': selectedRequestId && selectedRequestId === item.requestId,
+            'activity-sidebar__item--expanded': expandedId === item.id,
+          }"
         >
           <span class="activity-sidebar__rail" aria-hidden="true">
             <span class="activity-sidebar__node" :data-index="index"></span>
           </span>
 
-          <button
-            type="button"
-            class="activity-sidebar__card"
-            :aria-label="`恢复历史：${item.prompt.slice(0, 40)}`"
-            @click="emit('restore', item)"
-          >
-            <span class="activity-sidebar__thumb" aria-hidden="true">
-              <img
-                v-if="previewSrc(item)"
-                :src="previewSrc(item)"
-                alt=""
-                loading="lazy"
-                decoding="async"
-              />
-              <span v-else class="activity-sidebar__thumb-fallback">
-                <Icon name="frame" :size="14" />
+          <div class="activity-sidebar__cell">
+            <button
+              type="button"
+              class="activity-sidebar__card"
+              :aria-label="`查看历史详情：${item.prompt.slice(0, 40)}`"
+              :aria-expanded="expandedId === item.id"
+              @click="toggleExpand(item)"
+            >
+              <span class="activity-sidebar__thumb" aria-hidden="true">
+                <img
+                  v-if="previewSrc(item)"
+                  :src="previewSrc(item)"
+                  alt=""
+                  loading="lazy"
+                  decoding="async"
+                />
+                <span v-else class="activity-sidebar__thumb-fallback">
+                  <Icon name="frame" :size="14" />
+                </span>
+                <span v-if="item.imageCount > 1" class="activity-sidebar__thumb-count">×{{ item.imageCount }}</span>
               </span>
-              <span v-if="item.imageCount > 1" class="activity-sidebar__thumb-count">×{{ item.imageCount }}</span>
-            </span>
-            <span class="min-w-0 flex-1">
-              <span class="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-muted">
-                <span>{{ formatTime(item.createdAt) }}</span>
-                <span class="text-line">·</span>
-                <span>{{ item.size }}</span>
-                <span v-if="item.referenceImageCount" class="text-line">·</span>
-                <span v-if="item.referenceImageCount" class="text-forest">参考</span>
+              <span class="min-w-0 flex-1">
+                <span class="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-muted">
+                  <span>{{ formatTime(item.createdAt) }}</span>
+                  <span class="text-line">·</span>
+                  <span>{{ item.size }}</span>
+                  <span v-if="item.referenceImageCount" class="text-line">·</span>
+                  <span v-if="item.referenceImageCount" class="text-forest">参考</span>
+                  <Icon
+                    name="chevronDown"
+                    :size="11"
+                    class="activity-sidebar__chevron ml-auto"
+                    aria-hidden="true"
+                  />
+                </span>
+                <span class="activity-sidebar__prompt">{{ item.prompt }}</span>
               </span>
-              <span class="activity-sidebar__prompt">{{ item.prompt }}</span>
-            </span>
-          </button>
+            </button>
+
+            <div
+              v-if="expandedId === item.id"
+              class="activity-sidebar__actions"
+              role="group"
+              aria-label="历史操作"
+            >
+              <button
+                v-if="hasPreviewableImage(item)"
+                type="button"
+                class="activity-sidebar__chip"
+                aria-label="预览这张生成"
+                @click.stop="emit('preview', item)"
+              >
+                <Icon name="search" :size="11" />
+                <span>预览</span>
+              </button>
+              <button
+                type="button"
+                class="activity-sidebar__chip"
+                aria-label="复制提示词到剪贴板"
+                @click.stop="emit('copy-prompt', item)"
+              >
+                <Icon name="copy" :size="11" />
+                <span>复制提示词</span>
+              </button>
+              <button
+                type="button"
+                class="activity-sidebar__chip"
+                aria-label="只套用参数（风格、尺寸、模型），不改提示词"
+                @click.stop="emit('reuse-params', item)"
+              >
+                <Icon name="settings" :size="11" />
+                <span>套用参数</span>
+              </button>
+              <button
+                v-if="hasPreviewableImage(item)"
+                type="button"
+                class="activity-sidebar__chip"
+                aria-label="基于这张图接着画"
+                @click.stop="emit('remix', item)"
+              >
+                <Icon name="sparkle" :size="11" />
+                <span>接着画</span>
+              </button>
+              <button
+                type="button"
+                class="activity-sidebar__chip"
+                aria-label="恢复这条历史的全部参数与画布"
+                @click.stop="emit('restore', item)"
+              >
+                <Icon name="refresh" :size="11" />
+                <span>恢复到画布</span>
+              </button>
+              <button
+                type="button"
+                class="activity-sidebar__chip activity-sidebar__chip--primary"
+                aria-label="用这条历史的参数重新生成一次"
+                @click.stop="emit('regenerate', item)"
+              >
+                <Icon name="sparkle" :size="11" />
+                <span>重新生成</span>
+              </button>
+            </div>
+          </div>
         </li>
       </template>
 
       <li v-else-if="!isGenerating" class="activity-sidebar__empty">
         <Icon name="clock" :size="16" class="text-muted" />
         <p class="text-[11px] leading-snug text-muted">
-          完成生成后，最近 12 条会出现在这里，点击即可一键恢复参数。
+          完成生成后，最近 12 条会出现在这里，单击展开可预览、复制或重新生成。
         </p>
       </li>
     </ol>
@@ -209,6 +309,13 @@ function previewSrc(item: GenerationHistoryItem): string {
   align-items: stretch;
   gap: 0.45rem;
   padding-bottom: 0.4rem;
+}
+
+.activity-sidebar__cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  min-width: 0;
 }
 
 .activity-sidebar__rail {
@@ -336,6 +443,96 @@ function previewSrc(item: GenerationHistoryItem): string {
   margin-top: 0.5rem;
 }
 
+.activity-sidebar__chevron {
+  color: rgb(var(--color-muted));
+  transition: transform 180ms var(--motion-soft), color 160ms ease;
+  flex-shrink: 0;
+}
+
+.activity-sidebar__item--expanded .activity-sidebar__chevron {
+  transform: rotate(180deg);
+  color: rgb(var(--color-ink));
+}
+
+.activity-sidebar__item--expanded .activity-sidebar__card {
+  border-color: rgb(var(--color-line-strong));
+  background: rgb(var(--color-ivory) / 0.85);
+  box-shadow: var(--shadow-paper-1);
+}
+
+.activity-sidebar__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding: 0.55rem 0.6rem 0.6rem;
+  border-radius: 14px;
+  border: 1px solid rgb(var(--color-line));
+  border-top: 1px dashed rgb(var(--color-line) / 0.7);
+  background: rgb(var(--color-cream) / 0.55);
+  animation: activity-actions-in 220ms var(--motion-soft);
+}
+
+.activity-sidebar__chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 9px;
+  border-radius: 999px;
+  border: 1px solid rgb(var(--color-line));
+  background: rgb(var(--color-paper) / 0.7);
+  color: rgb(var(--color-ink));
+  font-size: 10.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background-color 140ms var(--motion-soft),
+    border-color 140ms var(--motion-soft),
+    color 140ms var(--motion-soft),
+    transform 140ms var(--motion-press);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.activity-sidebar__chip::before {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: inherit;
+}
+
+.activity-sidebar__chip:hover {
+  background: rgb(var(--color-vellum));
+  border-color: rgb(var(--color-line-strong));
+}
+
+.activity-sidebar__chip:active {
+  transform: scale(0.96);
+}
+
+.activity-sidebar__chip--primary {
+  margin-left: auto;
+  background: rgb(var(--color-ink));
+  border-color: rgb(var(--color-ink));
+  color: rgb(var(--color-paper));
+}
+
+.activity-sidebar__chip--primary:hover {
+  background: rgb(var(--color-ink) / 0.9);
+  border-color: rgb(var(--color-ink) / 0.9);
+}
+
+@keyframes activity-actions-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .activity-sidebar__prompt {
   display: block;
   margin-top: 4px;
@@ -386,9 +583,15 @@ function previewSrc(item: GenerationHistoryItem): string {
 
 @media (prefers-reduced-motion: reduce) {
   .activity-sidebar__live-dot,
-  .activity-sidebar__card {
+  .activity-sidebar__card,
+  .activity-sidebar__chip,
+  .activity-sidebar__chevron {
     animation: none;
     transition: none;
+  }
+
+  .activity-sidebar__actions {
+    animation: none;
   }
 }
 </style>

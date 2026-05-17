@@ -6,7 +6,18 @@ import { resolveImageSource } from '../api'
 import { useI18n } from '../lib/i18n'
 import { useShare } from '../composables/useShare'
 import { useToast } from '../composables/useToast'
-import type { GeneratedImage, ImageSize } from '../types'
+import {
+  computeProgress,
+  estimateTargetSeconds,
+  formatRemainingLabel,
+  stageLabelForProgress,
+} from '../lib/generationEta'
+import type {
+  GeneratedImage,
+  GenerationHistoryItem,
+  ImageQuality,
+  ImageSize,
+} from '../types'
 
 interface QuickPromptCard {
   title: string
@@ -25,6 +36,10 @@ interface Props {
   promptPreview: string
   hasPrompt: boolean
   modelLabel?: string
+  modelName?: string
+  quality?: ImageQuality
+  count?: number
+  history?: GenerationHistoryItem[]
   quickPrompts?: QuickPromptCard[]
   providerConfigured?: boolean
   canAcceptDrop?: boolean
@@ -33,6 +48,10 @@ interface Props {
 const props = withDefaults(defineProps<Props>(), {
   providerConfigured: true,
   canAcceptDrop: true,
+  modelName: '',
+  quality: 'auto',
+  count: 1,
+  history: () => [] as GenerationHistoryItem[],
 })
 
 const emit = defineEmits<{
@@ -133,33 +152,30 @@ function handleDrop(event: DragEvent) {
   }
 }
 
+const canvasEta = computed(() =>
+  estimateTargetSeconds(
+    {
+      size: props.size,
+      quality: props.quality,
+      count: props.count,
+      model: props.modelName,
+    },
+    props.history,
+  ),
+)
+
 const canvasProgress = computed(() => {
-  const elapsed = Math.max(0, props.elapsedSeconds)
-  if (elapsed <= 0) return 6
-  if (elapsed < 8) return Math.round(6 + elapsed * 6.5)
-  if (elapsed < 22) return Math.round(58 + (elapsed - 8) * 2.1)
-  return Math.min(96, Math.round(88 + (1 - Math.exp(-(elapsed - 22) / 14)) * 8))
-})
-const canvasStageLabel = computed(() => {
-  if (canvasProgress.value < 26) return '拆解提示词'
-  if (canvasProgress.value < 58) return '组织构图'
-  if (canvasProgress.value < 84) return '生成细节'
-  return '等待返回'
+  if (!props.isGenerating) return 0
+  return computeProgress(props.elapsedSeconds, canvasEta.value.targetSeconds)
 })
 
-const canvasEstimatedDuration = computed(() => {
-  let seconds = 11
-  if (props.size !== '1024x1024') seconds += 2
-  return Math.max(8, seconds)
-})
-const canvasRemainingLabel = computed(() => {
-  const elapsed = Math.max(0, props.elapsedSeconds)
-  const target = canvasEstimatedDuration.value
-  const remain = Math.max(0, target - elapsed)
-  if (elapsed >= target) return '已超出预估，仍在等上游回包'
-  if (remain <= 1) return '即将出图'
-  return `约 ${remain}s`
-})
+const canvasStageLabel = computed(() => stageLabelForProgress(canvasProgress.value))
+
+const canvasRemainingLabel = computed(() =>
+  formatRemainingLabel(props.elapsedSeconds, canvasEta.value.targetSeconds, {
+    source: canvasEta.value.source,
+  }),
+)
 
 function imageSource(image: GeneratedImage) {
   return resolveImageSource(image)

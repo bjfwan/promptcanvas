@@ -1,4 +1,4 @@
-const VERSION = '0.1.0'
+const VERSION = '0.2.0'
 
 const HOP_BY_HOP = new Set([
   'host',
@@ -16,10 +16,12 @@ const FORBIDDEN_FORWARD = new Set([
   ...HOP_BY_HOP,
   'x-upstream-base',
   'x-pc-identity',
+  'x-pc-builtin',
   'origin',
   'referer',
   'cookie',
   'user-agent',
+  'authorization', // we replace this with the built-in key when X-Pc-Builtin is set
 ])
 
 const IDENTITY_PROFILES = {
@@ -29,6 +31,18 @@ const IDENTITY_PROFILES = {
     'x-title': 'Kilo Code',
   },
 }
+
+// Built-in AI rewrite credentials live ONLY here, in Worker env vars.
+// Frontend sends X-Pc-Builtin: 1 (no Authorization, no upstream base) and we
+// fill in everything from env. This way the project pays for AI rewrite and
+// no visitor ever sees the key.
+//
+// Required env vars when BUILTIN mode is used:
+//   PC_BUILTIN_BASE_URL   e.g. https://agentrouter.org/v1
+//   PC_BUILTIN_API_KEY    e.g. sk-...
+//   PC_BUILTIN_IDENTITY   optional, e.g. kilocode
+//
+// Without these vars, X-Pc-Builtin requests get 503 with a clear message.
 
 const BASE_CORS = {
   'access-control-allow-origin': '*',
@@ -54,7 +68,7 @@ function jsonError(status, code, message) {
 }
 
 export default {
-  async fetch(request) {
+  async fetch(request, env) {
     if (request.method === 'OPTIONS') {
       return new Response(null, { status: 204, headers: BASE_CORS })
     }
@@ -70,17 +84,44 @@ export default {
         name: 'promptcanvas-proxy',
         runtime: 'cloudflare-workers',
         version: VERSION,
+        builtinReady: Boolean(env?.PC_BUILTIN_BASE_URL && env?.PC_BUILTIN_API_KEY),
         timestamp: new Date().toISOString(),
       })
     }
 
-    const upstreamBase = request.headers.get('x-upstream-base')
-    if (!upstreamBase || !upstreamBase.trim()) {
-      return jsonError(
-        400,
-        'MISSING_UPSTREAM',
-        '请求头缺少 X-Upstream-Base，前端「设置」里填代理 URL 后会自动携带这个头',
-      )
+    // ── BUILTIN mode ──
+    // Frontend sets X-Pc-Builtin: 1 to use the project-paid AI rewrite key.
+    // We enforce this is ONLY for /chat/completions to limit blast radius.
+    const isBuiltin = (request.headers.get('x-pc-builtin') || '').trim() === '1'
+
+    let upstreamBase
+    if (isBuiltin) {
+      if (url.pathname !== '/chat/completions' && url.pathname !== '/v1/chat/completions') {
+        return jsonError(
+          403,
+          'BUILTIN_PATH_NOT_ALLOWED',
+          '内置改写凭据仅允许用于 /chat/completions',
+        )
+      }
+      const base = String(env?.PC_BUILTIN_BASE_URL || '').trim()
+      const key = String(env?.PC_BUILTIN_API_KEY || '').trim()
+      if (!base || !key) {
+        return jsonError(
+          503,
+          'BUILTIN_NOT_CONFIGURED',
+          '反代未配置内置改写凭据（PC_BUILTIN_BASE_URL / PC_BUILTIN_API_KEY）',
+        )
+      }
+      upstreamBase = base
+    } else {
+      upstreamBase = request.headers.get('x-upstream-base')
+      if (!upstreamBase || !upstreamBase.trim()) {
+        return jsonError(
+          400,
+          'MISSING_UPSTREAM',
+          '请求头缺少 X-Upstream-Base，前端「设置」里填代理 URL 后会自动携带这个头',
+        )
+      }
     }
 
     let upstreamUrl
@@ -104,11 +145,26 @@ export default {
         forwardHeaders.set(name, value)
       }
     }
-    const identityHint = (request.headers.get('x-pc-identity') || '').trim().toLowerCase()
-    const profile = identityHint && IDENTITY_PROFILES[identityHint]
-    if (profile) {
-      for (const [headerName, headerValue] of Object.entries(profile)) {
-        forwardHeaders.set(headerName, headerValue)
+
+    if (isBuiltin) {
+      // Replace Authorization with the env-stored key.
+      forwardHeaders.set('authorization', `Bearer ${String(env?.PC_BUILTIN_API_KEY || '').trim()}`)
+      // Apply identity from env if provided.
+      const builtinIdentity = String(env?.PC_BUILTIN_IDENTITY || '').trim().toLowerCase()
+      const builtinProfile = builtinIdentity && IDENTITY_PROFILES[builtinIdentity]
+      if (builtinProfile) {
+        for (const [headerName, headerValue] of Object.entries(builtinProfile)) {
+          forwardHeaders.set(headerName, headerValue)
+        }
+      }
+    } else {
+      // Caller-driven identity hint (still requires a profile to take effect).
+      const identityHint = (request.headers.get('x-pc-identity') || '').trim().toLowerCase()
+      const profile = identityHint && IDENTITY_PROFILES[identityHint]
+      if (profile) {
+        for (const [headerName, headerValue] of Object.entries(profile)) {
+          forwardHeaders.set(headerName, headerValue)
+        }
       }
     }
 

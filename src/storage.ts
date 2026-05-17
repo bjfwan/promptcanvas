@@ -403,8 +403,9 @@ export function rawApiKeyIsEncrypted(): boolean {
 const rewriteModelKey = 'promptcanvas:rewrite-model-v1'
 
 /**
- * AI 改写模型的偏好读写 —— 跟 theme 一样的轻量字符串持久化。
- * 仅存 RewriteModelId（'flash' | 'haiku'），不存任何敏感信息。
+ * AI 改写模型偏好的轻量字符串持久化。仅存模型 id（如 'flash' / 'haiku'），
+ * 不存任何敏感信息。改写凭据写死在反代环境变量里，访客不需要、也不应该
+ * 知道；这里只是记住"上次用哪个"。
  */
 export function loadRewriteModelChoice(): string {
   try {
@@ -418,5 +419,27 @@ export function saveRewriteModelChoice(value: string) {
   try {
     if (value) localStorage.setItem(rewriteModelKey, value)
     else localStorage.removeItem(rewriteModelKey)
+  } catch {}
+}
+
+const rewriteCustomInstructionKey = 'promptcanvas:rewrite-instruction-v1'
+
+/**
+ * 用户自定义的"AI 改写补充指令"——会拼到 system prompt 末尾。
+ * 让喜欢"奶油色调 / 35mm 纪实"风格的用户固化偏好。
+ */
+export function loadRewriteCustomInstruction(): string {
+  try {
+    return localStorage.getItem(rewriteCustomInstructionKey) || ''
+  } catch {
+    return ''
+  }
+}
+
+export function saveRewriteCustomInstruction(value: string) {
+  try {
+    const trimmed = value.trim()
+    if (trimmed) localStorage.setItem(rewriteCustomInstructionKey, trimmed)
+    else localStorage.removeItem(rewriteCustomInstructionKey)
   } catch {}
 }

@@ -9,6 +9,7 @@ import { useFocusTrap } from '../composables/useFocusTrap'
 import { useBodyLock } from '../composables/useBodyLock'
 import { ApiRequestError, testProvider } from '../api'
 import { loadBrandKit, saveBrandKit, brandKitHasContent } from '../lib/brandKit'
+import { loadRewriteCustomInstruction, saveRewriteCustomInstruction } from '../storage'
 import {
   loadLearnedPreference,
   summarizeLearnedPreference,
@@ -54,6 +55,12 @@ const testMessage = ref('')
 const testHint = ref('')
 
 const brandKitDraft = ref<BrandKit>(loadBrandKit())
+
+const rewriteInstructionDraft = ref<string>(loadRewriteCustomInstruction())
+
+function persistRewriteInstruction() {
+  saveRewriteCustomInstruction(rewriteInstructionDraft.value)
+}
 
 function persistBrandKit() {
   saveBrandKit(brandKitDraft.value)
@@ -541,6 +548,34 @@ onBeforeUnmount(() => {
                     已启用：{{ brandKitDraft.enabled ? '会注入到每次生成' : '已保存但未启用，开启上方开关后生效' }}
                   </div>
                 </div>
+              </section>
+
+              <section
+                class="rounded-2xl border border-line bg-paper-soft/40 p-4"
+              >
+                <div class="mb-3 flex flex-col">
+                  <span class="display-eyebrow text-[10px]">AI Rewrite · 自定义指令</span>
+                  <span class="mt-1 text-[13px] font-medium text-ink">
+                    告诉 AI 改写器你独特的口味
+                  </span>
+                </div>
+
+                <p class="mb-3 text-[11px] leading-[1.6] text-muted">
+                  填进来的内容会以最高优先级追加到 AI 改写的 system prompt 末尾。可以写"画面只用奶白和铁锈橙""人像保留毛孔与雀斑""我喜欢 35mm 胶片质感"等。空着也没事，引擎已经按 intent 自动分流。
+                </p>
+
+                <textarea
+                  v-model="rewriteInstructionDraft"
+                  rows="3"
+                  maxlength="400"
+                  class="field-textarea text-[12px]"
+                  placeholder="例：永远输出中文；尽量保留 35mm f/2 的镜头感；色调偏奶油..."
+                  @blur="persistRewriteInstruction"
+                ></textarea>
+
+                <p class="mt-2 text-[10px] text-muted">
+                  最多 400 字 · 仅作用于"AI 改写"，不影响图像生成本身
+                </p>
               </section>
 
               <section

@@ -5,13 +5,20 @@ import DevelopingFrame from './DevelopingFrame.vue'
 import { resolveImageSource } from '../api'
 import { styleOptions } from '../presets'
 import { useI18n } from '../lib/i18n'
-import type { ChatAssistantMessage, ChatMessage, GeneratedImage } from '../types'
+import {
+  computeProgress,
+  estimateTargetSeconds,
+  formatRemainingLabel,
+  stageLabelForProgress,
+} from '../lib/generationEta'
+import type { ChatAssistantMessage, ChatMessage, GeneratedImage, GenerationHistoryItem } from '../types'
 
 interface Props {
   message: ChatMessage
+  history?: GenerationHistoryItem[]
 }
 
-const props = defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), { history: () => [] as GenerationHistoryItem[] })
 const { t } = useI18n()
 
 const emit = defineEmits<{
@@ -69,43 +76,26 @@ function pendingSizeLabel(size: ChatAssistantMessage['meta']['size']) {
   return '方图'
 }
 
-function estimatedPendingDuration(message: ChatAssistantMessage) {
-  let seconds = 11
-
-  if (message.meta.size !== '1024x1024') seconds += 2
-  if (message.meta.quality === 'medium') seconds += 1
-  if (message.meta.quality === 'high') seconds += 4
-  if (message.meta.quality === 'low') seconds -= 1
-
-  seconds += Math.max(0, message.meta.count - 1) * 4
-
-  return Math.max(8, seconds)
-}
-
-function estimatePendingProgress(message: ChatAssistantMessage) {
-  const elapsed = Math.max(0, message.elapsedSeconds ?? 0)
-  const target = estimatedPendingDuration(message)
-  const fastPhase = target * 0.38
-
-  if (elapsed <= 0) return 5
-
-  if (elapsed < fastPhase) {
-    return Math.min(58, Math.round(5 + (elapsed / fastPhase) * 53))
+const pendingEta = computed(() => {
+  const message = assistantMessage.value
+  if (!message || message.status !== 'pending') {
+    return { targetSeconds: 0, source: 'prior' as const, sampleSize: 0 }
   }
-
-  if (elapsed < target) {
-    return Math.min(86, Math.round(58 + ((elapsed - fastPhase) / Math.max(1, target - fastPhase)) * 28))
-  }
-
-  const overflow = elapsed - target
-  const settle = 86 + (1 - Math.exp(-overflow / Math.max(3, target * 0.28))) * 10
-  return Math.min(96, Math.max(58, Math.round(settle)))
-}
+  return estimateTargetSeconds(
+    {
+      size: message.meta.size,
+      quality: message.meta.quality,
+      count: message.meta.count,
+      model: message.meta.model,
+    },
+    props.history,
+  )
+})
 
 const pendingProgress = computed(() => {
   const message = assistantMessage.value
   if (!message || message.status !== 'pending') return 0
-  return estimatePendingProgress(message)
+  return computeProgress(message.elapsedSeconds ?? 0, pendingEta.value.targetSeconds)
 })
 
 const pendingPercentLabel = computed(() => `${pendingProgress.value}%`)
@@ -113,24 +103,14 @@ const pendingPercentLabel = computed(() => `${pendingProgress.value}%`)
 const pendingRemainingLabel = computed(() => {
   const message = assistantMessage.value
   if (!message || message.status !== 'pending') return ''
-  const target = estimatedPendingDuration(message)
-  const elapsed = Math.max(0, message.elapsedSeconds ?? 0)
-  const remain = Math.max(0, target - elapsed)
-  if (elapsed >= target) {
-    return '已超出预估，仍在等上游回包'
-  }
-  if (remain <= 1) return '即将出图'
-  if (remain <= 4) return `约 ${remain}s`
-  return `约 ${remain}s`
+  return formatRemainingLabel(
+    message.elapsedSeconds ?? 0,
+    pendingEta.value.targetSeconds,
+    { source: pendingEta.value.source },
+  )
 })
 
-const pendingStageLabel = computed(() => {
-  const progress = pendingProgress.value
-  if (progress < 24) return '解析提示词'
-  if (progress < 52) return '搭建构图'
-  if (progress < 80) return '渲染细节'
-  return '准备出图'
-})
+const pendingStageLabel = computed(() => stageLabelForProgress(pendingProgress.value))
 
 const pendingMetaLabel = computed(() => {
   const message = assistantMessage.value

@@ -1348,7 +1348,6 @@ watch(sw.updateAvailable, (available) => {
           @magic-enhance="handleMagicEnhance"
           @magic-ab-test="handleMagicAbTest"
           @toast-info="(title: string, message?: string) => toast.info(title, message)"
-          @rewrite-error="(message: string, hint?: string) => toast.error(message, hint)"
           @undo-enhance="handleUndoEnhance"
           @tree-undo="handleTreeUndo"
           @tree-redo="handleTreeRedo"
@@ -1371,6 +1370,10 @@ watch(sw.updateAvailable, (available) => {
           :size="size"
           :style-label="selectedStyleLabel"
           :model-label="selectedModelLabel"
+          :model-name="modelChoice === customModelSentinel ? customModel : modelChoice"
+          :quality="quality"
+          :count="count"
+          :history="history"
           :prompt-preview="promptPreview"
           :has-prompt="trimmedPrompt.length >= 4"
           :quick-prompts="quickPromptCards"
@@ -1401,6 +1404,11 @@ watch(sw.updateAvailable, (available) => {
         @restore="restoreHistory"
         @open-history="historyOpen = true"
         @copy="copyToClipboard"
+        @preview="previewHistory"
+        @copy-prompt="copyHistoryPrompt"
+        @reuse-params="applyHistoryParams"
+        @remix="remixFromHistory"
+        @regenerate="regenerateFromHistory"
       />
 
     </main>
@@ -1422,6 +1430,7 @@ watch(sw.updateAvailable, (available) => {
         :mobile-bottom-padding="mobileChatBottomPadding"
         :jump-bottom="mobileJumpButtonBottom"
         :provider-configured="provider.isConfigured.value"
+        :history="history"
         @retry="regenerateFromMessage"
         @open-image="lightbox.open"
         @download="downloadImage"
@@ -1464,8 +1473,6 @@ watch(sw.updateAvailable, (available) => {
       @magic-enhance="handleMagicEnhance"
       @magic-ab-test="handleMagicAbTest"
       @undo-enhance="handleUndoEnhance"
-      @open-settings="settingsOpen = true"
-      @rewrite-error="(message: string, hint?: string) => toast.error(message, hint)"
       @cancel-continuation="handleCancelContinuation"
       @jump-to-continuation="handleScrollToMessage"
     />

@@ -5,19 +5,21 @@ import Icon from './Icon.vue'
 import StyleSwatch from './StyleSwatch.vue'
 import { styleOptions } from '../presets'
 import { useI18n } from '../lib/i18n'
-import type { ChatMessage, GeneratedImage, ImageStyle } from '../types'
+import type { ChatMessage, GeneratedImage, GenerationHistoryItem, ImageStyle } from '../types'
 
 interface Props {
   messages: ChatMessage[]
   mobileBottomPadding?: number
   jumpBottom?: number
   providerConfigured?: boolean
+  history?: GenerationHistoryItem[]
 }
 
 const props = withDefaults(defineProps<Props>(), {
   mobileBottomPadding: 200,
   jumpBottom: 14,
   providerConfigured: true,
+  history: () => [] as GenerationHistoryItem[],
 })
 
 const VIRTUALIZE_THRESHOLD = 24
@@ -204,6 +206,7 @@ defineExpose({ scrollToBottom, scrollToMessage })
         >
           <ChatBubble
             :message="message"
+            :history="history"
             v-memo="[
               message.id,
               message.role,

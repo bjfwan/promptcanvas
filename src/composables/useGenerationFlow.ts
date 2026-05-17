@@ -129,6 +129,7 @@ export function useGenerationFlow(deps: GenerationFlowDeps) {
         imageCount: result.images.length,
         referenceImageCount: args.payload.referenceImages?.length || undefined,
         images: persistableImages.length ? persistableImages : undefined,
+        elapsedSeconds: computeElapsed(),
       }
 
       elapsed = computeElapsed()

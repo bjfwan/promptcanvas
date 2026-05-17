@@ -4,12 +4,16 @@ import Icon from './Icon.vue'
 import StyleSwatch from './StyleSwatch.vue'
 import Select, { type SelectOption } from './Select.vue'
 import PromptInsightChips from './PromptInsightChips.vue'
+import AiRewriteRibbon from './AiRewriteRibbon.vue'
+import { useInlineRewrite } from '../composables/useInlineRewrite'
+import { REWRITE_MODEL_LIST, REWRITE_MODELS, type RewriteModelId } from '../lib/rewriteService'
 import { maxReferenceImages } from '../lib/imagesApi'
 import { customModelSentinel, sizeOptions, styleOptions } from '../presets'
 import { stylePrompts } from '../lib/imagesApi'
 import { useDiscoveredModels } from '../composables/useDiscoveredModels'
 import type { ContinuationContext, ImageQuality, ImageSize, ImageStyle, ReferenceImageAttachment } from '../types'
 import type { EnhanceResult } from '../lib/magicEnhance'
+import { inferEnhanceIntent } from '../lib/magicEnhance'
 import type { PromptContext } from '../lib/promptDoc'
 import type { PromptTreeNode } from '../composables/usePromptTree'
 import { reverseParseRevisedPrompt, docToPlainPrompt } from '../lib/revisedParser'
@@ -88,7 +92,6 @@ const emit = defineEmits<{
   (e: 'magic-enhance', result: EnhanceResult): void
   (e: 'magic-ab-test', original: string, optimized: EnhanceResult): void
   (e: 'toast-info', title: string, message?: string): void
-  (e: 'rewrite-error', message: string, hint?: string): void
   (e: 'undo-enhance'): void
   (e: 'tree-undo'): void
   (e: 'tree-redo'): void
@@ -269,6 +272,77 @@ function removeReferenceImage(id: string) {
 
 defineExpose({ focusPrompt })
 
+// ── AI 改写（桌面） ──
+const inlineRewrite = useInlineRewrite()
+const aiRewriteState = inlineRewrite.state
+const aiPickerOpen = ref(false)
+
+const displayedPrompt = computed({
+  get() {
+    if (inlineRewrite.isStreaming.value) return aiRewriteState.streamingText
+    return prompt.value
+  },
+  set(v: string) {
+    if (inlineRewrite.isStreaming.value) {
+      inlineRewrite.abort()
+      prompt.value = v
+    } else {
+      prompt.value = v
+    }
+  },
+})
+
+function startAiRewrite() {
+  if (!prompt.value.trim()) return
+  inlineRewrite.start({
+    prompt: prompt.value,
+    intent: inferEnhanceIntent(imageStyle.value, hasReferenceImages.value),
+    hasReferenceImages: hasReferenceImages.value,
+    style: imageStyle.value,
+    size: size.value,
+    quality: props.quality,
+    modelName: props.modelName,
+  }).catch(() => {})
+}
+
+function applyAiResult() {
+  if (!inlineRewrite.hasResult.value) return
+  prompt.value = aiRewriteState.resultText
+  inlineRewrite.reset()
+}
+
+function revertAiResult() {
+  prompt.value = aiRewriteState.snapshot
+  inlineRewrite.reset()
+}
+
+function retryAiRewrite() {
+  if (inlineRewrite.isStreaming.value) return
+  const source = aiRewriteState.snapshot || prompt.value
+  inlineRewrite.start({
+    prompt: source,
+    intent: inferEnhanceIntent(imageStyle.value, hasReferenceImages.value),
+    hasReferenceImages: hasReferenceImages.value,
+    style: imageStyle.value,
+    size: size.value,
+    quality: props.quality,
+    modelName: props.modelName,
+  }).catch(() => {})
+}
+
+function abortAiRewrite() {
+  inlineRewrite.abort()
+}
+
+function dismissAiRibbon() {
+  inlineRewrite.reset()
+}
+
+function pickAiModel(id: RewriteModelId) {
+  inlineRewrite.selectModel(id)
+  aiPickerOpen.value = false
+}
+
 watch(modelChoice, (newValue, oldValue) => {
   if (newValue === customModelSentinel && oldValue !== customModelSentinel) {
     emit('open-settings')
@@ -379,14 +453,15 @@ watch(prompt, () => {
           :aria-label="promptCountTone.hint ? `提示词字数 ${promptCount}，${promptCountTone.hint}` : `提示词字数 ${promptCount}`"
         >{{ promptCount }}</p>
       </div>
-      <div class="prompt-field-shell" data-tour="composer-prompt" @click="promptRef?.focus()">
+      <div class="prompt-field-shell" :class="{ 'is-ai-streaming': inlineRewrite.isStreaming.value }" data-tour="composer-prompt" @click="promptRef?.focus()">
         <textarea
           id="prompt-input"
           ref="promptRef"
-          v-model="prompt"
+          v-model="displayedPrompt"
           :rows="layout === 'sheet' ? 5 : 6"
           class="prompt-field-textarea"
           :placeholder="promptPlaceholder"
+          :readonly="inlineRewrite.isStreaming.value"
           autocomplete="off"
           spellcheck="false"
           @click.stop="promptRef?.focus()"
@@ -417,6 +492,56 @@ watch(prompt, () => {
               <Icon :name="hasReferenceImages ? 'image' : 'upload'" :size="12" />
               <span>{{ hasReferenceImages ? `参考 ${props.referenceImages.length}` : '参考图' }}</span>
             </button>
+            <span class="relative" v-if="prompt.length">
+              <button
+                type="button"
+                class="prompt-tool-btn prompt-tool-btn--ai"
+                :class="{ 'is-busy': inlineRewrite.isStreaming.value }"
+                :aria-label="inlineRewrite.isStreaming.value ? '正在 AI 改写，点击取消' : `让 ${REWRITE_MODELS[aiRewriteState.modelId].label} 改写提示词`"
+                @click.stop="inlineRewrite.isStreaming.value ? abortAiRewrite() : startAiRewrite()"
+              >
+                <Icon
+                  :name="inlineRewrite.isStreaming.value ? 'close' : 'sparkle'"
+                  :size="12"
+                />
+                <span>{{ inlineRewrite.isStreaming.value ? '取消' : 'AI 优化' }}</span>
+              </button>
+              <button
+                v-if="!inlineRewrite.isStreaming.value"
+                type="button"
+                class="prompt-tool-btn prompt-tool-btn--ai-caret"
+                :aria-label="`切换 AI 改写模型，当前 ${REWRITE_MODELS[aiRewriteState.modelId].label}`"
+                @click.stop="aiPickerOpen = !aiPickerOpen"
+              >
+                <span class="prompt-ai-current">{{ REWRITE_MODELS[aiRewriteState.modelId].label }}</span>
+                <Icon name="chevronDown" :size="10" />
+              </button>
+              <Transition name="dlg-fade">
+                <div
+                  v-if="aiPickerOpen"
+                  class="prompt-ai-picker"
+                  role="menu"
+                  aria-label="选择 AI 改写模型"
+                  @click.stop
+                >
+                  <button
+                    v-for="m in REWRITE_MODEL_LIST"
+                    :key="m.id"
+                    type="button"
+                    role="menuitemradio"
+                    class="prompt-ai-pick"
+                    :class="{ 'is-active': aiRewriteState.modelId === m.id }"
+                    :aria-checked="aiRewriteState.modelId === m.id"
+                    @click="pickAiModel(m.id)"
+                  >
+                    <span class="prompt-ai-pick-name">{{ m.label }}</span>
+                    <span class="prompt-ai-pick-tag">{{ m.tagline }}</span>
+                    <span class="prompt-ai-pick-time">{{ m.expectedSeconds[0] }}–{{ m.expectedSeconds[1] }}s</span>
+                  </button>
+                </div>
+              </Transition>
+            </span>
+
             <span class="relative">
               <button
                 v-if="prompt.length"
@@ -427,7 +552,7 @@ watch(prompt, () => {
                 @click.stop="magicMenuOpen = !magicMenuOpen"
               >
                 <Icon name="sparkle" :size="12" />
-                <span>优化</span>
+                <span>深度</span>
               </button>
               <MagicEnhanceMenu
                 v-if="magicMenuOpen"
@@ -441,8 +566,6 @@ watch(prompt, () => {
                 @enhance="(result: EnhanceResult) => { emit('magic-enhance', result); magicMenuOpen = false }"
                 @ab-test="(original: string, optimized: EnhanceResult) => { emit('magic-ab-test', original, optimized); magicMenuOpen = false }"
                 @update-prompt="(value: string) => { prompt = value }"
-                @request-settings="() => { emit('open-settings'); magicMenuOpen = false }"
-                @rewrite-error="(message: string, hint?: string) => emit('rewrite-error', message, hint)"
                 @close="magicMenuOpen = false"
               />
             </span>
@@ -478,6 +601,20 @@ watch(prompt, () => {
           </span>
         </div>
       </div>
+      <AiRewriteRibbon
+        :phase="aiRewriteState.phase"
+        :model-id="aiRewriteState.modelId"
+        :elapsed-ms="aiRewriteState.elapsedMs"
+        :tools-used="aiRewriteState.tools.length"
+        :error-message="aiRewriteState.errorMessage"
+        :error-code="aiRewriteState.errorCode"
+        variant="desktop"
+        @apply="applyAiResult"
+        @revert="revertAiResult"
+        @retry="retryAiRewrite"
+        @abort="abortAiRewrite"
+        @dismiss="dismissAiRibbon"
+      />
       <div
         v-if="hasReferenceImages"
         class="rounded-2xl border border-line bg-vellum/70 p-3"
@@ -862,6 +999,152 @@ watch(prompt, () => {
   border-color: rgb(var(--color-ink));
   background: rgb(var(--color-ink));
   color: rgb(var(--color-paper));
+}
+
+/* ── AI 优化按钮（桌面） ── */
+
+.prompt-tool-btn--ai {
+  border-color: rgb(var(--color-ochre) / 0.45);
+  background: linear-gradient(135deg, rgb(var(--color-ochre) / 0.18), rgb(var(--color-accent) / 0.12));
+  color: rgb(var(--color-ochre));
+  font-weight: 740;
+}
+
+.prompt-tool-btn--ai:hover:not(:disabled) {
+  border-color: rgb(var(--color-ink) / 0.32);
+}
+
+.prompt-tool-btn--ai.is-busy {
+  border-color: rgb(var(--color-ink));
+  background: rgb(var(--color-ink));
+  color: rgb(var(--color-paper));
+  animation: prompt-ai-pulse 1.4s var(--motion-soft) infinite;
+}
+
+@keyframes prompt-ai-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgb(var(--color-ochre) / 0.32); }
+  50% { box-shadow: 0 0 0 6px rgb(var(--color-ochre) / 0); }
+}
+
+.prompt-tool-btn--ai-caret {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 30px;
+  padding: 0 0.5rem 0 0.55rem;
+  margin-left: 4px;
+  border-radius: 999px;
+  border: 1px solid rgb(var(--color-line) / 0.85);
+  background: rgb(var(--color-vellum) / 0.6);
+  color: rgb(var(--color-muted));
+  font-size: 11px;
+  font-weight: 660;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 140ms var(--motion-soft), color 140ms var(--motion-soft), border-color 140ms var(--motion-soft);
+}
+
+.prompt-tool-btn--ai-caret:hover {
+  color: rgb(var(--color-ink));
+  border-color: rgb(var(--color-ink) / 0.4);
+  background: rgb(var(--color-paper-soft));
+}
+
+.prompt-ai-current {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+}
+
+.prompt-ai-picker {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  border-radius: 14px;
+  border: 1px solid rgb(var(--color-line-strong) / 0.7);
+  background: rgb(var(--color-paper));
+  box-shadow:
+    0 24px 40px -22px rgb(var(--color-ink) / 0.45),
+    0 8px 16px -10px rgb(var(--color-ink) / 0.22);
+  z-index: 60;
+}
+
+.prompt-ai-pick {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px 10px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: rgb(var(--color-ink));
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 140ms var(--motion-soft);
+}
+
+.prompt-ai-pick-name {
+  font-family: 'Fraunces', 'IBM Plex Sans', system-ui, serif;
+  font-weight: 700;
+  letter-spacing: -0.005em;
+}
+
+.prompt-ai-pick-tag {
+  grid-column: 1;
+  font-size: 10.5px;
+  font-weight: 540;
+  color: rgb(var(--color-muted));
+  letter-spacing: 0.02em;
+}
+
+.prompt-ai-pick-time {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 10px;
+  color: rgb(var(--color-muted));
+  white-space: nowrap;
+}
+
+.prompt-ai-pick:hover {
+  background: rgb(var(--color-paper-soft));
+}
+
+.prompt-ai-pick.is-active {
+  background: rgb(var(--color-ink));
+  color: rgb(var(--color-paper));
+}
+
+.prompt-ai-pick.is-active .prompt-ai-pick-tag,
+.prompt-ai-pick.is-active .prompt-ai-pick-time {
+  color: rgb(var(--color-paper) / 0.72);
+}
+
+/* ── 流式中：textarea shell 边缘流光 ── */
+
+.prompt-field-shell.is-ai-streaming {
+  border-color: rgb(var(--color-ochre) / 0.55);
+  background: rgb(var(--color-vellum));
+  box-shadow:
+    var(--shadow-inner-paper),
+    0 0 0 1.5px rgb(var(--color-ochre) / 0.32);
+}
+
+.prompt-field-shell.is-ai-streaming .prompt-field-textarea {
+  caret-color: transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .prompt-tool-btn--ai.is-busy { animation: none; }
 }
 
 .prompt-tool-btn--danger {

@@ -1,7 +1,7 @@
 import http from 'node:http'
 
 const PORT = Number(process.env.PORT || 8080)
-const VERSION = '0.1.0'
+const VERSION = '0.2.0'
 
 const HOP_BY_HOP = new Set([
   'host',
@@ -19,10 +19,12 @@ const FORBIDDEN_FORWARD = new Set([
   ...HOP_BY_HOP,
   'x-upstream-base',
   'x-pc-identity',
+  'x-pc-builtin',
   'origin',
   'referer',
   'cookie',
   'user-agent',
+  'authorization',
 ])
 const IDENTITY_PROFILES = {
   kilocode: {
@@ -31,6 +33,10 @@ const IDENTITY_PROFILES = {
     'x-title': 'Kilo Code',
   },
 }
+
+const BUILTIN_BASE_URL = String(process.env.PC_BUILTIN_BASE_URL || '').trim()
+const BUILTIN_API_KEY = String(process.env.PC_BUILTIN_API_KEY || '').trim()
+const BUILTIN_IDENTITY = String(process.env.PC_BUILTIN_IDENTITY || '').trim().toLowerCase()
 
 const BASE_CORS_HEADERS = {
   'access-control-allow-origin': '*',
@@ -64,25 +70,54 @@ const server = http.createServer(async (req, res) => {
       ok: true,
       name: 'promptcanvas-proxy',
       version: VERSION,
+      builtinReady: Boolean(BUILTIN_BASE_URL && BUILTIN_API_KEY),
       timestamp: new Date().toISOString(),
     })
     return
   }
 
-  const upstreamBase = req.headers['x-upstream-base']
-  if (typeof upstreamBase !== 'string' || !upstreamBase.trim()) {
-    jsonResponse(res, 400, {
-      error: {
-        code: 'MISSING_UPSTREAM',
-        message: '请求头缺少 X-Upstream-Base，前端「设置」里填代理 URL 后，会自动携带这个头',
-      },
-    })
-    return
+  // ── BUILTIN mode ──
+  // X-Pc-Builtin: 1 → use the project-paid env-stored AI rewrite key.
+  // Restricted to /chat/completions to prevent abuse via image generation.
+  const isBuiltin = String(req.headers['x-pc-builtin'] || '').trim() === '1'
+  let upstreamBaseValue
+  if (isBuiltin) {
+    if (url !== '/chat/completions' && url !== '/v1/chat/completions') {
+      jsonResponse(res, 403, {
+        error: {
+          code: 'BUILTIN_PATH_NOT_ALLOWED',
+          message: '内置改写凭据仅允许用于 /chat/completions',
+        },
+      })
+      return
+    }
+    if (!BUILTIN_BASE_URL || !BUILTIN_API_KEY) {
+      jsonResponse(res, 503, {
+        error: {
+          code: 'BUILTIN_NOT_CONFIGURED',
+          message: '反代未配置内置改写凭据（PC_BUILTIN_BASE_URL / PC_BUILTIN_API_KEY）',
+        },
+      })
+      return
+    }
+    upstreamBaseValue = BUILTIN_BASE_URL
+  } else {
+    const headerValue = req.headers['x-upstream-base']
+    if (typeof headerValue !== 'string' || !headerValue.trim()) {
+      jsonResponse(res, 400, {
+        error: {
+          code: 'MISSING_UPSTREAM',
+          message: '请求头缺少 X-Upstream-Base，前端「设置」里填代理 URL 后，会自动携带这个头',
+        },
+      })
+      return
+    }
+    upstreamBaseValue = headerValue
   }
 
   let upstreamUrl
   try {
-    const cleanBase = upstreamBase.trim().replace(/\/+$/, '')
+    const cleanBase = upstreamBaseValue.trim().replace(/\/+$/, '')
     const path = url.startsWith('/') ? url : `/${url}`
     upstreamUrl = new URL(cleanBase + path)
     if (upstreamUrl.protocol !== 'http:' && upstreamUrl.protocol !== 'https:') {
@@ -107,11 +142,21 @@ const server = http.createServer(async (req, res) => {
   }
   headers.host = upstreamUrl.host
 
-  const identityHint = String(req.headers['x-pc-identity'] || '').trim().toLowerCase()
-  const profile = identityHint && IDENTITY_PROFILES[identityHint]
-  if (profile) {
-    for (const [headerName, headerValue] of Object.entries(profile)) {
-      headers[headerName] = headerValue
+  if (isBuiltin) {
+    headers.authorization = `Bearer ${BUILTIN_API_KEY}`
+    const builtinProfile = BUILTIN_IDENTITY && IDENTITY_PROFILES[BUILTIN_IDENTITY]
+    if (builtinProfile) {
+      for (const [headerName, headerValue] of Object.entries(builtinProfile)) {
+        headers[headerName] = headerValue
+      }
+    }
+  } else {
+    const identityHint = String(req.headers['x-pc-identity'] || '').trim().toLowerCase()
+    const profile = identityHint && IDENTITY_PROFILES[identityHint]
+    if (profile) {
+      for (const [headerName, headerValue] of Object.entries(profile)) {
+        headers[headerName] = headerValue
+      }
     }
   }
 

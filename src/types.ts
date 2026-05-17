@@ -84,6 +84,8 @@ export interface GenerationHistoryItem extends Omit<GenerateImageRequest, 'apiKe
   imageCount: number
   referenceImageCount?: number
   images?: GeneratedImage[]
+  /** Total wall-clock seconds the generation actually took. Used to learn ETAs. */
+  elapsedSeconds?: number
 }
 
 export interface PromptTemplate {
