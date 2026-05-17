@@ -135,20 +135,23 @@ const refreshHealth = health.refresh
 const handleProviderTestResult = health.handleTestResult
 
 const mobileRootStyle = computed(() => {
-  if (!mobileViewportHeight.value) return undefined
-  return {
-    minHeight: `${mobileViewportHeight.value}px`,
-    height: `${mobileViewportHeight.value}px`,
-  }
+  // We deliberately stop clamping #app to visualViewport height. iOS keyboard
+  // openings cause visualViewport.height to oscillate, and locking #app to
+  // those values causes the whole layout (and the dock with it) to jitter.
+  // Instead we let the document use 100dvh and translate only the dock when
+  // the keyboard is actually shown.
+  return undefined
 })
-const mobileDockKeyboardInset = computed(() => (mobileViewportHeight.value ? 0 : mobileKeyboardInset.value))
-const mobileChatBottomPadding = computed(() => Math.max(120, mobileDockHeight.value + 16))
+const mobileDockKeyboardInset = computed(() => mobileKeyboardInset.value)
+const mobileChatBottomPadding = computed(() => {
+  // ChatDock is `position: fixed`, so its height does not push ChatStream.
+  // We still need padding inside the scroll container so the last message
+  // is not hidden behind the dock. Add the keyboard inset only when actually
+  // visible — keeps the resting layout calm.
+  return Math.max(140, mobileDockHeight.value + mobileKeyboardInset.value + 24)
+})
 const mobileJumpButtonBottom = computed(() => {
-  const desired = mobileDockHeight.value + 12
-  const limit = mobileViewportHeight.value
-    ? Math.max(96, Math.round(mobileViewportHeight.value * 0.34))
-    : desired
-  return Math.max(18, Math.min(desired, limit))
+  return Math.max(18, mobileDockHeight.value + mobileKeyboardInset.value + 14)
 })
 const templateAnchorPrompt = ref<string>(defaultPrompt)
 let skipNextStyleSync = false

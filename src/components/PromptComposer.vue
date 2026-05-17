@@ -111,6 +111,22 @@ const canAddReferenceImages = computed(() => props.referenceImages.length < maxR
 
 const promptCount = computed(() => prompt.value.length)
 const promptTokens = computed(() => Math.max(1, Math.round(prompt.value.length / 4)))
+const promptCountTone = computed(() => {
+  const length = promptCount.value
+  if (length >= 4000) {
+    return {
+      tone: 'text-accent',
+      hint: '提示词已超过 4000 字，部分模型（如 dall-e-3）会直接截断。',
+    }
+  }
+  if (length >= 2000) {
+    return {
+      tone: 'text-ochre',
+      hint: '提示词较长，注意目标模型的上下文上限。',
+    }
+  }
+  return { tone: 'text-muted', hint: '' }
+})
 const promptTone = computed(() => {
   const length = promptCount.value
   if (length < 24) return { label: '稀薄', tone: 'text-muted' }
@@ -355,7 +371,12 @@ watch(prompt, () => {
           <Icon name="pencil" :size="12" />
           <span>提示词</span>
         </label>
-        <p class="font-mono text-[10px] tabular-nums text-muted">{{ promptCount }} / 1200</p>
+        <p
+          class="font-mono text-[10px] tabular-nums transition-colors"
+          :class="promptCountTone.tone"
+          :title="promptCountTone.hint || undefined"
+          :aria-label="promptCountTone.hint ? `提示词字数 ${promptCount}，${promptCountTone.hint}` : `提示词字数 ${promptCount}`"
+        >{{ promptCount }}</p>
       </div>
       <div class="prompt-field-shell" data-tour="composer-prompt" @click="promptRef?.focus()">
         <textarea
@@ -363,7 +384,6 @@ watch(prompt, () => {
           ref="promptRef"
           v-model="prompt"
           :rows="layout === 'sheet' ? 5 : 6"
-          maxlength="1200"
           class="prompt-field-textarea"
           :placeholder="promptPlaceholder"
           autocomplete="off"

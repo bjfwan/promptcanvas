@@ -148,10 +148,6 @@ export function validatePayload(body: unknown): ValidationResult {
     return { error: 'referenceImages 必须是数组' }
   }
 
-  if (prompt.length > 1200) {
-    return { error: 'prompt 不能超过 1200 个字符' }
-  }
-
   if (style.length > 80) {
     return { error: 'style 不能超过 80 个字符' }
   }
