@@ -403,7 +403,7 @@ export function buildPrompt(payload: {
 
   const composition = compose(doc, {
     level: 'standard',
-    mode: 'balanced',
+    mode: 'faithful',
     context,
   })
 

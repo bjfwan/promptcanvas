@@ -128,8 +128,19 @@ function decideRenderMode(doc: PromptDoc, options: ComposeOptions): RenderMode {
 
 function chooseSlotsToFill(doc: PromptDoc, options: ComposeOptions): SlotName[] {
   if (options.forceSlots?.length) return options.forceSlots.slice()
+
+  const styleId = doc.meta.styleId
+  const mode = options.mode
+  if (styleId === 'raw') {
+    return !doc.slots.subject?.value ? ['subject'] : []
+  }
+
   const required = requiredSlotsFor(doc.meta.intent)
-  const missing = required.filter((slot) => !doc.slots[slot]?.value)
+  let missing = required.filter((slot) => !doc.slots[slot]?.value)
+  if (mode === 'faithful') {
+    missing = missing.filter((slot) => slot === 'subject' || slot === 'styleAnchor')
+  }
+
   const target = levelTargetCount(options.level)
   const capped = missing.slice(0, target)
   if (options.axisFocus && !capped.includes(options.axisFocus)) {
