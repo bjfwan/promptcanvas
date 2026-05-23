@@ -2,7 +2,7 @@
  * AI 改写服务（阶段 A：研究 + 阶段 B：流式改写）
  *
  * 阶段 A：非流式 chat completions，让 LLM 在我们提供的工具货架（rewriteTools）里
- *         自己挑工具调用。我们本地执行 + 把结果回灌，最多 6 轮。
+ *         自己挑工具调用。我们本地执行 + 把结果回灌，保留足够多轮。
  * 阶段 B：流式 chat completions（SSE），最终改写直接逐字 emit。
  *
  * 凭据走"内置反代凭据"通道（X-Pc-Builtin: 1），用户不需要、也看不到 key。
@@ -32,7 +32,9 @@ interface ChatMessage {
   tool_call_id?: string
 }
 
-const MAX_TOOL_ROUNDS = 6
+const MAX_TOOL_ROUNDS = 32
+const TOOL_RESPONSE_MAX_TOKENS = 2048
+const FINAL_OUTPUT_MAX_TOKENS = 4096
 
 // ── 公开模型注册（用户可见） ──
 
@@ -146,11 +148,14 @@ export function buildSystemPrompt(args: BuildSystemArgs): string {
   } else {
     base = isZh ? SYSTEM_BASE_ZH : SYSTEM_BASE_EN
   }
+  const multiRound = isZh
+    ? '你可以多轮反复调用工具，先分析、再补全、再复核，直到没有明显可改进项为止，不要为了省轮数提前结束。'
+    : 'You may call tools repeatedly. Analyze, fill gaps, and re-check until there is no obvious room for improvement. Do not stop early to save rounds.'
   const tail = (args.customInstruction || '').trim()
   if (tail) {
-    return `${base}\n\n用户的额外指令（最高优先级，请遵守）：\n${tail}`
+    return `${base}\n\n${multiRound}\n\n用户的额外指令（最高优先级，请遵守）：\n${tail}`
   }
-  return base
+  return `${base}\n\n${multiRound}`
 }
 
 
@@ -294,7 +299,7 @@ async function runToolRounds(
         model: modelApiName,
         messages,
         temperature: 0.3,
-        max_tokens: 800,
+        max_tokens: TOOL_RESPONSE_MAX_TOKENS,
         stream: false,
         tools: REWRITE_TOOL_DEFS,
         tool_choice: 'auto',
@@ -613,7 +618,7 @@ export async function runRewrite(
         model: meta.apiName,
         messages: finalMessages,
         temperature: 0.5,
-        max_tokens: input.intent === 'edit' ? 300 : 700,
+        max_tokens: FINAL_OUTPUT_MAX_TOKENS,
         stream: true,
       },
       callbacks.signal,

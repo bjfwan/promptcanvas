@@ -120,7 +120,7 @@ const promptCountTone = computed(() => {
   if (length >= 4000) {
     return {
       tone: 'text-accent',
-      hint: '提示词已超过 4000 字，部分模型（如 dall-e-3）会直接截断。',
+      hint: '提示词已超过 4000 字，部分模型的上下文窗口可能不够，建议继续精简或切换模型。',
     }
   }
   if (length >= 2000) {
