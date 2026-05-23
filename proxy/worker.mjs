@@ -129,6 +129,8 @@ export default {
       }
     }
 
+    const requestId = (request.headers.get('x-pc-request-id') || '').trim()
+
     let upstreamUrl
     try {
       const cleanBase = upstreamBase.trim().replace(/\/+$/, '')
@@ -188,7 +190,7 @@ export default {
       })
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
-      console.error(`proxy fetch failed: ${request.method} ${upstreamUrl.host} → ${message}`)
+      console.error(`proxy fetch failed: ${request.method} ${upstreamUrl.host} → ${message}${requestId ? ` [${requestId}]` : ''}`)
       return jsonError(502, 'PROXY_FETCH_FAILED', `代理转发到上游失败：${message}`)
     }
 

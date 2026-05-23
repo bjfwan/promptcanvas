@@ -270,10 +270,12 @@ export async function generateImage(
     const built = hasReferenceImages
       ? buildRequest(baseUrl, proxyUrl, '/images/edits', {
           Authorization: `Bearer ${apiKey}`,
+          'X-Pc-Request-Id': requestId,
         })
       : buildRequest(baseUrl, proxyUrl, '/images/generations', {
           Authorization: `Bearer ${apiKey}`,
           'Content-Type': 'application/json',
+          'X-Pc-Request-Id': requestId,
         })
     const requestBody = hasReferenceImages
       ? await buildEditFormData(
@@ -336,10 +338,9 @@ export async function generateImage(
         message: err?.message,
       })
       group.error(
-        '↑ TypeError on cross-origin fetch usually means: ' +
-          '(a) preflight failed (no Access-Control-Allow-Origin on OPTIONS) or ' +
-          '(b) actual response missing Access-Control-Allow-Origin. ' +
-          '上游可能仍处理了请求并扣费，浏览器只是不让 JS 读响应。',
+        '↑ Browser fetch failed before JS could read the response. This can be CORS, TLS/proxy abort, ' +
+          'or a gateway timeout. The upstream may still have accepted and billed the request; ' +
+          'check the request ID before retrying.',
       )
       const mapped = resolveOpenAIError({
         name: err?.name,

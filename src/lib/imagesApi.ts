@@ -516,7 +516,7 @@ export function resolveOpenAIError(error: {
     return {
       status: 502,
       code: 'NETWORK_ERROR',
-      message: '无法连接到上游服务，请检查 baseUrl、网络与中转站的 CORS 配置',
+      message: '无法读取上游响应；请求可能已被上游接收并计费，请先核对 request ID，再检查 baseUrl、网络与中转站的 CORS/TLS 配置',
     }
   }
 

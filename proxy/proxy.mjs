@@ -119,6 +119,8 @@ const server = http.createServer(async (req, res) => {
     upstreamBaseValue = headerValue
   }
 
+  const requestId = String(req.headers['x-pc-request-id'] || '').trim()
+
   let upstreamUrl
   try {
     const cleanBase = upstreamBaseValue.trim().replace(/\/+$/, '')
@@ -187,7 +189,7 @@ const server = http.createServer(async (req, res) => {
     const elapsed = Date.now() - startedAt
     const message = error instanceof Error ? error.message : String(error)
     console.error(
-      `[proxy] ${req.method} ${upstreamUrl.host}${upstreamUrl.pathname} → fetch failed after ${elapsed}ms: ${message}`,
+      `[proxy] ${req.method} ${upstreamUrl.host}${upstreamUrl.pathname} → fetch failed after ${elapsed}ms${requestId ? ` [${requestId}]` : ''}: ${message}`,
     )
     jsonResponse(res, 502, {
       error: {
@@ -229,7 +231,7 @@ const server = http.createServer(async (req, res) => {
 
   const elapsed = Date.now() - startedAt
   console.log(
-    `[proxy] ${req.method} ${upstreamUrl.host}${upstreamUrl.pathname} → ${upstream.status} (${elapsed}ms)`,
+    `[proxy] ${req.method} ${upstreamUrl.host}${upstreamUrl.pathname} → ${upstream.status} (${elapsed}ms)${requestId ? ` [${requestId}]` : ''}`,
   )
 })
 
