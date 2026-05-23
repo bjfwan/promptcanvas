@@ -11,7 +11,7 @@
  * `controllerchange` event and can show a "reload to upgrade" toast.
  */
 
-const CACHE_VERSION = 'pc-v1'
+const CACHE_VERSION = 'pc-v2'
 const SHELL_CACHE = `${CACHE_VERSION}-shell`
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`
 
