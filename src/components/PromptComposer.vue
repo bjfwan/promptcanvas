@@ -8,7 +8,7 @@ import AiRewriteRibbon from './AiRewriteRibbon.vue'
 import { useInlineRewrite } from '../composables/useInlineRewrite'
 import { REWRITE_MODEL_LIST, REWRITE_MODELS, type RewriteModelId } from '../lib/rewriteService'
 import { maxReferenceImages } from '../lib/imagesApi'
-import { customModelSentinel, sizeOptions, styleOptions } from '../presets'
+import { customModelSentinel, qualityOptions, sizeOptions, styleOptions } from '../presets'
 import { stylePrompts } from '../lib/imagesApi'
 import { useDiscoveredModels } from '../composables/useDiscoveredModels'
 import type { ContinuationContext, ImageQuality, ImageSize, ImageStyle, ReferenceImageAttachment } from '../types'
@@ -33,6 +33,21 @@ const countSelectOptions: SelectOption<number>[] = [
   { value: 4, label: '4 张', hint: '广泛探索' },
 ]
 
+const qualityHints: Record<ImageQuality, string> = {
+  auto: '模型自选',
+  low: '最快最省',
+  medium: '速度/画质平衡',
+  high: '最清晰最贵',
+}
+
+const qualitySelectOptions = computed<SelectOption<ImageQuality>[]>(() =>
+  qualityOptions.map((option) => ({
+    value: option.value,
+    label: option.label,
+    hint: qualityHints[option.value],
+  })),
+)
+
 const discoveredModels = useDiscoveredModels()
 
 const modelChipOptions = computed<SelectOption<string>[]>(() =>
@@ -52,7 +67,6 @@ interface Props {
   layout?: 'panel' | 'sheet'
   continuation?: ContinuationContext | null
   canUndoEnhance?: boolean
-  quality?: ImageQuality
   modelName?: string
   promptContext?: PromptContext | null
   treeNodes?: PromptTreeNode[]
@@ -65,7 +79,6 @@ const props = withDefaults(defineProps<Props>(), {
   layout: 'panel',
   continuation: null,
   canUndoEnhance: false,
-  quality: 'auto',
   modelName: '',
   promptContext: null,
   treeNodes: () => [],
@@ -78,6 +91,7 @@ const prompt = defineModel<string>('prompt', { required: true })
 const imageStyle = defineModel<ImageStyle>('imageStyle', { required: true })
 const size = defineModel<ImageSize>('size', { required: true })
 const count = defineModel<number>('count', { required: true })
+const quality = defineModel<ImageQuality>('quality', { required: true })
 const modelChoice = defineModel<string>('modelChoice', { required: true })
 const customModel = defineModel<string>('customModel', { required: true })
 
@@ -284,7 +298,7 @@ function startAiRewrite() {
     hasReferenceImages: hasReferenceImages.value,
     style: imageStyle.value,
     size: size.value,
-    quality: props.quality,
+    quality: quality.value,
     modelName: props.modelName,
   }).catch(() => {})
 }
@@ -300,7 +314,7 @@ function retryAiRewrite() {
     hasReferenceImages: hasReferenceImages.value,
     style: imageStyle.value,
     size: size.value,
-    quality: props.quality,
+    quality: quality.value,
     modelName: props.modelName,
   }).catch(() => {})
 }
@@ -496,7 +510,7 @@ watch(prompt, () => {
                 :image-style="imageStyle"
                 :has-reference-images="hasReferenceImages"
                 :size="size"
-                :quality="props.quality"
+                :quality="quality"
                 :model-name="props.modelName"
                 :context="props.promptContext ?? null"
                 @enhance="(result: EnhanceResult) => { emit('magic-enhance', result); magicMenuOpen = false }"
@@ -624,7 +638,7 @@ watch(prompt, () => {
       />
 
       <p class="text-[10px] leading-snug text-muted">
-        需要负面提示词、Seed、质量等高级参数？
+        需要负面提示词、Seed 等高级参数？
         <button
           type="button"
           class="inline-flex items-center gap-1 text-ink underline-offset-2 hover:underline"
@@ -710,7 +724,7 @@ watch(prompt, () => {
       </Transition>
     </section>
 
-    <section class="grid gap-4 sm:grid-cols-2">
+    <section class="grid gap-4 sm:grid-cols-3">
       <div>
         <label class="label mb-2 inline-flex items-center gap-1.5" for="comp-size">
           <Icon name="ratio" :size="12" />
@@ -721,6 +735,18 @@ watch(prompt, () => {
           v-model="size"
           :options="sizeSelectOptions"
           aria-label="选择图片尺寸"
+        />
+      </div>
+      <div>
+        <label class="label mb-2 inline-flex items-center gap-1.5" for="comp-quality">
+          <Icon name="star" :size="12" />
+          <span>画质</span>
+        </label>
+        <Select
+          id="comp-quality"
+          v-model="quality"
+          :options="qualitySelectOptions"
+          aria-label="选择图片画质"
         />
       </div>
       <div>
