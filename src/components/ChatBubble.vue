@@ -103,6 +103,8 @@ const pendingPercentLabel = computed(() => `${pendingProgress.value}%`)
 const pendingRemainingLabel = computed(() => {
   const message = assistantMessage.value
   if (!message || message.status !== 'pending') return ''
+  const override = message.progressOverride?.remainingLabel
+  if (override) return override
   return formatRemainingLabel(
     message.elapsedSeconds ?? 0,
     pendingEta.value.targetSeconds,
@@ -110,7 +112,11 @@ const pendingRemainingLabel = computed(() => {
   )
 })
 
-const pendingStageLabel = computed(() => stageLabelForProgress(pendingProgress.value))
+const pendingStageLabel = computed(() => {
+  const override = assistantMessage.value?.progressOverride?.stage
+  if (override) return override
+  return stageLabelForProgress(pendingProgress.value)
+})
 
 const pendingMetaLabel = computed(() => {
   const message = assistantMessage.value

@@ -51,6 +51,55 @@ async function readJson<T = unknown>(response: Response): Promise<T | null> {
   }
 }
 
+export type GenerationProgressEvent =
+  | { stage: 'awaiting' }
+  | { stage: 'downloading'; bytesReceived: number; bytesTotal?: number }
+  | { stage: 'finalizing' }
+
+async function readJsonStreamed<T = unknown>(
+  response: Response,
+  onBytes?: (bytesReceived: number, bytesTotal?: number) => void,
+): Promise<T | null> {
+  const reader = response.body?.getReader?.()
+  if (!reader) {
+    return readJson<T>(response)
+  }
+
+  const contentLengthHeader = response.headers.get('content-length')
+  const parsedLength = contentLengthHeader ? Number.parseInt(contentLengthHeader, 10) : Number.NaN
+  const bytesTotal = Number.isFinite(parsedLength) && parsedLength > 0 ? parsedLength : undefined
+
+  const chunks: Uint8Array[] = []
+  let received = 0
+  onBytes?.(0, bytesTotal)
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    if (value && value.byteLength > 0) {
+      chunks.push(value)
+      received += value.byteLength
+      onBytes?.(received, bytesTotal)
+    }
+  }
+
+  if (chunks.length === 0) return null
+
+  const combined = new Uint8Array(received)
+  let offset = 0
+  for (const chunk of chunks) {
+    combined.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+
+  try {
+    const text = new TextDecoder('utf-8').decode(combined)
+    return JSON.parse(text) as T
+  } catch {
+    return null
+  }
+}
+
 async function readText(response: Response): Promise<string> {
   try {
     return await response.text()
@@ -112,6 +161,8 @@ async function buildEditFormData(payload: {
   formData.set('user', requestId)
   formData.set('output_format', payload.outputFormat)
   formData.set('quality', payload.quality)
+  // See generateImage(): graceful no-op when upstream ignores it.
+  formData.set('response_format', 'url')
 
   if (payload.model) {
     formData.set('model', payload.model)
@@ -188,7 +239,10 @@ function buildRequest(
 
 export async function generateImage(
   payload: GenerateImageRequest,
-  options?: { signal?: AbortSignal },
+  options?: {
+    signal?: AbortSignal
+    onProgress?: (event: GenerationProgressEvent) => void
+  },
 ): Promise<GenerateImageResponse> {
   const provider = snapshotProviderConfig()
   const apiKey = (payload.apiKey ?? provider.apiKey ?? '').trim()
@@ -261,6 +315,10 @@ export async function generateImage(
       n: validated.count,
       output_format: validated.outputFormat,
       quality: validated.quality,
+      // Ask upstream to return a CDN URL instead of inlined base64 when supported.
+      // For models that ignore it (e.g. gpt-image-*), the response just falls back to b64_json
+      // and behavior is unchanged.
+      response_format: 'url',
       user: requestId,
     }
     if (validated.model) {
@@ -316,6 +374,7 @@ export async function generateImage(
     }
 
     const t0 = nowMs()
+    options?.onProgress?.({ stage: 'awaiting' })
     let upstream: Response
     try {
       upstream = await fetch(built.url, {
@@ -376,7 +435,10 @@ export async function generateImage(
       throw new ApiRequestError(mapped.message, mapped.code, requestId)
     }
 
-    const data = await readJson<{ data?: unknown }>(upstream)
+    const data = await readJsonStreamed<{ data?: unknown }>(upstream, (bytesReceived, bytesTotal) => {
+      options?.onProgress?.({ stage: 'downloading', bytesReceived, bytesTotal })
+    })
+    options?.onProgress?.({ stage: 'finalizing' })
     const dataArray = Array.isArray((data as { data?: unknown })?.data)
       ? ((data as { data: unknown[] }).data)
       : []

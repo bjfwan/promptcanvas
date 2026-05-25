@@ -129,6 +129,13 @@ export interface ChatUserMessage {
   continuedFrom?: ContinuationContext
 }
 
+export interface ChatProgressOverride {
+  /** Replaces the heuristic stage label (e.g. "下载图片", "等待上游"). */
+  stage?: string
+  /** Replaces the heuristic remaining label (e.g. "已收 1.2 / 2.4 MB"). */
+  remainingLabel?: string
+}
+
 export interface ChatAssistantMessage {
   id: string
   role: 'assistant'
@@ -142,6 +149,8 @@ export interface ChatAssistantMessage {
   errorMessage?: string
   errorCode?: string
   elapsedSeconds?: number
+  /** Live override for stage/remaining label driven by real network progress. */
+  progressOverride?: ChatProgressOverride
 }
 
 export type ChatMessage = ChatUserMessage | ChatAssistantMessage

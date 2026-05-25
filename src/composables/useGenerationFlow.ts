@@ -97,8 +97,34 @@ export function useGenerationFlow(deps: GenerationFlowDeps) {
       updateAssistantMessage(assistantId, (current) => ({ ...current, elapsedSeconds: elapsed }))
     }, 1000)
 
+    const formatMb = (bytes: number) => (bytes / 1024 / 1024).toFixed(1)
+
     try {
-      const result = await generateImage(args.payload, { signal: controller.signal })
+      const result = await generateImage(args.payload, {
+        signal: controller.signal,
+        onProgress: (event) => {
+          if (event.stage === 'awaiting') {
+            updateAssistantMessage(assistantId, (current) => ({
+              ...current,
+              progressOverride: { stage: '上游作画中', remainingLabel: '等待模型返回' },
+            }))
+          } else if (event.stage === 'downloading') {
+            const received = formatMb(event.bytesReceived)
+            const remainingLabel = event.bytesTotal
+              ? `已收 ${received} / ${formatMb(event.bytesTotal)} MB`
+              : `已收 ${received} MB`
+            updateAssistantMessage(assistantId, (current) => ({
+              ...current,
+              progressOverride: { stage: '下载图片', remainingLabel },
+            }))
+          } else if (event.stage === 'finalizing') {
+            updateAssistantMessage(assistantId, (current) => ({
+              ...current,
+              progressOverride: { stage: '渲染中', remainingLabel: '即将显示' },
+            }))
+          }
+        },
+      })
 
       deps.primeGeneratedImages(result.images)
       deps.images.value = result.images
@@ -140,6 +166,7 @@ export function useGenerationFlow(deps: GenerationFlowDeps) {
         images: result.images,
         requestId: result.requestId,
         elapsedSeconds: elapsed,
+        progressOverride: undefined,
       }))
 
       deps.vibrate('success')
@@ -193,6 +220,7 @@ export function useGenerationFlow(deps: GenerationFlowDeps) {
         errorCode: code,
         requestId,
         elapsedSeconds: elapsed,
+        progressOverride: undefined,
       }))
 
       deps.vibrate('error')
