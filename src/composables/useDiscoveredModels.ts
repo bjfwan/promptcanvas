@@ -60,6 +60,47 @@ function isLikelyImageModel(id: string): boolean {
   return imageHints.some((h) => lower.includes(h))
 }
 
+// Model-name fragments that strongly imply a model can render at 2K / 4K.
+// Heuristic only: a match unlocks the tier in the UI, a miss just leaves the
+// manual toggle as the fallback. Never used to send a billed probe.
+const tier4kHints = ['4k', '4096', 'seedream-4', 'seedream4', 'ultra-hd', 'ultrahd']
+const tier2kHints = [
+  '2k',
+  '2048',
+  'seedream',
+  'doubao',
+  'hunyuan-image',
+  'flux',
+  'flux-pro',
+  'imagen',
+  'ideogram',
+  'recraft',
+  'gpt-image',
+  'hidream',
+  'qwen-image',
+  'nano-banana',
+  'kolors',
+]
+
+export interface ResolutionTierDetection {
+  supports2k: boolean
+  supports4k: boolean
+}
+
+/** Scan discovered model ids for names that imply 2K / 4K rendering. */
+export function detectResolutionTiers(models: string[]): ResolutionTierDetection {
+  let supports2k = false
+  let supports4k = false
+  for (const id of models) {
+    const lower = id.toLowerCase()
+    if (tier4kHints.some((h) => lower.includes(h))) supports4k = true
+    if (tier2kHints.some((h) => lower.includes(h))) supports2k = true
+  }
+  // 4K capability implies 2K is also available.
+  if (supports4k) supports2k = true
+  return { supports2k, supports4k }
+}
+
 function loadInitial(): string[] {
   if (typeof localStorage === 'undefined') return []
   try {

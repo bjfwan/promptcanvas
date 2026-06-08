@@ -113,13 +113,6 @@ const commands = computed<CommandItem[]>(() => {
       icon: 'sparkle',
       keywords: 'onboarding tour walkthrough intro guide 引导 教程 入门',
       run: () => emit('open-onboarding'),
-    },    {
-      id: 'open-onboarding',
-      group: t('cmd.group.nav'),
-      label: t('cmd.openOnboarding'),
-      icon: 'sparkle',
-      keywords: 'onboarding tour walkthrough intro guide 引导 教程 入门',
-      run: () => emit('open-onboarding'),
     },
     {
       id: 'toggle-theme',

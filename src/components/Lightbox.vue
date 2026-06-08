@@ -287,6 +287,10 @@ function onTouchEnd(event: TouchEvent) {
       if (dx < 0) lightbox.next()
       else lightbox.prev()
       suppressNextClick = true
+    } else if (!isZoomed.value && dy > 90 && Math.abs(dy) > Math.abs(dx) * 1.5) {
+      vibrate('tap')
+      lightbox.close()
+      suppressNextClick = true
     }
     swipeStart = null
   }

@@ -1,4 +1,5 @@
 import { snapshotProviderConfig } from './composables/useProviderConfig'
+import { detectResolutionTiers, type ResolutionTierDetection } from './composables/useDiscoveredModels'
 import { loadBrandKit } from './lib/brandKit'
 import { loadHistory } from './storage'
 import {
@@ -34,6 +35,16 @@ export class ApiRequestError extends Error {
     this.code = code
     this.requestId = requestId
   }
+}
+
+// Client-side generation timeout, scaled by resolution tier. Generous on
+// purpose: we would rather wait than abandon a request the upstream may have
+// already billed. Past this, we abort but keep the request ID visible so the
+// user can verify/retry safely.
+function timeoutForSize(size: string): number {
+  if (/^(4096|6144)/.test(size)) return 480_000
+  if (/^(2048|3072)/.test(size)) return 300_000
+  return 180_000
 }
 
 function generateRequestId(): string {
@@ -257,6 +268,10 @@ export async function generateImage(
   group.log('proxyUrl', proxyUrl || '<direct, no proxy>')
   group.log('inbound payload', payload)
 
+  let timeoutTimer: ReturnType<typeof setTimeout> | undefined
+  let timedOut = false
+  let onExternalAbort: (() => void) | undefined
+
   try {
     if (!apiKey || !baseUrl) {
       group.warn('missing credentials → throwing PROVIDER_NOT_CONFIGURED')
@@ -315,10 +330,13 @@ export async function generateImage(
       n: validated.count,
       output_format: validated.outputFormat,
       quality: validated.quality,
-      // Ask upstream to return a CDN URL instead of inlined base64 when supported.
-      // For models that ignore it (e.g. gpt-image-*), the response just falls back to b64_json
-      // and behavior is unchanged.
-      response_format: 'url',
+      // Inline the image bytes in the generation response (base64) instead of a CDN URL.
+      // A URL forces a SECOND, cold, cross-origin download of the real pixels that runs AFTER
+      // we've already reported "done": the user watches a skeleton while it loads and it isn't
+      // counted in the progress bar. Inlining streams the bytes over the same warm
+      // (proxied, CORS-ready) connection, so download progress is honest and the image paints
+      // from memory the moment the response ends — no second round trip.
+      response_format: 'b64_json',
       user: requestId,
     }
     if (validated.model) {
@@ -373,6 +391,22 @@ export async function generateImage(
       group.log('upstream body (json)', JSON.stringify(upstreamRequest))
     }
 
+    // Merge the caller's abort signal with our own resolution-scaled timeout.
+    // Either firing aborts the fetch; we distinguish the two so a timeout shows
+    // billing-safe recovery copy rather than the silent "已取消" path.
+    const timeoutMs = timeoutForSize(validated.size)
+    const localController = new AbortController()
+    onExternalAbort = () => localController.abort()
+    if (options?.signal) {
+      if (options.signal.aborted) localController.abort()
+      else options.signal.addEventListener('abort', onExternalAbort, { once: true })
+    }
+    timeoutTimer = setTimeout(() => {
+      timedOut = true
+      localController.abort()
+    }, timeoutMs)
+    group.log('client timeout (ms)', timeoutMs)
+
     const t0 = nowMs()
     options?.onProgress?.({ stage: 'awaiting' })
     let upstream: Response
@@ -381,11 +415,20 @@ export async function generateImage(
         method: 'POST',
         headers: built.headers,
         body: requestBody,
-        signal: options?.signal,
+        signal: localController.signal,
       })
     } catch (error) {
       const err = error as Error
       const elapsedMs = Math.round(nowMs() - t0)
+
+      if (timedOut) {
+        group.warn(`fetch aborted by client timeout after ${elapsedMs}ms`)
+        throw new ApiRequestError(
+          `生成等待超过 ${Math.round(timeoutMs / 1000)} 秒已停止等待。上游可能已经出图并计费——请凭请求 ID 到中转站后台核对，重试是安全的。`,
+          'CLIENT_TIMEOUT',
+          requestId,
+        )
+      }
 
       if (err?.name === 'AbortError' || options?.signal?.aborted) {
         group.warn(`fetch aborted by user after ${elapsedMs}ms`)
@@ -406,6 +449,15 @@ export async function generateImage(
         message: err?.message,
       })
       throw new ApiRequestError(mapped.message, mapped.code, requestId)
+    }
+
+    // Headers arrived — the upstream is responding. Clear the wait timeout so a
+    // slow but progressing download isn't killed mid-stream; the streaming
+    // progress UI and manual cancel (still wired to the external signal) cover
+    // this phase.
+    if (timeoutTimer) {
+      clearTimeout(timeoutTimer)
+      timeoutTimer = undefined
     }
 
     const elapsedMs = Math.round(nowMs() - t0)
@@ -487,6 +539,13 @@ export async function generateImage(
     }
     throw error
   } finally {
+    if (timeoutTimer) {
+      clearTimeout(timeoutTimer)
+      timeoutTimer = undefined
+    }
+    if (options?.signal && onExternalAbort) {
+      options.signal.removeEventListener('abort', onExternalAbort)
+    }
     group.end()
   }
 }
@@ -516,6 +575,7 @@ export interface TestProviderResult {
   generationsCorsOk: boolean
   generationsProbeStatus?: number
   warnings: string[]
+  resolution: ResolutionTierDetection
 }
 
 interface ProbeOutcome {
@@ -709,6 +769,9 @@ export async function testProvider(override?: {
     const totalMs = Math.round(nowMs() - start)
     const warnings: string[] = []
 
+    const resolution = detectResolutionTiers(models)
+    group.log('resolution heuristic', resolution)
+
     if (!probe.ok) {
       warnings.push(
         '/images/generations 路径缺少 CORS 头：浏览器可以发起预检与请求，但读不到响应正文。这意味着上游会照常计费但前端拿不到图。请联系中转站运维补 Access-Control-Allow-Origin（或换一个 CORS 完整的服务商）。',
@@ -741,6 +804,7 @@ export async function testProvider(override?: {
       generationsCorsOk: probe.ok,
       generationsProbeStatus: probe.status,
       warnings,
+      resolution,
     }
   } catch (error) {
     if (error instanceof ApiRequestError) {

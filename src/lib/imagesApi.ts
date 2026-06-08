@@ -10,6 +10,12 @@ export const allowedSizes: ReadonlySet<string> = new Set([
   '1024x1024',
   '1024x1536',
   '1536x1024',
+  '2048x2048',
+  '2048x3072',
+  '3072x2048',
+  '4096x4096',
+  '4096x6144',
+  '6144x4096',
 ])
 
 export const allowedFormats: ReadonlySet<string> = new Set(['png', 'jpeg', 'webp'])
@@ -246,7 +252,7 @@ export function validatePayload(body: unknown): ValidationResult {
   }
 
   if (!allowedSizes.has(size)) {
-    return { error: 'size 只支持 1024x1024、1024x1536、1536x1024' }
+    return { error: 'size 不在支持范围内' }
   }
 
   if (!Number.isInteger(count) || count < 1 || count > 4) {
@@ -365,8 +371,7 @@ export function buildPrompt(payload: {
     | 'interior'
     | 'raw'
 
-  const allowedSizesList = new Set(['1024x1024', '1024x1536', '1536x1024'])
-  const size = allowedSizesList.has(payload.size ?? '') ? (payload.size as string) : '1024x1024'
+  const size = allowedSizes.has(payload.size ?? '') ? (payload.size as string) : '1024x1024'
 
   const allowedQualitiesList = new Set(['auto', 'low', 'medium', 'high'])
   const quality = allowedQualitiesList.has(payload.quality ?? '')

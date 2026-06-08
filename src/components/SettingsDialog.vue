@@ -5,6 +5,7 @@ import Select, { type SelectOption } from './Select.vue'
 import { customModelSentinel, qualityOptions } from '../presets'
 import { useProviderConfig } from '../composables/useProviderConfig'
 import { useDiscoveredModels } from '../composables/useDiscoveredModels'
+import { useResolutionSupport } from '../composables/useResolutionSupport'
 import { useFocusTrap } from '../composables/useFocusTrap'
 import { useBodyLock } from '../composables/useBodyLock'
 import { ApiRequestError, testProvider } from '../api'
@@ -47,6 +48,7 @@ const customModel = defineModel<string>('customModel', { required: true })
 
 const provider = useProviderConfig()
 const discoveredModels = useDiscoveredModels()
+const resolutionSupport = useResolutionSupport()
 const i18n = useI18n()
 const showApiKey = ref(false)
 const dialogRef = ref<HTMLElement | null>(null)
@@ -148,6 +150,7 @@ async function handleTestProvider() {
     if (result.models?.length) {
       discoveredModels.setModels(result.models)
     }
+    resolutionSupport.setDetected(result.resolution)
     testMessage.value = result.message
     const imageCount = discoveredModels.imageOnly.value.length
     if (!result.generationsCorsOk) {
@@ -160,9 +163,15 @@ async function handleTestProvider() {
       })
     } else {
       testStatus.value = 'success'
-      testHint.value = imageCount > 0
-        ? `已从中转站拉取 ${imageCount} 个可能可用的图片模型，已加入下方模型下拉。生成路径 CORS 也检测正常。`
-        : '连接成功，但未识别到明显的图片模型名，可选「自定义…」手动填写。生成路径 CORS 检测正常。'
+      const resHint = result.resolution.supports4k
+        ? '检测到支持 2K/4K'
+        : result.resolution.supports2k
+          ? '检测到支持 2K'
+          : ''
+      const imageHint = imageCount > 0
+        ? `已从中转站拉取 ${imageCount} 个图片模型`
+        : '未识别到明显的图片模型名，可选「自定义…」手动填写'
+      testHint.value = [imageHint, resHint, '生成路径 CORS 检测正常'].filter(Boolean).join('；')
       emit('test-result', { ok: true, message: result.message })
     }
   } catch (error) {
@@ -444,6 +453,63 @@ onBeforeUnmount(() => {
                     {{ testHint }}
                   </p>
                 </div>
+              </section>
+
+              <section
+                class="rounded-2xl border border-line bg-paper-soft/40 p-4"
+              >
+                <div class="mb-3 flex items-center justify-between gap-2">
+                  <div class="flex flex-col">
+                    <span class="display-eyebrow text-[10px]">分辨率能力 · Resolution</span>
+                    <span class="mt-1 text-[13px] font-medium text-ink">
+                      {{ resolutionSupport.unlocked4k.value ? '已解锁 4K 与 2K' : resolutionSupport.unlocked2k.value ? '已解锁 2K' : '仅 1024px' }}
+                    </span>
+                  </div>
+                </div>
+
+                <p class="mb-3 text-[11px] leading-[1.6] text-muted">
+                  连接测试会自动检测中转站是否支持 2K（2048px）和 4K（4096px）尺寸。也可手动强制开启。
+                </p>
+
+                <div class="space-y-2">
+                  <div class="flex items-center justify-between gap-2 rounded-xl border border-line/70 bg-paper-soft/40 px-3 py-2">
+                    <div class="flex items-center gap-2">
+                      <Icon name="check" :size="12" class="text-muted" />
+                      <span class="text-[12px] font-medium text-ink">2K 尺寸（2048px）</span>
+                    </div>
+                    <label class="res-toggle inline-flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        :checked="resolutionSupport.state.manual2k === 'on'"
+                        @change="(e) => resolutionSupport.setManual2k((e.target as HTMLInputElement).checked ? 'on' : 'auto')"
+                      />
+                      <span class="font-mono text-[10px] uppercase tracking-[0.16em]">
+                        {{ resolutionSupport.state.detected2k ? '已检测' : resolutionSupport.state.manual2k === 'on' ? '手动开启' : '关闭' }}
+                      </span>
+                    </label>
+                  </div>
+
+                  <div class="flex items-center justify-between gap-2 rounded-xl border border-line/70 bg-paper-soft/40 px-3 py-2">
+                    <div class="flex items-center gap-2">
+                      <Icon name="star" :size="12" class="text-muted" />
+                      <span class="text-[12px] font-medium text-ink">4K 尺寸（4096px）</span>
+                    </div>
+                    <label class="res-toggle inline-flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        :checked="resolutionSupport.state.manual4k === 'on'"
+                        @change="(e) => resolutionSupport.setManual4k((e.target as HTMLInputElement).checked ? 'on' : 'auto')"
+                      />
+                      <span class="font-mono text-[10px] uppercase tracking-[0.16em]">
+                        {{ resolutionSupport.state.detected4k ? '已检测' : resolutionSupport.state.manual4k === 'on' ? '手动开启' : '关闭' }}
+                      </span>
+                    </label>
+                  </div>
+                </div>
+
+                <p class="mt-2 text-[10px] text-muted">
+                  若手动开启但中转站实际不支持，生成会被上游拒绝（4xx 错误）
+                </p>
               </section>
 
               <section

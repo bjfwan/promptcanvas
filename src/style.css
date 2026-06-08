@@ -446,19 +446,6 @@
   100% { transform: translateY(380%); }
 }
 
-/* DevelopingFrame shared keyframes (used by skeleton shimmer & baseline rise). */
-@keyframes dev-shimmer {
-  0%   { background-position: -50% 0; }
-  100% { background-position: 150% 0; }
-}
-
-@keyframes dev-rise {
-  0%   { transform: translateY(0);      opacity: 0; }
-  12%  { opacity: 1; }
-  88%  { opacity: 1; }
-  100% { transform: translateY(-100%);  opacity: 0; }
-}
-
 /* Image arrival: 200ms blur→focus (Midjourney-style settle). */
 @keyframes dev-focus {
   0%   { filter: blur(8px); }
@@ -488,6 +475,16 @@
     background-image:
       linear-gradient(180deg, rgb(var(--color-ivory) / 0.4), rgb(var(--color-vellum) / 0)),
       url("data:image/svg+xml;utf8,%3Csvg viewBox='0 0 280 280' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='1' stitchTiles='stitch' seed='4'/%3E%3CfeColorMatrix values='0 0 0 0 0.09 0 0 0 0 0.075 0 0 0 0 0.06 0 0 0 0.022 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+}
+
+/* iOS Safari auto-zooms when focusing a field smaller than 16px. Unlayered so
+ * it overrides Tailwind's text-[12px]/text-sm utilities on phones only. */
+@media (max-width: 639px) {
+  input:not([type='checkbox']):not([type='radio']):not([type='range']),
+  textarea,
+  select {
+    font-size: 16px;
   }
 }
 

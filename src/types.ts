@@ -1,4 +1,15 @@
-export type ImageSize = '1024x1024' | '1024x1536' | '1536x1024'
+export type ImageSize =
+  | '1024x1024'
+  | '1024x1536'
+  | '1536x1024'
+  | '2048x2048'
+  | '2048x3072'
+  | '3072x2048'
+  | '4096x4096'
+  | '4096x6144'
+  | '6144x4096'
+
+export type ResolutionTier = '1k' | '2k' | '4k'
 
 export type ImageStyle =
   | 'natural'

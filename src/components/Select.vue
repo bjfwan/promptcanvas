@@ -80,24 +80,26 @@ function computePosition() {
 
   const rect = trigger.getBoundingClientRect()
   const viewportH = window.innerHeight
+  const viewportW = window.innerWidth
   const spaceBelow = viewportH - rect.bottom
   const spaceAbove = rect.top
   const desiredMax = 320
   const placement: 'down' | 'up' = spaceBelow >= 200 || spaceBelow >= spaceAbove ? 'down' : 'up'
   const maxHeight = Math.min(desiredMax, placement === 'down' ? spaceBelow - 16 : spaceAbove - 16)
 
+  const margin = 8
+  const width = Math.min(Math.max(rect.width, 200), viewportW - margin * 2)
   const top = placement === 'down' ? rect.bottom + 6 : 'auto'
   const bottom = placement === 'up' ? viewportH - rect.top + 6 : 'auto'
-  const left = props.align === 'end' ? 'auto' : rect.left
-  const right = props.align === 'end' ? window.innerWidth - rect.right : 'auto'
+  const rawLeft = props.align === 'end' ? rect.right - width : rect.left
+  const left = Math.min(Math.max(margin, rawLeft), viewportW - width - margin)
 
   popoverStyle.value = {
     position: 'fixed',
     top: typeof top === 'number' ? `${top}px` : top,
     bottom: typeof bottom === 'number' ? `${bottom}px` : bottom,
-    left: typeof left === 'number' ? `${left}px` : left,
-    right: typeof right === 'number' ? `${right}px` : right,
-    width: `${Math.max(rect.width, 200)}px`,
+    left: `${left}px`,
+    width: `${width}px`,
     maxHeight: `${Math.max(160, maxHeight)}px`,
     zIndex: '70',
   }

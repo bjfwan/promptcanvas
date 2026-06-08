@@ -11,6 +11,7 @@ import { maxReferenceImages } from '../lib/imagesApi'
 import { customModelSentinel, qualityOptions, sizeOptions, styleOptions } from '../presets'
 import { stylePrompts } from '../lib/imagesApi'
 import { useDiscoveredModels } from '../composables/useDiscoveredModels'
+import { useResolutionSupport } from '../composables/useResolutionSupport'
 import type { ContinuationContext, ImageQuality, ImageSize, ImageStyle, ReferenceImageAttachment } from '../types'
 import type { EnhanceResult } from '../lib/magicEnhance'
 import { inferEnhanceIntent } from '../lib/magicEnhance'
@@ -22,8 +23,18 @@ const PromptTreeline = defineAsyncComponent(() => import('./PromptTreeline.vue')
 
 const MagicEnhanceMenu = defineAsyncComponent(() => import('./MagicEnhanceMenu.vue'))
 
+const resolutionSupport = useResolutionSupport()
+
 const sizeSelectOptions = computed<SelectOption<ImageSize>[]>(() =>
-  sizeOptions.map((option) => ({ value: option.value, label: option.label, hint: option.hint })),
+  sizeOptions.map((option) => {
+    const unlocked = resolutionSupport.isTierUnlocked(option.tier)
+    return {
+      value: option.value,
+      label: option.label,
+      hint: unlocked ? option.hint : '需在设置中开启',
+      disabled: !unlocked,
+    }
+  }),
 )
 
 const countSelectOptions: SelectOption<number>[] = [

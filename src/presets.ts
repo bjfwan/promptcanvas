@@ -1,4 +1,4 @@
-import type { ImageQuality, ImageSize, ImageStyle, PromptTemplate } from './types'
+import type { ImageQuality, ImageSize, ImageStyle, PromptTemplate, ResolutionTier } from './types'
 
 export interface StylePreset {
   value: ImageStyle
@@ -92,11 +92,21 @@ export const styleOptions: StylePreset[] = [
   },
 ]
 
-export const sizeOptions: Array<{ value: ImageSize; label: string; hint: string }> = [
-  { value: '1024x1024', label: '方图 1:1', hint: '头像、封面、社媒' },
-  { value: '1024x1536', label: '竖图 2:3', hint: '海报、人物、手机壁纸' },
-  { value: '1536x1024', label: '横图 3:2', hint: '横幅、场景、桌面壁纸' },
+export const sizeOptions: Array<{ value: ImageSize; label: string; hint: string; tier: ResolutionTier }> = [
+  { value: '1024x1024', label: '方图 1:1', hint: '头像、封面、社媒', tier: '1k' },
+  { value: '1024x1536', label: '竖图 2:3', hint: '海报、人物、手机壁纸', tier: '1k' },
+  { value: '1536x1024', label: '横图 3:2', hint: '横幅、场景、桌面壁纸', tier: '1k' },
+  { value: '2048x2048', label: '方图 2K', hint: '高清方图 · 需中转站支持', tier: '2k' },
+  { value: '2048x3072', label: '竖图 2K', hint: '高清海报 · 需中转站支持', tier: '2k' },
+  { value: '3072x2048', label: '横图 2K', hint: '高清横幅 · 需中转站支持', tier: '2k' },
+  { value: '4096x4096', label: '方图 4K', hint: '超清方图 · 需中转站支持', tier: '4k' },
+  { value: '4096x6144', label: '竖图 4K', hint: '超清海报 · 需中转站支持', tier: '4k' },
+  { value: '6144x4096', label: '横图 4K', hint: '超清横幅 · 需中转站支持', tier: '4k' },
 ]
+
+export const sizeTierById = new Map<ImageSize, ResolutionTier>(
+  sizeOptions.map((option) => [option.value, option.tier]),
+)
 
 export const qualityOptions: Array<{ value: ImageQuality; label: string }> = [
   { value: 'auto', label: '自动' },

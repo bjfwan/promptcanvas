@@ -30,6 +30,12 @@ const SIZE_OVERHEAD: Record<string, number> = {
   '1024x1024': 0,
   '1024x1536': 3,
   '1536x1024': 3,
+  '2048x2048': 8,
+  '2048x3072': 12,
+  '3072x2048': 12,
+  '4096x4096': 22,
+  '4096x6144': 30,
+  '6144x4096': 30,
 }
 
 const QUALITY_OVERHEAD: Record<string, number> = {
