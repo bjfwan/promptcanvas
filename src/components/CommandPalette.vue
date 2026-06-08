@@ -45,6 +45,7 @@ interface CommandItem {
 }
 
 const { t } = useI18n()
+const resolutionSupport = useResolutionSupport()
 
 const inputRef = ref<HTMLInputElement | null>(null)
 const dialogRef = ref<HTMLElement | null>(null)
@@ -158,6 +159,7 @@ const commands = computed<CommandItem[]>(() => {
   }
 
   for (const size of sizeOptions) {
+    if (!resolutionSupport.isTierUnlocked(size.tier)) continue
     list.push({
       id: `size-${size.value}`,
       group: t('cmd.group.size'),
