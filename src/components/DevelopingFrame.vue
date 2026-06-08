@@ -134,8 +134,10 @@ const arcPath = computed(() => {
   justify-content: center;
   font-family: 'IBM Plex Sans', system-ui, sans-serif;
   background:
-    radial-gradient(ellipse 80% 60% at 50% 45%, rgb(var(--color-forest) / 0.04), transparent 70%),
-    linear-gradient(160deg, rgb(var(--color-vellum)) 0%, rgb(var(--color-paper-soft)) 100%);
+    radial-gradient(ellipse 80% 60% at 50% 45%, rgb(var(--color-accent) / 0.06), transparent 70%),
+    linear-gradient(160deg, rgb(var(--color-ivory) / 0.6) 0%, rgb(var(--color-vellum) / 0.5) 100%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
 }
 
 /* ------------------------------------------------------------------
@@ -145,12 +147,14 @@ const arcPath = computed(() => {
   position: absolute;
   inset: -20%;
   border-radius: 50%;
-  background: radial-gradient(
-    circle at 50% 50%,
-    rgb(var(--color-forest) / 0.06) 0%,
-    rgb(var(--color-ochre) / 0.03) 40%,
-    transparent 70%
+  background: conic-gradient(
+    from 180deg at 50% 50%,
+    rgb(var(--color-accent) / 0.1) 0deg,
+    rgb(var(--color-blueprint) / 0.08) 120deg,
+    rgb(var(--color-clay) / 0.06) 240deg,
+    rgb(var(--color-accent) / 0.1) 360deg
   );
+  filter: blur(20px);
   animation: epulse-ambient 8s ease-in-out infinite;
   pointer-events: none;
 }
@@ -169,7 +173,8 @@ const arcPath = computed(() => {
   width: 3px;
   height: 3px;
   border-radius: 50%;
-  background: rgb(var(--color-forest) / 0.35);
+  background: rgb(var(--color-accent) / 0.4);
+  box-shadow: 0 0 6px rgb(var(--color-accent) / 0.4);
   top: 50%;
   left: 50%;
   animation: epulse-particle 6s ease-in-out infinite;
@@ -179,7 +184,8 @@ const arcPath = computed(() => {
 .epulse__particles > span:nth-child(odd) {
   width: 2px;
   height: 2px;
-  background: rgb(var(--color-ochre) / 0.3);
+  background: rgb(var(--color-blueprint) / 0.35);
+  box-shadow: 0 0 5px rgb(var(--color-blueprint) / 0.35);
 }
 
 /* ------------------------------------------------------------------
@@ -215,16 +221,16 @@ const arcPath = computed(() => {
 
 .epulse__ring-fill {
   fill: none;
-  stroke: rgb(var(--color-forest));
+  stroke: rgb(var(--color-accent));
   stroke-width: 2;
   stroke-linecap: round;
-  filter: drop-shadow(0 0 4px rgb(var(--color-forest) / 0.4));
+  filter: drop-shadow(0 0 5px rgb(var(--color-accent) / 0.5));
   transition: d 0.6s var(--motion-snap);
 }
 
 .epulse__ring-orbit {
   fill: none;
-  stroke: rgb(var(--color-forest) / 0.15);
+  stroke: rgb(var(--color-blueprint) / 0.22);
   stroke-width: 0.5;
   stroke-dasharray: 3 12;
   animation: epulse-orbit 12s linear infinite;
@@ -250,7 +256,7 @@ const arcPath = computed(() => {
   inset: 12%;
   border-radius: 50%;
   background:
-    radial-gradient(circle at 35% 35%, rgb(var(--color-forest) / 0.9), rgb(var(--color-forest) / 0.5) 60%, transparent 80%);
+    radial-gradient(circle at 35% 35%, rgb(var(--color-accent) / 0.92), rgb(var(--color-blueprint) / 0.55) 60%, transparent 82%);
   animation: epulse-morph 4s ease-in-out infinite;
   filter: blur(1px);
 }
@@ -259,8 +265,8 @@ const arcPath = computed(() => {
   position: absolute;
   inset: 0;
   border-radius: 50%;
-  background: rgb(var(--color-forest) / 0.08);
-  border: 1px solid rgb(var(--color-forest) / 0.12);
+  background: rgb(var(--color-accent) / 0.08);
+  border: 1px solid rgb(var(--color-accent) / 0.14);
   animation: epulse-breathe 3s ease-in-out infinite;
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
@@ -291,7 +297,7 @@ const arcPath = computed(() => {
   font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.28em;
-  color: rgb(var(--color-forest) / 0.8);
+  color: rgb(var(--color-accent) / 0.85);
   animation: epulse-fade-stage 2.4s ease-in-out infinite;
 }
 
@@ -331,9 +337,9 @@ const arcPath = computed(() => {
   width: 5px;
   height: 5px;
   border-radius: 50%;
-  background: rgb(var(--color-forest));
+  background: var(--gradient-primary);
   animation: epulse-dot 2s ease-in-out infinite;
-  box-shadow: 0 0 6px rgb(var(--color-forest) / 0.5);
+  box-shadow: 0 0 6px rgb(var(--color-accent) / 0.5);
 }
 
 .epulse__cancel {
@@ -445,7 +451,7 @@ const arcPath = computed(() => {
   font-size: 10px;
   font-weight: 600;
   font-feature-settings: 'tnum';
-  color: rgb(var(--color-forest) / 0.9);
+  color: rgb(var(--color-accent) / 0.9);
   letter-spacing: 0.02em;
 }
 
@@ -527,12 +533,12 @@ const arcPath = computed(() => {
   0%, 100% {
     opacity: 0.5;
     transform: scale(0.8);
-    box-shadow: 0 0 4px rgb(var(--color-forest) / 0.3);
+    box-shadow: 0 0 4px rgb(var(--color-accent) / 0.3);
   }
   50% {
     opacity: 1;
     transform: scale(1.1);
-    box-shadow: 0 0 8px rgb(var(--color-forest) / 0.6);
+    box-shadow: 0 0 8px rgb(var(--color-accent) / 0.6);
   }
 }
 

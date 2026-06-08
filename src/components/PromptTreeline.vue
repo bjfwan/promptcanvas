@@ -56,11 +56,13 @@ function timeLabel(createdAt: number): string {
 </script>
 
 <template>
-  <section v-if="sortedNodes.length" class="prompt-treeline">
+  <section v-if="sortedNodes.length" class="prompt-treeline reveal">
     <div class="prompt-treeline__head">
       <div class="prompt-treeline__title">
-        <Icon name="layers" :size="11" />
-        <span>Prompt 树</span>
+        <span class="prompt-treeline__title-icon" aria-hidden="true">
+          <Icon name="layers" :size="11" />
+        </span>
+        <span class="gradient-text">Prompt 树</span>
         <small>{{ sortedNodes.length }} 节点</small>
       </div>
       <div class="prompt-treeline__nav">
@@ -122,10 +124,13 @@ function timeLabel(createdAt: number): string {
 <style scoped>
 .prompt-treeline {
   margin-top: 0.55rem;
-  padding: 0.55rem 0.6rem 0.4rem;
-  border-radius: 16px;
-  border: 1px dashed rgb(var(--color-line) / 0.7);
-  background: rgb(var(--color-paper-soft) / 0.45);
+  padding: 0.6rem 0.65rem 0.45rem;
+  border-radius: var(--radius-panel);
+  border: 1px dashed rgb(var(--color-line) / 0.55);
+  background: rgb(var(--color-ivory) / 0.4);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  box-shadow: var(--shadow-inner-glass);
 }
 
 .prompt-treeline__head {
@@ -163,21 +168,30 @@ function timeLabel(createdAt: number): string {
   display: inline-flex;
   align-items: center;
   gap: 0.26rem;
-  padding: 0.18rem 0.55rem;
+  padding: 0.2rem 0.58rem;
   border-radius: 999px;
-  border: 1px solid rgb(var(--color-line) / 0.78);
-  background: rgb(var(--color-paper) / 0.62);
+  border: 1px solid rgb(var(--color-line) / 0.5);
+  background: rgb(var(--color-ivory) / 0.45);
+  backdrop-filter: blur(10px) saturate(1.4);
+  -webkit-backdrop-filter: blur(10px) saturate(1.4);
+  box-shadow: var(--shadow-inner-glass);
   color: rgb(var(--color-muted));
   font-size: 10px;
   font-weight: 660;
   cursor: pointer;
-  transition: background 140ms ease, color 140ms ease, border-color 140ms ease;
+  transition: background 160ms var(--motion-soft), color 160ms var(--motion-soft), border-color 160ms var(--motion-soft), transform 140ms var(--motion-press), box-shadow 160ms var(--motion-soft);
 }
 
 .prompt-treeline__btn:not(:disabled):hover {
-  border-color: rgb(var(--color-line-strong));
-  background: rgb(var(--color-vellum));
+  border-color: rgb(var(--color-line-strong) / 0.7);
+  background: rgb(var(--color-ivory) / 0.65);
   color: rgb(var(--color-ink));
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-glass-sm);
+}
+
+.prompt-treeline__btn:not(:disabled):active {
+  transform: translateY(0);
 }
 
 .prompt-treeline__btn:disabled {
@@ -198,19 +212,24 @@ function timeLabel(createdAt: number): string {
   display: inline-flex;
   align-items: center;
   gap: 0.42rem;
-  padding: 0.38rem 0.55rem;
-  border-radius: 14px;
-  border: 1px solid rgb(var(--color-line) / 0.85);
-  background: rgb(var(--color-paper) / 0.7);
+  padding: 0.4rem 0.58rem;
+  border-radius: var(--radius-panel);
+  border: 1px solid rgb(var(--color-line) / 0.45);
+  background: rgb(var(--color-ivory) / 0.45);
+  backdrop-filter: blur(12px) saturate(1.4);
+  -webkit-backdrop-filter: blur(12px) saturate(1.4);
+  box-shadow: var(--shadow-inner-glass);
   color: rgb(var(--color-ink));
   cursor: pointer;
-  transition: background 150ms ease, border-color 150ms ease, transform 150ms ease;
+  transition: background 180ms var(--motion-soft), border-color 180ms var(--motion-soft), transform 160ms var(--motion-press), box-shadow 180ms var(--motion-soft);
   text-align: left;
 }
 
 .prompt-treeline__node:hover {
-  border-color: rgb(var(--color-line-strong));
-  background: rgb(var(--color-vellum));
+  border-color: rgb(var(--color-line-strong) / 0.7);
+  background: rgb(var(--color-ivory) / 0.65);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-glass-sm);
 }
 
 .prompt-treeline__node:active {
@@ -218,10 +237,10 @@ function timeLabel(createdAt: number): string {
 }
 
 .prompt-treeline__node.is-current {
-  border-color: rgb(var(--color-ink));
-  background: rgb(var(--color-ink));
-  color: rgb(var(--color-paper));
-  box-shadow: 0 6px 14px -10px rgb(var(--color-ink) / 0.6);
+  border-color: transparent;
+  background: var(--gradient-primary);
+  color: #fff;
+  box-shadow: var(--shadow-glass), var(--shadow-glow-accent);
 }
 
 .prompt-treeline__node-icon {
@@ -230,13 +249,14 @@ function timeLabel(createdAt: number): string {
   width: 18px;
   height: 18px;
   border-radius: 999px;
-  background: rgb(var(--color-vellum));
+  background: rgb(var(--color-ivory) / 0.5);
+  box-shadow: var(--shadow-inner-glass);
   color: rgb(var(--color-ink));
 }
 
 .prompt-treeline__node.is-current .prompt-treeline__node-icon {
-  background: rgb(var(--color-paper) / 0.18);
-  color: rgb(var(--color-paper));
+  background: rgb(255 255 255 / 0.22);
+  color: #fff;
 }
 
 .prompt-treeline__node-body {
@@ -265,5 +285,12 @@ function timeLabel(createdAt: number): string {
   letter-spacing: 0.04em;
   color: rgb(var(--color-muted));
   text-align: right;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .prompt-treeline__btn,
+  .prompt-treeline__node {
+    transition: none;
+  }
 }
 </style>

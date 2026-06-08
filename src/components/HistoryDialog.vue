@@ -139,17 +139,17 @@ onBeforeUnmount(() => {
           <div
             v-if="open"
             ref="dialogRef"
-            class="relative flex max-h-[92dvh] w-full max-w-2xl flex-col overflow-hidden rounded-t-[28px] border border-line-strong bg-vellum text-ink shadow-paper-3 sm:max-h-[86dvh] sm:rounded-3xl"
+            class="dialog-shell relative flex max-h-[92dvh] w-full max-w-2xl flex-col overflow-hidden text-ink sm:max-h-[86dvh]"
           >
-            <header class="relative flex items-start justify-between gap-3 border-b border-line px-5 py-4 sm:px-6 sm:py-5">
+            <header class="relative flex items-start justify-between gap-3 border-b border-line/40 px-5 py-4 sm:px-6 sm:py-5">
               <div class="absolute inset-x-0 top-2 grid place-items-center sm:hidden">
                 <span class="h-1.5 w-10 rounded-full bg-line-strong/60"></span>
               </div>
               <div>
                 <p class="display-eyebrow">{{ t('history.eyebrow', { count: history.length }) }}</p>
                 <h2 class="mt-1.5 inline-flex items-center gap-2 font-display text-2xl tracking-tightish">
-                  <Icon name="clock" :size="18" class="text-muted" />
-                  <span>{{ t('history.title') }}</span>
+                  <Icon name="clock" :size="18" class="text-accent" />
+                  <span class="gradient-text">{{ t('history.title') }}</span>
                 </h2>
               </div>
               <div class="flex items-center gap-2">
@@ -287,7 +287,7 @@ onBeforeUnmount(() => {
               </ul>
               <p
                 v-else
-                class="rounded-2xl border border-dashed border-line bg-cream/40 px-4 py-6 text-center text-[12px] leading-5 text-muted"
+                class="rounded-2xl border border-dashed border-line/50 bg-ivory/30 px-4 py-6 text-center text-[12px] leading-5 text-muted backdrop-blur-sm"
               >
                 {{ t('history.empty') }}
               </p>
@@ -300,20 +300,44 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.dialog-shell {
+  border: 1px solid rgb(var(--color-line) / 0.3);
+  border-radius: var(--radius-card);
+  background: var(--gradient-surface);
+  backdrop-filter: blur(calc(var(--glass-blur) * 1.4)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 1.4)) saturate(var(--glass-saturate));
+  box-shadow: var(--shadow-glass-xl), var(--shadow-inner-glass);
+}
+
+@media (max-width: 639px) {
+  .dialog-shell {
+    border-bottom: 0;
+    border-top-left-radius: 28px;
+    border-top-right-radius: 28px;
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+  }
+}
+
 .history-card {
   display: flex;
   flex-direction: column;
   gap: 8px;
   padding: 12px;
-  border-radius: 18px;
-  border: 1px solid rgb(var(--color-line));
-  background: rgb(var(--color-cream) / 0.7);
-  transition: border-color 160ms var(--motion-soft), background-color 160ms var(--motion-soft);
+  border-radius: var(--radius-card);
+  border: 1px solid rgb(var(--color-line) / 0.4);
+  background: rgb(var(--color-ivory) / 0.4);
+  backdrop-filter: blur(10px) saturate(1.3);
+  -webkit-backdrop-filter: blur(10px) saturate(1.3);
+  box-shadow: var(--shadow-inner-glass);
+  transition: border-color 160ms var(--motion-soft), background-color 160ms var(--motion-soft), box-shadow 200ms var(--motion-soft), transform 200ms var(--motion-soft);
 }
 
 .history-card:hover {
-  border-color: rgb(var(--color-line-strong));
-  background: rgb(var(--color-cream));
+  border-color: rgb(var(--color-line-strong) / 0.5);
+  background: rgb(var(--color-ivory) / 0.6);
+  box-shadow: var(--shadow-glass), var(--shadow-inner-glass);
+  transform: translateY(-1px);
 }
 
 .history-card__main {
@@ -389,8 +413,11 @@ onBeforeUnmount(() => {
   height: 30px;
   padding: 0 11px;
   border-radius: 999px;
-  border: 1px solid rgb(var(--color-line));
-  background: rgb(var(--color-paper) / 0.65);
+  border: 1px solid rgb(var(--color-line) / 0.5);
+  background: rgb(var(--color-ivory) / 0.5);
+  backdrop-filter: blur(8px) saturate(1.4);
+  -webkit-backdrop-filter: blur(8px) saturate(1.4);
+  box-shadow: var(--shadow-inner-glass);
   color: rgb(var(--color-ink));
   font-size: 11px;
   font-weight: 500;
@@ -399,6 +426,7 @@ onBeforeUnmount(() => {
     background-color 140ms var(--motion-soft),
     border-color 140ms var(--motion-soft),
     color 140ms var(--motion-soft),
+    box-shadow 160ms var(--motion-soft),
     transform 140ms var(--motion-press);
   -webkit-tap-highlight-color: transparent;
 }
@@ -411,8 +439,9 @@ onBeforeUnmount(() => {
 }
 
 .history-card__chip:hover {
-  background: rgb(var(--color-vellum));
-  border-color: rgb(var(--color-line-strong));
+  background: rgb(var(--color-ivory) / 0.7);
+  border-color: rgb(var(--color-line-strong) / 0.6);
+  box-shadow: var(--shadow-glass-sm);
 }
 
 .history-card__chip:active {
@@ -421,14 +450,16 @@ onBeforeUnmount(() => {
 
 .history-card__chip--primary {
   margin-left: auto;
-  background: rgb(var(--color-ink));
-  border-color: rgb(var(--color-ink));
-  color: rgb(var(--color-paper));
+  background: var(--gradient-primary);
+  border-color: transparent;
+  color: #fff;
+  box-shadow: var(--shadow-glass-sm), var(--shadow-glow-accent);
 }
 
 .history-card__chip--primary:hover {
-  background: rgb(var(--color-ink) / 0.9);
-  border-color: rgb(var(--color-ink) / 0.9);
+  background: var(--gradient-primary);
+  border-color: transparent;
+  box-shadow: var(--shadow-glass), 0 0 24px -6px rgb(var(--color-accent) / 0.4);
 }
 
 @media (max-width: 380px) {

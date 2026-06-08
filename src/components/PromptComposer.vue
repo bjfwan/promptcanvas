@@ -371,12 +371,12 @@ watch(prompt, () => {
   >
     <div
       v-if="layout === 'panel' && dragActive"
-      class="pointer-events-none absolute inset-0 z-20 grid place-items-center rounded-[28px] border-2 border-dashed border-forest/60 bg-vellum/90 p-6 text-center shadow-paper-3 backdrop-blur"
+      class="composer-dropzone pointer-events-none absolute inset-0 z-20 grid place-items-center p-6 text-center"
       aria-hidden="true"
     >
-      <div class="rounded-3xl border border-line bg-paper/85 px-6 py-5 shadow-paper-2">
+      <div class="glass-card halo-pulse px-6 py-5">
         <Icon :name="canAddReferenceImages ? 'upload' : 'warning'" :size="22" class="mx-auto text-forest" />
-        <p class="mt-3 font-display text-xl italic text-ink">
+        <p class="mt-3 font-display text-xl italic gradient-text">
           {{ canAddReferenceImages ? '松手添加参考图' : '参考图已达上限' }}
         </p>
         <p class="mt-1 text-[12px] text-muted">
@@ -385,7 +385,7 @@ watch(prompt, () => {
       </div>
     </div>
 
-    <header v-if="layout === 'panel'" class="space-y-2">
+    <header v-if="layout === 'panel'" class="reveal space-y-2">
       <p class="display-eyebrow">01 · Compose</p>
       <h1 class="display-h1">构图草案</h1>
       <p class="text-[13px] leading-6 text-muted">
@@ -395,7 +395,7 @@ watch(prompt, () => {
 
     <div
       v-if="healthOffline"
-      class="flex items-start gap-3 rounded-2xl border border-accent/30 bg-accent/[0.06] px-4 py-3 text-[13px] leading-6 text-accent"
+      class="composer-alert flex items-start gap-3 px-4 py-3 text-[13px] leading-6 text-accent"
       role="alert"
     >
       <Icon name="warning" :size="16" class="mt-0.5" />
@@ -578,7 +578,7 @@ watch(prompt, () => {
       />
       <div
         v-if="hasReferenceImages"
-        class="rounded-2xl border border-line bg-vellum/70 p-3"
+        class="surface-1 reveal p-3"
       >
         <div class="mb-2 flex items-center justify-between gap-2">
           <p class="inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.18em] text-muted">
@@ -587,7 +587,7 @@ watch(prompt, () => {
           </p>
           <button
             type="button"
-            class="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium text-muted transition hover:bg-paper-soft hover:text-ink"
+            class="btn-quiet"
             :disabled="props.referenceImages.length >= maxReferenceImages"
             @click="openReferencePicker"
           >
@@ -600,7 +600,7 @@ watch(prompt, () => {
           <div
             v-for="image in props.referenceImages"
             :key="image.id"
-            class="group relative h-24 w-24 overflow-hidden rounded-2xl border border-line bg-paper-soft"
+            class="group relative h-24 w-24 overflow-hidden rounded-[var(--radius-panel)] border border-line/50 bg-paper-soft shadow-[var(--shadow-inner-glass)] transition-transform duration-200 hover:-translate-y-0.5"
           >
             <img
               :src="image.previewUrl"
@@ -611,7 +611,7 @@ watch(prompt, () => {
             />
             <button
               type="button"
-              class="absolute right-1.5 top-1.5 inline-grid h-6 w-6 place-items-center rounded-full bg-ink/75 text-paper opacity-0 transition group-hover:opacity-100"
+              class="absolute right-1.5 top-1.5 inline-grid h-6 w-6 place-items-center rounded-lg bg-ink/70 text-paper opacity-0 backdrop-blur-sm transition duration-200 hover:bg-accent group-hover:opacity-100"
               :aria-label="`移除参考图 ${image.name}`"
               @click="removeReferenceImage(image.id)"
             >
@@ -694,7 +694,7 @@ watch(prompt, () => {
 
       <button
         type="button"
-        class="flex w-full items-center justify-between rounded-2xl border border-line bg-cream/50 px-3 py-2.5 text-left text-[12px] transition hover:border-line-strong hover:bg-paper-soft"
+        class="surface-1 flex w-full items-center justify-between px-3.5 py-2.5 text-left text-[12px] transition-all duration-200 hover:-translate-y-px hover:shadow-[var(--shadow-glass-sm)]"
         :aria-expanded="previewOpen"
         @click="previewOpen = !previewOpen"
       >
@@ -715,7 +715,7 @@ watch(prompt, () => {
       <Transition name="acc">
         <div
           v-if="previewOpen"
-          class="rounded-2xl border border-line bg-vellum/70 p-3 text-[12px] leading-[1.7]"
+          class="surface-1 p-3.5 text-[12px] leading-[1.7]"
         >
           <p v-if="isRawStyle" class="flex items-center gap-2 text-forest">
             <Icon name="check" :size="12" />
@@ -835,11 +835,25 @@ watch(prompt, () => {
 <style scoped>
 .prompt-field-shell {
   overflow: hidden;
-  border-radius: calc(var(--radius-panel) + 2px);
-  border: 1px solid rgb(var(--color-line));
-  background: rgb(var(--color-ivory) / 0.72);
-  box-shadow: var(--shadow-inner-paper);
-  transition: border-color 180ms var(--motion-soft), background 180ms var(--motion-soft), box-shadow 180ms var(--motion-soft);
+  border-radius: var(--radius-card);
+  border: 1px solid rgb(var(--color-line) / 0.4);
+  background: rgb(var(--color-ivory) / 0.5);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  box-shadow: var(--shadow-glass), var(--shadow-inner-glass);
+  transition: border-color 200ms var(--motion-soft), background 200ms var(--motion-soft), box-shadow 220ms var(--motion-soft);
+}
+
+.composer-alert {
+  border-radius: var(--radius-panel);
+  border: 1px solid rgb(var(--color-clay) / 0.4);
+  background:
+    linear-gradient(135deg, rgb(var(--color-clay) / 0.12), rgb(var(--color-accent) / 0.08)),
+    rgb(var(--color-ivory) / 0.4);
+  backdrop-filter: blur(12px) saturate(1.4);
+  -webkit-backdrop-filter: blur(12px) saturate(1.4);
+  box-shadow: var(--shadow-inner-glass);
+  color: rgb(var(--color-clay));
 }
 
 .composer-cta {
@@ -877,9 +891,9 @@ watch(prompt, () => {
 }
 
 .prompt-field-shell:focus-within {
-  border-color: rgb(var(--color-forest));
-  background: rgb(var(--color-vellum));
-  box-shadow: var(--focus-ring);
+  border-color: rgb(var(--color-accent) / 0.5);
+  background: rgb(var(--color-ivory) / 0.62);
+  box-shadow: var(--focus-ring), var(--shadow-glow-accent);
 }
 
 .prompt-field-textarea {
@@ -903,10 +917,11 @@ watch(prompt, () => {
   grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
   gap: 0.7rem;
-  border-top: 1px solid rgb(var(--color-line) / 0.72);
+  border-top: 1px solid rgb(var(--color-line) / 0.4);
   background:
-    linear-gradient(180deg, rgb(var(--color-vellum) / 0.48), rgb(var(--color-cream) / 0.34)),
-    rgb(var(--color-paper-soft) / 0.18);
+    linear-gradient(180deg, rgb(var(--color-ivory) / 0.4), rgb(var(--color-ivory) / 0.2));
+  backdrop-filter: blur(10px) saturate(1.4);
+  -webkit-backdrop-filter: blur(10px) saturate(1.4);
   padding: 0.58rem 0.62rem;
 }
 
@@ -936,8 +951,11 @@ watch(prompt, () => {
   min-height: 30px;
   padding: 0 0.65rem;
   border-radius: 999px;
-  border: 1px solid rgb(var(--color-line) / 0.88);
-  background: rgb(var(--color-vellum) / 0.62);
+  border: 1px solid rgb(var(--color-line) / 0.5);
+  background: rgb(var(--color-ivory) / 0.45);
+  backdrop-filter: blur(10px) saturate(1.4);
+  -webkit-backdrop-filter: blur(10px) saturate(1.4);
+  box-shadow: var(--shadow-inner-glass);
   color: rgb(var(--color-muted));
   font-size: 11px;
   font-weight: 680;
@@ -947,10 +965,10 @@ watch(prompt, () => {
 
 .prompt-tool-btn:hover:not(:disabled) {
   transform: translateY(-1px);
-  border-color: rgb(var(--color-line-strong));
-  background: rgb(var(--color-ivory) / 0.82);
+  border-color: rgb(var(--color-line-strong) / 0.7);
+  background: rgb(var(--color-ivory) / 0.65);
   color: rgb(var(--color-ink));
-  box-shadow: var(--shadow-paper-1);
+  box-shadow: var(--shadow-glass-sm);
 }
 
 .prompt-tool-btn:active:not(:disabled) {
@@ -969,9 +987,10 @@ watch(prompt, () => {
 }
 
 .prompt-tool-btn--accent[aria-expanded="true"] {
-  border-color: rgb(var(--color-ink));
-  background: rgb(var(--color-ink));
-  color: rgb(var(--color-paper));
+  border-color: transparent;
+  background: var(--gradient-primary);
+  color: #fff;
+  box-shadow: var(--shadow-glow-accent);
 }
 
 /* ── AI 优化按钮（桌面） ── */
@@ -996,16 +1015,16 @@ watch(prompt, () => {
 }
 
 .prompt-tool-btn--ai.is-busy {
-  border-color: rgb(var(--color-ink));
-  background: rgb(var(--color-ink));
-  color: rgb(var(--color-paper));
+  border-color: transparent;
+  background: var(--gradient-primary);
+  color: #fff;
   animation: prompt-ai-pulse 1.4s var(--motion-soft) infinite;
 }
 
 .prompt-tool-btn--ai.is-picker-open {
-  border-color: rgb(var(--color-ink));
-  background: rgb(var(--color-ink));
-  color: rgb(var(--color-paper));
+  border-color: transparent;
+  background: var(--gradient-primary);
+  color: #fff;
 }
 
 @keyframes prompt-ai-pulse {
@@ -1016,11 +1035,11 @@ watch(prompt, () => {
 /* ── 流式中：textarea shell 边缘流光 ── */
 
 .prompt-field-shell.is-ai-streaming {
-  border-color: rgb(var(--color-ochre) / 0.55);
-  background: rgb(var(--color-vellum));
+  border-color: rgb(var(--color-accent) / 0.5);
+  background: rgb(var(--color-ivory) / 0.7);
   box-shadow:
-    var(--shadow-inner-paper),
-    0 0 0 1.5px rgb(var(--color-ochre) / 0.32);
+    var(--shadow-inner-glass),
+    var(--shadow-glow-accent);
 }
 
 .prompt-field-shell.is-ai-streaming .prompt-field-textarea {
@@ -1060,32 +1079,30 @@ watch(prompt, () => {
   gap: 0.65rem;
   min-height: 82px;
   overflow: hidden;
-  border-radius: 17px;
-  border: 1px solid rgb(var(--color-line));
-  background:
-    linear-gradient(135deg, rgb(var(--color-ivory) / 0.62), rgb(var(--color-vellum) / 0.42)),
-    rgb(var(--color-cream) / 0.28);
+  border-radius: var(--radius-card);
+  border: 1px solid rgb(var(--color-line) / 0.45);
+  background: rgb(var(--color-ivory) / 0.45);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   padding: 0.62rem 0.7rem 0.62rem 0.82rem;
   color: rgb(var(--color-ink));
   text-align: left;
-  box-shadow: var(--shadow-inner-paper);
+  box-shadow: var(--shadow-inner-glass);
   transition: transform 170ms var(--motion-press), border-color 170ms var(--motion-soft), background-color 170ms var(--motion-soft), box-shadow 190ms var(--motion-soft), color 170ms var(--motion-soft);
 }
 
 .style-card:hover {
   transform: translateY(-1px);
-  border-color: rgb(var(--color-line-strong));
-  background: rgb(var(--color-ivory) / 0.78);
-  box-shadow: var(--shadow-paper-1), var(--shadow-inner-paper);
+  border-color: rgb(var(--color-line-strong) / 0.7);
+  background: rgb(var(--color-ivory) / 0.65);
+  box-shadow: var(--shadow-glass-sm), var(--shadow-inner-glass);
 }
 
 .style-card--active {
-  border-color: rgb(var(--color-ink));
-  background:
-    linear-gradient(135deg, rgb(var(--color-ink)), rgb(var(--color-blueprint))),
-    rgb(var(--color-ink));
-  color: rgb(var(--color-paper));
-  box-shadow: var(--shadow-paper-2);
+  border-color: transparent;
+  background: var(--gradient-primary);
+  color: #fff;
+  box-shadow: var(--shadow-glass), var(--shadow-glow-accent);
 }
 
 .style-card__rail {
@@ -1147,7 +1164,7 @@ watch(prompt, () => {
 }
 
 .style-card--active .style-card__accent {
-  color: rgb(var(--color-paper) / 0.62);
+  color: rgb(255 255 255 / 0.66);
 }
 
 .style-card__desc {
@@ -1160,7 +1177,7 @@ watch(prompt, () => {
 }
 
 .style-card--active .style-card__desc {
-  color: rgb(var(--color-paper) / 0.72);
+  color: rgb(255 255 255 / 0.78);
 }
 
 .acc-enter-from,
@@ -1185,13 +1202,15 @@ watch(prompt, () => {
   display: flex;
   align-items: center;
   gap: 0.6rem;
-  padding: 0.55rem 0.6rem;
-  border-radius: 18px;
-  border: 1px solid rgb(var(--color-forest) / 0.34);
+  padding: 0.6rem 0.65rem;
+  border-radius: var(--radius-panel);
+  border: 1px solid rgb(var(--color-forest) / 0.3);
   background:
-    linear-gradient(90deg, rgb(var(--color-forest) / 0.08), transparent 36%),
-    linear-gradient(180deg, rgb(var(--color-vellum) / 0.84), rgb(var(--color-cream) / 0.36));
-  box-shadow: 0 12px 26px -22px rgb(var(--color-forest) / 0.65), var(--shadow-inner-paper);
+    linear-gradient(90deg, rgb(var(--color-forest) / 0.1), transparent 42%),
+    var(--gradient-surface);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  box-shadow: var(--shadow-glass), var(--shadow-inner-glass), 0 0 18px -10px rgb(var(--color-forest) / 0.5);
 }
 
 .composer-continuation__thumb {
@@ -1260,12 +1279,15 @@ watch(prompt, () => {
   flex-shrink: 0;
   width: 28px;
   height: 28px;
-  border-radius: 999px;
-  background: rgb(var(--color-paper) / 0.6);
+  border-radius: 8px;
+  background: rgb(var(--color-ivory) / 0.5);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: var(--shadow-inner-glass);
   color: rgb(var(--color-muted));
-  border: 1px solid rgb(var(--color-line) / 0.7);
+  border: 1px solid rgb(var(--color-line) / 0.5);
   cursor: pointer;
-  transition: background 140ms ease, color 140ms ease, transform 140ms ease;
+  transition: background 160ms var(--motion-soft), color 160ms var(--motion-soft), border-color 160ms var(--motion-soft), transform 140ms var(--motion-press);
 }
 
 .composer-continuation__cancel:hover {
@@ -1293,43 +1315,4 @@ watch(prompt, () => {
 }
 
 .composer-continuation-enter-active,
-.composer-continuation-leave-active {
-  transition: opacity 0.22s ease, transform 0.22s ease, max-height 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
-  overflow: hidden;
-}
-
-.btn-primary--busy {
-  background: linear-gradient(135deg, rgb(var(--color-ink)), rgb(var(--color-ink) / 0.88));
-  cursor: pointer;
-}
-
-.btn-primary--busy:hover {
-  background: linear-gradient(135deg, rgb(var(--color-accent)), rgb(var(--color-accent) / 0.88));
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .prompt-tool-btn,
-  .style-card,
-  .acc-enter-active,
-  .acc-leave-active,
-  .composer-continuation-enter-active,
-  .composer-continuation-leave-active,
-  .composer-continuation__cancel {
-    transition: none;
-  }
-}
-
-@media (max-width: 720px) {
-  .prompt-field-tools {
-    grid-template-columns: 1fr;
-  }
-
-  .prompt-action-strip {
-    justify-content: flex-start;
-  }
-
-  .style-grid {
-    grid-template-columns: 1fr;
-  }
-}
-</style>
+.compos

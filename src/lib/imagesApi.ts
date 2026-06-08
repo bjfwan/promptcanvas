@@ -114,6 +114,8 @@ export interface ValidatedPayload {
   seed: string
   model: string
   referenceImages: ReferenceImageAttachment[]
+  /** PNG mask for inpainting. Black = keep, white = edit. */
+  inpaintMask?: Blob
 }
 
 export interface ValidationResult {
@@ -263,6 +265,20 @@ export function validatePayload(body: unknown): ValidationResult {
     return { error: 'outputFormat 只支持 png、jpeg、webp' }
   }
 
+  const inpaintMaskRaw = raw.inpaintMask
+  let inpaintMask: Blob | undefined
+  if (inpaintMaskRaw !== undefined && inpaintMaskRaw !== null) {
+    if (typeof Blob !== 'undefined' && inpaintMaskRaw instanceof Blob) {
+      inpaintMask = inpaintMaskRaw
+    } else {
+      return { error: 'inpaintMask 必须是 Blob' }
+    }
+  }
+
+  if (inpaintMask && normalizedReferenceImages.length !== 1) {
+    return { error: '蒙版编辑需要恰好一张原图作为参考图' }
+  }
+
   return {
     value: {
       prompt,
@@ -276,6 +292,7 @@ export function validatePayload(body: unknown): ValidationResult {
       seed,
       model,
       referenceImages: normalizedReferenceImages,
+      inpaintMask,
     },
   }
 }

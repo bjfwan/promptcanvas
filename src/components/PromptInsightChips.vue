@@ -24,30 +24,36 @@ function handlePick(dim: InsightDim, matched: boolean) {
 </script>
 
 <template>
-  <div class="prompt-insights" v-if="prompt.trim().length >= 4">
+  <div class="prompt-insights reveal" v-if="prompt.trim().length >= 4">
     <div class="prompt-insights__head">
       <span class="display-eyebrow">Coverage</span>
-      <span class="prompt-insights__count">{{ matchedCount }} / {{ insights.length }}</span>
+      <span class="prompt-insights__count">
+        <span class="prompt-insights__count-num gradient-text">{{ matchedCount }}</span>
+        <span class="prompt-insights__count-sep">/</span>
+        <span>{{ insights.length }}</span>
+      </span>
     </div>
     <div class="prompt-insights__chips">
       <button
-        v-for="entry in insights"
+        v-for="(entry, index) in insights"
         :key="entry.dim.id"
         type="button"
-        class="prompt-insights__chip"
+        class="prompt-insights__chip reveal"
         :class="[
           `prompt-insights__chip--${entry.dim.tone}`,
           entry.matched ? 'prompt-insights__chip--on' : 'prompt-insights__chip--off',
         ]"
+        :style="{ '--reveal-delay': `${index * 26}ms` }"
         :aria-pressed="entry.matched"
         :title="entry.dim.hint"
         @click="handlePick(entry.dim.id, entry.matched)"
       >
-        <Icon
-          :name="entry.matched ? 'check' : 'plus'"
-          :size="11"
-          class="prompt-insights__chip-icon"
-        />
+        <span class="prompt-insights__chip-icon" aria-hidden="true">
+          <Icon
+            :name="entry.matched ? 'check' : 'plus'"
+            :size="11"
+          />
+        </span>
         <span>{{ entry.dim.label }}</span>
       </button>
     </div>
@@ -69,10 +75,22 @@ function handlePick(dim: InsightDim, matched: boolean) {
 }
 
 .prompt-insights__count {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
   font-family: 'JetBrains Mono', ui-monospace, monospace;
   font-size: 10px;
   letter-spacing: 0.04em;
   color: rgb(var(--color-muted));
+}
+
+.prompt-insights__count-num {
+  font-weight: 760;
+  font-size: 11px;
+}
+
+.prompt-insights__count-sep {
+  opacity: 0.5;
 }
 
 .prompt-insights__chips {
@@ -85,28 +103,48 @@ function handlePick(dim: InsightDim, matched: boolean) {
   position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 0.32rem;
-  height: 26px;
-  padding: 0 0.6rem;
+  gap: 0.38rem;
+  height: 28px;
+  padding: 0 0.7rem 0 0.55rem;
   border-radius: 999px;
-  border: 1px solid rgb(var(--color-line) / 0.85);
-  background: rgb(var(--color-vellum) / 0.7);
+  border: 1px solid rgb(var(--color-line) / 0.55);
+  background: rgb(var(--color-ivory) / 0.4);
+  backdrop-filter: blur(10px) saturate(1.4);
+  -webkit-backdrop-filter: blur(10px) saturate(1.4);
+  box-shadow: var(--shadow-inner-glass);
   color: rgb(var(--color-muted));
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.01em;
   cursor: pointer;
-  transition: border-color 160ms var(--motion-soft), background-color 160ms var(--motion-soft), color 160ms ease, transform 140ms var(--motion-press);
+  overflow: hidden;
+  transition: border-color 180ms var(--motion-soft), background-color 180ms var(--motion-soft), color 180ms ease, transform 160ms var(--motion-press), box-shadow 180ms var(--motion-soft);
+}
+
+.prompt-insights__chip::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--gradient-glass);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 180ms var(--motion-soft);
 }
 
 .prompt-insights__chip:hover {
   transform: translateY(-1px);
+  box-shadow: var(--shadow-glass-sm);
 }
 
 .prompt-insights__chip--off:hover {
-  border-color: rgb(var(--color-line-strong));
-  background: rgb(var(--color-ivory) / 0.85);
+  border-color: rgb(var(--color-line-strong) / 0.7);
+  background: rgb(var(--color-ivory) / 0.6);
   color: rgb(var(--color-ink));
+}
+
+.prompt-insights__chip--off:hover::before {
+  opacity: 0.5;
 }
 
 .prompt-insights__chip--off {
@@ -118,6 +156,7 @@ function handlePick(dim: InsightDim, matched: boolean) {
   background: var(--chip-on-bg);
   border-color: var(--chip-on-border);
   color: var(--chip-on-fg);
+  box-shadow: var(--shadow-inner-glass), 0 0 14px -6px var(--chip-on-border);
 }
 
 .prompt-insights__chip--on:hover {
@@ -125,7 +164,19 @@ function handlePick(dim: InsightDim, matched: boolean) {
 }
 
 .prompt-insights__chip-icon {
+  display: grid;
+  place-items: center;
   flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: rgb(var(--color-ivory) / 0.5);
+  box-shadow: var(--shadow-inner-glass);
+}
+
+.prompt-insights__chip--on .prompt-insights__chip-icon {
+  background: var(--chip-on-fg);
+  color: rgb(var(--color-ivory));
 }
 
 .prompt-insights__chip--forest    { --chip-on-bg: rgb(var(--color-forest) / 0.14);    --chip-on-border: rgb(var(--color-forest) / 0.4);    --chip-on-fg: rgb(var(--color-forest)); }

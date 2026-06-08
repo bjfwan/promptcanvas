@@ -686,9 +686,9 @@ defineExpose({ focusInput })
   left: 0;
   right: 0;
   bottom: 100%;
-  height: 28px;
+  height: 40px;
   pointer-events: none;
-  background: linear-gradient(to top, rgb(var(--color-paper)) 0%, rgb(var(--color-paper) / 0) 100%);
+  background: linear-gradient(to top, rgb(var(--color-paper) / 0.92) 0%, rgb(var(--color-paper) / 0) 100%);
 }
 
 .chat-dock__inner {
@@ -993,29 +993,50 @@ defineExpose({ focusInput })
   position: relative;
   display: flex;
   flex-direction: column;
-  border-radius: 22px;
-  border: 1px solid rgb(var(--color-line-strong) / 0.7);
-  background: rgb(var(--color-vellum) / 0.96);
-  box-shadow:
-    0 1px 0 rgb(255 255 255 / 0.55),
-    0 16px 36px -22px rgb(var(--color-ink) / 0.32);
-  transition: border-color 180ms var(--motion-soft), box-shadow 180ms var(--motion-soft);
+  border-radius: 24px;
+  border: 1px solid rgb(var(--color-line) / 0.45);
+  background: var(--gradient-surface);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  box-shadow: var(--shadow-glass-lg), var(--shadow-inner-glass);
+  transition: border-color 200ms var(--motion-soft), box-shadow 200ms var(--motion-soft);
   contain: layout paint style;
 }
 
+/* faint top-edge gradient hairline for the AI sheen */
+.chat-dock__shell::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(135deg, rgb(var(--color-accent) / 0.32), rgb(var(--color-blueprint) / 0.18) 40%, transparent 70%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+          mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+          mask-composite: exclude;
+  opacity: 0;
+  transition: opacity 220ms var(--motion-soft);
+  pointer-events: none;
+  z-index: 1;
+}
+
 .chat-dock__shell.is-focused {
-  border-color: rgb(var(--color-ink) / 0.4);
-  box-shadow:
-    0 1px 0 rgb(255 255 255 / 0.65),
-    0 22px 44px -22px rgb(var(--color-ink) / 0.42),
-    var(--focus-ring);
+  border-color: rgb(var(--color-accent) / 0.4);
+  box-shadow: var(--shadow-glass-xl), var(--shadow-glow-accent), var(--shadow-inner-glass);
+}
+
+.chat-dock__shell.is-focused::before {
+  opacity: 1;
 }
 
 .chat-dock__textarea {
+  position: relative;
+  z-index: 2;
   display: block;
   width: 100%;
-  min-height: 44px;
-  padding: 12px 14px 4px;
+  min-height: 48px;
+  padding: 14px 16px 6px;
   resize: none;
   background: transparent;
   border: 0;
@@ -1023,13 +1044,13 @@ defineExpose({ focusInput })
   color: rgb(var(--color-ink));
   font-family: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
   font-size: 16px;
-  line-height: 1.45;
+  line-height: 1.5;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
   overscroll-behavior: contain;
   -webkit-tap-highlight-color: transparent;
-  caret-color: rgb(var(--color-forest));
+  caret-color: rgb(var(--color-accent));
 }
 
 .chat-dock__textarea::-webkit-scrollbar {
@@ -1091,11 +1112,12 @@ defineExpose({ focusInput })
 
 .chat-dock__toolbar {
   position: relative;
+  z-index: 2;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 4px 6px 6px;
-  border-top: 1px solid rgb(var(--color-line) / 0.55);
+  padding: 6px 6px 8px;
+  border-top: 1px solid rgb(var(--color-line) / 0.45);
   margin-top: 2px;
 }
 
@@ -1125,12 +1147,14 @@ defineExpose({ focusInput })
 }
 
 .chat-dock__model-chip :deep(.select-trigger) {
-  height: 32px;
+  height: 36px;
   max-width: clamp(6.5rem, 32vw, 10rem);
   border-radius: 999px;
-  padding: 0 26px 0 10px;
-  background: rgb(var(--color-ivory) / 0.7);
-  border-color: rgb(var(--color-line-strong));
+  padding: 0 26px 0 12px;
+  background: rgb(var(--color-ivory) / 0.55);
+  backdrop-filter: blur(10px) saturate(1.4);
+  -webkit-backdrop-filter: blur(10px) saturate(1.4);
+  border-color: rgb(var(--color-line) / 0.6);
   font-size: 12px;
   font-weight: 500;
   color: rgb(var(--color-ink));
@@ -1138,8 +1162,8 @@ defineExpose({ focusInput })
 }
 
 .chat-dock__model-chip :deep(.select-trigger.is-open) {
-  background: rgb(var(--color-vellum));
-  border-color: rgb(var(--color-ink));
+  background: rgb(var(--color-ivory) / 0.75);
+  border-color: rgb(var(--color-accent) / 0.5);
   box-shadow: var(--focus-ring);
 }
 
@@ -1154,19 +1178,23 @@ defineExpose({ focusInput })
   align-items: center;
   gap: 5px;
   flex-shrink: 0;
-  height: 32px;
-  padding: 0 11px;
+  height: 36px;
+  padding: 0 13px;
   border-radius: 999px;
-  background: rgb(var(--color-ivory) / 0.7);
-  border: 1px solid rgb(var(--color-line-strong));
+  background: rgb(var(--color-ivory) / 0.55);
+  backdrop-filter: blur(10px) saturate(1.4);
+  -webkit-backdrop-filter: blur(10px) saturate(1.4);
+  border: 1px solid rgb(var(--color-line) / 0.6);
   color: rgb(var(--color-ink));
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
+  box-shadow: var(--shadow-inner-glass);
   transition:
     background-color 140ms var(--motion-soft),
     border-color 140ms var(--motion-soft),
     color 140ms var(--motion-soft),
+    box-shadow 160ms var(--motion-soft),
     transform 140ms var(--motion-press);
   -webkit-tap-highlight-color: transparent;
 }
@@ -1174,7 +1202,7 @@ defineExpose({ focusInput })
 .chat-dock__chip::before {
   content: '';
   position: absolute;
-  inset: -4px;
+  inset: -6px;
   border-radius: inherit;
 }
 
@@ -1308,18 +1336,19 @@ defineExpose({ focusInput })
   flex-shrink: 0;
   display: inline-grid;
   place-items: center;
-  width: 40px;
-  height: 40px;
+  width: 48px;
+  height: 48px;
   border-radius: 999px;
-  background: rgb(var(--color-ink) / 0.06);
-  color: rgb(var(--color-ink) / 0.32);
-  border: 1px solid transparent;
+  background: rgb(var(--color-ink) / 0.05);
+  color: rgb(var(--color-ink) / 0.3);
+  border: 1px solid rgb(var(--color-line) / 0.5);
   cursor: not-allowed;
   transition:
-    background-color 160ms var(--motion-soft),
+    background 200ms var(--motion-soft),
     color 160ms var(--motion-soft),
+    border-color 160ms var(--motion-soft),
     transform 160ms var(--motion-press),
-    box-shadow 200ms var(--motion-soft);
+    box-shadow 220ms var(--motion-soft);
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -1330,20 +1359,23 @@ defineExpose({ focusInput })
   border-radius: inherit;
 }
 
+/* ready: full primary gradient + accent glow — the hero action */
 .chat-dock__send--ready {
-  background: rgb(var(--color-ink));
-  color: rgb(var(--color-paper));
+  background: var(--gradient-primary);
+  color: #fff;
+  border-color: transparent;
   cursor: pointer;
-  box-shadow: 0 10px 22px -16px rgb(var(--color-ink) / 0.65);
+  box-shadow: var(--shadow-glass), var(--shadow-glow-accent);
 }
 
 .chat-dock__send--ready:active {
-  transform: scale(0.92);
+  transform: scale(0.9);
 }
 
 .chat-dock__send--busy {
   background: rgb(var(--color-ink));
   color: rgb(var(--color-paper));
+  border-color: transparent;
   cursor: pointer;
 }
 
@@ -1352,7 +1384,7 @@ defineExpose({ focusInput })
   position: absolute;
   inset: -3px;
   border-radius: 999px;
-  border: 1px dashed rgb(var(--color-forest) / 0.7);
+  border: 1.5px dashed rgb(var(--color-accent) / 0.7);
   animation: dock-send-spin 1.6s linear infinite;
   pointer-events: none;
 }

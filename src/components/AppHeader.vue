@@ -76,7 +76,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <header ref="headerRef" class="sticky top-0 z-header border-b border-line/70 bg-paper/78 pt-[env(safe-area-inset-top)] shadow-paper-1 backdrop-blur-xl">
+  <header ref="headerRef" class="app-header sticky top-0 z-header pt-[env(safe-area-inset-top)]">
     <div
       class="mx-auto flex w-full max-w-[1560px] items-center justify-between gap-2 px-3 py-2.5 sm:gap-4 sm:px-6 lg:px-10 lg:py-4"
     >
@@ -86,7 +86,7 @@ onBeforeUnmount(() => {
         </span>
         <div class="min-w-0 leading-tight">
           <p class="truncate font-display text-[18px] tracking-tightish">
-            Prompt<span class="italic text-accent">Canvas</span>
+            Prompt<span class="gradient-text italic">Canvas</span>
           </p>
           <p class="mt-0.5 hidden font-mono text-[10px] uppercase tracking-[0.22em] text-muted sm:block">
             {{ t('header.atelier') }}
@@ -140,11 +140,11 @@ onBeforeUnmount(() => {
 
         <button
           type="button"
-          class="inline-flex h-10 items-center gap-2 rounded-full border px-2.5 text-[11px] font-medium uppercase tracking-[0.12em] transition active:translate-y-px sm:px-3"
+          class="health-pill inline-flex h-10 items-center gap-2 px-2.5 text-[11px] font-medium uppercase tracking-[0.12em] active:translate-y-px sm:px-3"
           :class="{
-            'border-line bg-vellum text-muted': healthStatus === 'checking',
-            'border-line-strong bg-vellum text-ink hover:bg-cream': healthStatus === 'online',
-            'border-accent/40 bg-accent/[0.08] text-accent': healthStatus === 'offline',
+            'health-pill--checking': healthStatus === 'checking',
+            'health-pill--online': healthStatus === 'online',
+            'health-pill--offline': healthStatus === 'offline',
           }"
           :title="healthMessage"
           :aria-label="`${t('header.refresh')} · ${labelText}`"
@@ -156,7 +156,7 @@ onBeforeUnmount(() => {
 
         <button
           type="button"
-          class="hidden items-center gap-1.5 rounded-full border border-line bg-cream px-3 py-2 text-[11px] font-medium uppercase tracking-[0.16em] text-muted transition hover:border-line-strong hover:text-ink sm:inline-flex"
+          class="reset-pill hidden items-center gap-1.5 px-3 py-2 text-[11px] font-medium uppercase tracking-[0.16em] sm:inline-flex"
           :title="t('header.resetTip')"
           :aria-label="t('header.resetTip')"
           @click="emit('reset')"
@@ -182,7 +182,7 @@ onBeforeUnmount(() => {
           <div
             v-if="menuOpen"
             id="app-header-menu"
-            class="absolute right-0 top-[calc(100%+0.6rem)] w-52 overflow-hidden rounded-2xl border border-line-strong bg-vellum p-1.5 text-ink shadow-paper-3"
+            class="surface-2 absolute right-0 top-[calc(100%+0.6rem)] w-52 overflow-hidden p-1.5 text-ink"
           >
             <button type="button" class="header-menu-item" @click="runMenuAction(() => emit('openHistory'))">
               <Icon name="history" :size="14" />
@@ -212,6 +212,14 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.app-header {
+  border-bottom: 1px solid rgb(var(--color-line) / 0.35);
+  background: rgb(var(--color-paper) / 0.55);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  box-shadow: var(--shadow-glass-sm), var(--shadow-inner-glass);
+}
+
 .brand-mark {
   display: grid;
   place-items: center;
@@ -219,9 +227,11 @@ onBeforeUnmount(() => {
   height: 42px;
   flex-shrink: 0;
   border-radius: 14px;
-  border: 1px solid rgb(var(--color-line-strong) / 0.82);
-  background: rgb(var(--color-vellum));
-  box-shadow: var(--shadow-inner-paper), var(--shadow-paper-1);
+  border: 1px solid rgb(var(--color-line) / 0.4);
+  background: var(--gradient-surface);
+  backdrop-filter: blur(12px) saturate(1.5);
+  -webkit-backdrop-filter: blur(12px) saturate(1.5);
+  box-shadow: var(--shadow-inner-glass), var(--shadow-glass-sm);
   overflow: hidden;
   transition: transform 220ms var(--motion-press), box-shadow 220ms var(--motion-soft);
 }
@@ -233,20 +243,24 @@ onBeforeUnmount(() => {
   height: 36px;
   padding: 0 0.65rem 0 0.85rem;
   border-radius: 999px;
-  border: 1px solid rgb(var(--color-line));
-  background: rgb(var(--color-ivory) / 0.66);
+  border: 1px solid rgb(var(--color-line) / 0.45);
+  background: rgb(var(--color-ivory) / 0.45);
+  backdrop-filter: blur(12px) saturate(1.5);
+  -webkit-backdrop-filter: blur(12px) saturate(1.5);
+  box-shadow: var(--shadow-inner-glass);
   color: rgb(var(--color-muted));
   font-size: 12px;
   font-weight: 500;
   letter-spacing: 0.01em;
   cursor: pointer;
-  transition: border-color 160ms var(--motion-soft), background-color 160ms var(--motion-soft), color 160ms ease, transform 160ms var(--motion-press);
+  transition: border-color 160ms var(--motion-soft), background-color 160ms var(--motion-soft), color 160ms ease, box-shadow 180ms var(--motion-soft), transform 160ms var(--motion-press);
   -webkit-tap-highlight-color: transparent;
 }
 
 .cmdk-hint:hover {
-  border-color: rgb(var(--color-line-strong));
-  background: rgb(var(--color-vellum));
+  border-color: rgb(var(--color-line-strong) / 0.6);
+  background: rgb(var(--color-ivory) / 0.65);
+  box-shadow: var(--shadow-glass-sm);
   color: rgb(var(--color-ink));
   transform: translateY(-1px);
 }
@@ -260,15 +274,15 @@ onBeforeUnmount(() => {
   font-size: 10px;
   padding: 0.16rem 0.4rem;
   border-radius: 5px;
-  border: 1px solid rgb(var(--color-line-strong) / 0.5);
-  background: rgb(var(--color-vellum));
+  border: 1px solid rgb(var(--color-line-strong) / 0.4);
+  background: rgb(var(--color-ivory) / 0.6);
   color: rgb(var(--color-ink));
   letter-spacing: 0.04em;
 }
 
 .brand-mark:hover {
   transform: translateY(-1px);
-  box-shadow: var(--shadow-inner-paper), var(--shadow-paper-2);
+  box-shadow: var(--shadow-inner-glass), var(--shadow-glass);
 }
 
 .brand-mark img {

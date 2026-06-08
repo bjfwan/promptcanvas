@@ -139,16 +139,30 @@ const dimension = computed(() => `${props.size}px`)
   display: inline-block;
   overflow: hidden;
   flex-shrink: 0;
-  border-radius: 11px;
-  border: 1px solid rgb(var(--color-line-strong) / 0.6);
-  box-shadow: var(--shadow-inner-paper), 0 1px 0 rgb(var(--color-paper) / 0.3);
+  border-radius: 8px;
+  border: 1px solid rgb(var(--color-line) / 0.5);
+  box-shadow: var(--shadow-inner-glass), var(--shadow-glass-sm);
   transition: transform 220ms var(--motion-press), box-shadow 220ms var(--motion-soft), border-color 220ms ease;
 }
 
+.style-swatch::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.45);
+}
+
+.style-swatch:hover {
+  transform: translateY(-1px) scale(1.02);
+  box-shadow: var(--shadow-inner-glass), var(--shadow-glass);
+}
+
 .style-swatch--active {
-  border-color: rgb(var(--color-paper) / 0.5);
-  box-shadow: var(--shadow-inner-paper), 0 0 0 2px rgb(var(--color-paper) / 0.18);
-  transform: scale(1.04);
+  border-color: rgb(var(--color-accent) / 0.55);
+  box-shadow: var(--shadow-inner-glass), var(--shadow-glow-accent);
+  transform: scale(1.05);
 }
 
 .style-swatch__sheen {
@@ -156,6 +170,7 @@ const dimension = computed(() => `${props.size}px`)
   inset: 0;
   pointer-events: none;
   opacity: 0.95;
+  mix-blend-mode: screen;
 }
 
 .style-swatch__art {

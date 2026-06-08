@@ -285,10 +285,10 @@ function indexOfCommand(command: CommandItem) {
           <div
             ref="dialogRef"
             v-if="open"
-            class="cmd-shell relative w-full max-w-xl overflow-hidden rounded-[22px] border border-line-strong bg-vellum text-ink shadow-paper-3"
+            class="cmd-shell relative w-full max-w-xl overflow-hidden text-ink"
           >
-            <div class="flex items-center gap-2.5 border-b border-line/70 px-4 py-3">
-              <Icon name="search" :size="16" class="text-muted" />
+            <div class="flex items-center gap-2.5 border-b border-line/40 px-4 py-3">
+              <Icon name="search" :size="16" class="text-accent" />
               <input
                 ref="inputRef"
                 v-model="query"
@@ -343,7 +343,7 @@ function indexOfCommand(command: CommandItem) {
               </template>
             </div>
 
-            <footer class="flex items-center gap-3 border-t border-line/70 px-4 py-2 font-mono text-[10px] uppercase tracking-[0.18em] text-muted">
+            <footer class="flex items-center gap-3 border-t border-line/40 px-4 py-2 font-mono text-[10px] uppercase tracking-[0.18em] text-muted">
               <span class="inline-flex items-center gap-1.5">
                 <kbd>↑</kbd><kbd>↓</kbd>
                 <span class="ml-1 normal-case tracking-normal">{{ t('cmd.tip.navigate') }}</span>
@@ -366,10 +366,12 @@ function indexOfCommand(command: CommandItem) {
 
 <style scoped>
 .cmd-shell {
-  background:
-    linear-gradient(180deg, rgb(var(--color-ivory) / 0.94), rgb(var(--color-vellum) / 0.96)),
-    rgb(var(--color-vellum));
-  backdrop-filter: blur(14px);
+  border: 1px solid rgb(var(--color-line) / 0.3);
+  border-radius: 22px;
+  background: var(--gradient-surface);
+  backdrop-filter: blur(calc(var(--glass-blur) * 1.4)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 1.4)) saturate(var(--glass-saturate));
+  box-shadow: var(--shadow-glass-xl), var(--shadow-inner-glass);
 }
 
 .cmd-item {
@@ -391,12 +393,13 @@ function indexOfCommand(command: CommandItem) {
 }
 
 .cmd-item--active {
-  background: rgb(var(--color-ink));
-  color: rgb(var(--color-paper));
+  background: var(--gradient-primary);
+  color: #fff;
+  box-shadow: var(--shadow-glass), var(--shadow-glow-accent);
 }
 
 .cmd-item--active .text-muted {
-  color: rgb(var(--color-paper) / 0.7);
+  color: rgb(255 255 255 / 0.78);
 }
 
 .cmd-item__icon {
@@ -405,14 +408,19 @@ function indexOfCommand(command: CommandItem) {
   width: 28px;
   height: 28px;
   border-radius: 9px;
-  background: rgb(var(--color-paper-soft) / 0.7);
+  border: 1px solid rgb(var(--color-line) / 0.4);
+  background: rgb(var(--color-ivory) / 0.5);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: var(--shadow-inner-glass);
   color: rgb(var(--color-ink));
   flex-shrink: 0;
 }
 
 .cmd-item--active .cmd-item__icon {
-  background: rgb(var(--color-paper) / 0.16);
-  color: rgb(var(--color-paper));
+  border-color: rgb(255 255 255 / 0.28);
+  background: rgb(255 255 255 / 0.18);
+  color: #fff;
 }
 
 .cmd-item__shortcut {
@@ -428,9 +436,9 @@ function indexOfCommand(command: CommandItem) {
 }
 
 .cmd-item--active .cmd-item__shortcut {
-  border-color: rgb(var(--color-paper) / 0.32);
-  background: rgb(var(--color-paper) / 0.08);
-  color: rgb(var(--color-paper));
+  border-color: rgb(255 255 255 / 0.34);
+  background: rgb(255 255 255 / 0.16);
+  color: #fff;
 }
 
 kbd {

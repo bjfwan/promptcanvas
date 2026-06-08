@@ -41,7 +41,7 @@ watch(
   <span class="flip-digits" aria-hidden="true">
     <span v-for="(d, i) in digits" :key="i" class="flip-digits__cell">
       <Transition name="flip">
-        <span :key="d" class="flip-digits__char">{{ d }}</span>
+        <span :key="d" class="flip-digits__char gradient-text">{{ d }}</span>
       </Transition>
     </span>
     <span v-if="suffix" class="flip-digits__suffix">{{ suffix }}</span>
@@ -53,6 +53,7 @@ watch(
 .flip-digits {
   display: inline-flex;
   align-items: baseline;
+  gap: 0.06em;
   font-family: 'JetBrains Mono', ui-monospace, monospace;
   font-feature-settings: 'tnum';
   letter-spacing: 0;
@@ -61,11 +62,20 @@ watch(
 
 .flip-digits__cell {
   position: relative;
-  display: inline-block;
-  width: 0.62em;
-  height: 1em;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 0.78em;
+  height: 1.18em;
   overflow: hidden;
   vertical-align: baseline;
+  border-radius: 5px;
+  border: 1px solid rgb(var(--color-line) / 0.5);
+  background: rgb(var(--color-ivory) / 0.4);
+  backdrop-filter: blur(8px) saturate(1.4);
+  -webkit-backdrop-filter: blur(8px) saturate(1.4);
+  box-shadow: var(--shadow-inner-glass);
+  perspective: 120px;
 }
 
 .flip-digits__char {
@@ -73,11 +83,15 @@ watch(
   inset: 0;
   display: grid;
   place-items: center;
+  font-weight: 700;
   will-change: transform, opacity;
+  backface-visibility: hidden;
 }
 
 .flip-digits__suffix {
-  margin-left: 0.06em;
+  margin-left: 0.12em;
+  font-weight: 600;
+  color: rgb(var(--color-muted));
 }
 
 .sr-only {
@@ -99,12 +113,12 @@ watch(
 }
 
 .flip-enter-from {
-  transform: translateY(100%);
+  transform: translateY(100%) rotateX(-55deg);
   opacity: 0;
 }
 
 .flip-leave-to {
-  transform: translateY(-100%);
+  transform: translateY(-100%) rotateX(55deg);
   opacity: 0;
 }
 

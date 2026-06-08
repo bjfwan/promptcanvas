@@ -26,7 +26,7 @@ function iconFor(kind: 'info' | 'success' | 'error'): IconName {
         <div
           v-for="item in toast.items"
           :key="item.id"
-          class="toast-card pointer-events-auto flex items-start gap-2.5 border bg-vellum/95 px-3.5 py-3 text-[13px] font-medium text-ink shadow-paper-3 backdrop-blur"
+          class="toast-card pointer-events-auto flex items-start gap-2.5 px-3.5 py-3 text-[13px] font-medium text-ink"
           :class="{
             'toast-card--success': item.kind === 'success',
             'toast-card--info': item.kind === 'info',
@@ -78,7 +78,12 @@ function iconFor(kind: 'info' | 'success' | 'error'): IconName {
 .toast-card {
   position: relative;
   overflow: hidden;
-  border-radius: 14px;
+  border-radius: var(--radius-card);
+  border: 1px solid rgb(var(--color-line) / 0.3);
+  background: rgb(var(--color-ivory) / 0.7);
+  backdrop-filter: blur(16px) saturate(1.6);
+  -webkit-backdrop-filter: blur(16px) saturate(1.6);
+  box-shadow: var(--shadow-glass-lg), var(--shadow-inner-glass);
 }
 
 .toast-card::before {

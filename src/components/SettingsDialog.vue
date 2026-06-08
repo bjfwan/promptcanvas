@@ -298,12 +298,12 @@ onBeforeUnmount(() => {
           <div
             ref="dialogRef"
             v-if="open"
-            class="relative flex max-h-[92dvh] w-full max-w-xl flex-col overflow-hidden rounded-t-[28px] border border-line-strong bg-vellum text-ink shadow-paper-3 sm:max-h-none sm:rounded-3xl"
+            class="dialog-shell relative flex max-h-[92dvh] w-full max-w-xl flex-col overflow-hidden text-ink sm:max-h-none"
           >
-            <header class="flex items-start justify-between gap-3 border-b border-line px-5 py-4 sm:px-6 sm:py-5">
+            <header class="flex items-start justify-between gap-3 border-b border-line/40 px-5 py-4 sm:px-6 sm:py-5">
               <div>
                 <p class="display-eyebrow">{{ i18n.t('settings.eyebrow') }}</p>
-                <h2 class="mt-1.5 font-display text-2xl tracking-tightish">{{ i18n.t('settings.title') }}</h2>
+                <h2 class="mt-1.5 font-display text-2xl tracking-tightish gradient-text">{{ i18n.t('settings.title') }}</h2>
               </div>
               <button type="button" class="icon-btn-sm" :aria-label="i18n.t('settings.close')" @click="close">
                 <Icon name="close" :size="14" />
@@ -312,8 +312,8 @@ onBeforeUnmount(() => {
 
             <div class="touch-scroll-y max-h-[calc(92dvh-8.5rem)] space-y-5 overflow-y-auto px-5 py-5 sm:max-h-[70dvh] sm:px-6">
               <section
-                class="rounded-2xl border border-line bg-paper-soft/60 p-4"
-                :class="!provider.isConfigured.value && 'ring-1 ring-amber-400/40'"
+                class="surface-1 p-4"
+                :class="!provider.isConfigured.value && 'ring-1 ring-ochre/30'"
               >
                 <div class="mb-3 flex items-center justify-between gap-2">
                   <div class="flex flex-col">
@@ -335,7 +335,7 @@ onBeforeUnmount(() => {
                   {{ i18n.t('settings.provider.note') }}
                 </p>
 
-                <div class="mb-3 flex items-start gap-2 rounded-xl border border-line/70 bg-paper-soft/40 px-3 py-2 text-[11px] leading-[1.55]">
+                <div class="mb-3 flex items-start gap-2 rounded-xl border border-line/40 bg-ivory/40 px-3 py-2 text-[11px] leading-[1.55] backdrop-blur-sm">
                   <span class="mt-0.5 inline-grid h-5 w-5 place-items-center rounded-full bg-forest/12 text-forest">
                     <Icon name="share" :size="11" />
                   </span>
@@ -427,7 +427,7 @@ onBeforeUnmount(() => {
                   v-if="testMessage"
                   class="mt-3 rounded-xl border px-3 py-2 text-[11px] leading-[1.6]"
                   :class="{
-                    'border-line bg-paper-soft/60 text-muted': testStatus === 'testing',
+                    'border-line/50 bg-ivory/40 text-muted': testStatus === 'testing',
                     'border-forest/35 bg-forest/10 text-forest': testStatus === 'success',
                     'border-ochre/40 bg-ochre/[0.08] text-ochre': testStatus === 'partial',
                     'border-accent/40 bg-accent/[0.08] text-accent': testStatus === 'error',
@@ -456,7 +456,7 @@ onBeforeUnmount(() => {
               </section>
 
               <section
-                class="rounded-2xl border border-line bg-paper-soft/40 p-4"
+                class="surface-1 p-4"
               >
                 <div class="mb-3 flex items-center justify-between gap-2">
                   <div class="flex flex-col">
@@ -472,7 +472,7 @@ onBeforeUnmount(() => {
                 </p>
 
                 <div class="space-y-2">
-                  <div class="flex items-center justify-between gap-2 rounded-xl border border-line/70 bg-paper-soft/40 px-3 py-2">
+                  <div class="flex items-center justify-between gap-2 rounded-xl border border-line/40 bg-ivory/40 px-3 py-2 backdrop-blur-sm">
                     <div class="flex items-center gap-2">
                       <Icon name="check" :size="12" class="text-muted" />
                       <span class="text-[12px] font-medium text-ink">2K 尺寸（2048px）</span>
@@ -489,7 +489,7 @@ onBeforeUnmount(() => {
                     </label>
                   </div>
 
-                  <div class="flex items-center justify-between gap-2 rounded-xl border border-line/70 bg-paper-soft/40 px-3 py-2">
+                  <div class="flex items-center justify-between gap-2 rounded-xl border border-line/40 bg-ivory/40 px-3 py-2 backdrop-blur-sm">
                     <div class="flex items-center gap-2">
                       <Icon name="star" :size="12" class="text-muted" />
                       <span class="text-[12px] font-medium text-ink">4K 尺寸（4096px）</span>
@@ -513,7 +513,7 @@ onBeforeUnmount(() => {
               </section>
 
               <section
-                class="rounded-2xl border border-line bg-paper-soft/40 p-4"
+                class="surface-1 p-4"
               >
                 <div class="mb-3 flex items-center justify-between gap-2">
                   <div class="flex flex-col">
@@ -624,7 +624,7 @@ onBeforeUnmount(() => {
               </section>
 
               <section
-                class="rounded-2xl border border-line bg-paper-soft/40 p-4"
+                class="surface-1 p-4"
               >
                 <div class="mb-3 flex flex-col">
                   <span class="display-eyebrow text-[10px]">AI Rewrite · 改写引擎</span>
@@ -682,7 +682,7 @@ onBeforeUnmount(() => {
               </section>
 
               <section
-                class="rounded-2xl border border-line bg-paper-soft/40 p-4"
+                class="surface-1 p-4"
               >
                 <div class="mb-3 flex items-center justify-between gap-2">
                   <div class="flex flex-col">
@@ -752,7 +752,7 @@ onBeforeUnmount(() => {
                   </div>
                 </div>
 
-                <div v-else class="rounded-xl border border-dashed border-line/70 px-3 py-3 text-[11px] text-muted">
+                <div v-else class="rounded-xl border border-dashed border-line/50 bg-ivory/30 px-3 py-3 text-[11px] text-muted backdrop-blur-sm">
                   还没有足够样本。每成功生成一张图，引擎会从中提炼焦距、色调、风格等偏好。
                 </div>
 
@@ -913,7 +913,7 @@ onBeforeUnmount(() => {
             </div>
 
             <footer
-              class="flex flex-col-reverse items-stretch gap-2 border-t border-line bg-vellum/80 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6"
+              class="flex flex-col-reverse items-stretch gap-2 border-t border-line/40 bg-ivory/30 px-5 py-4 backdrop-blur-sm sm:flex-row sm:items-center sm:justify-between sm:px-6"
             >
               <button
                 type="button"
@@ -940,14 +940,36 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.dialog-shell {
+  border: 1px solid rgb(var(--color-line) / 0.3);
+  border-radius: var(--radius-card);
+  background: var(--gradient-surface);
+  backdrop-filter: blur(calc(var(--glass-blur) * 1.4)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 1.4)) saturate(var(--glass-saturate));
+  box-shadow: var(--shadow-glass-xl), var(--shadow-inner-glass);
+}
+
+@media (max-width: 639px) {
+  .dialog-shell {
+    border-bottom: 0;
+    border-top-left-radius: 28px;
+    border-top-right-radius: 28px;
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+  }
+}
+
 .rewrite-segmented {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
   padding: 4px;
   border-radius: 14px;
-  background: rgb(var(--color-paper-soft) / 0.7);
-  border: 1px solid rgb(var(--color-line) / 0.7);
+  background: rgb(var(--color-ivory) / 0.4);
+  border: 1px solid rgb(var(--color-line) / 0.4);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: var(--shadow-inner-glass);
 }
 
 .rewrite-seg {
@@ -972,11 +994,11 @@ onBeforeUnmount(() => {
 }
 
 .rewrite-seg.is-active {
-  background: rgb(var(--color-ink));
-  color: rgb(var(--color-paper));
+  background: var(--gradient-primary);
+  color: #fff;
   box-shadow:
-    0 6px 14px -10px rgb(var(--color-ink) / 0.4),
-    inset 0 1px 0 rgb(255 255 255 / 0.08);
+    var(--shadow-glass), var(--shadow-glow-accent),
+    inset 0 1px 0 rgb(255 255 255 / 0.18);
 }
 
 .rewrite-seg__label {
@@ -1026,9 +1048,9 @@ onBeforeUnmount(() => {
   height: 18px;
   margin-top: -7px;
   border-radius: 999px;
-  border: 1px solid rgb(var(--color-line-strong));
+  border: 1px solid rgb(var(--color-line-strong) / 0.6);
   background: rgb(var(--color-ivory));
-  box-shadow: var(--shadow-paper-2);
+  box-shadow: var(--shadow-glass), var(--shadow-glow-accent);
 }
 
 .settings-range::-moz-range-track {
@@ -1041,9 +1063,9 @@ onBeforeUnmount(() => {
   width: 18px;
   height: 18px;
   border-radius: 999px;
-  border: 1px solid rgb(var(--color-line-strong));
+  border: 1px solid rgb(var(--color-line-strong) / 0.6);
   background: rgb(var(--color-ivory));
-  box-shadow: var(--shadow-paper-2);
+  box-shadow: var(--shadow-glass), var(--shadow-glow-accent);
 }
 
 .brand-toggle input[type='checkbox'],

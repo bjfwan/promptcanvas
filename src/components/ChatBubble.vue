@@ -209,7 +209,7 @@ function isImageReady(image: GeneratedImage, index: number) {
         </div>
       </div>
       <div
-        class="chat-bubble-user rounded-[22px] rounded-br-[8px] bg-ink px-4 py-2.5 text-[15px] leading-6 text-paper shadow-paper-2"
+        class="chat-bubble-user rounded-[22px] rounded-br-[8px] px-4 py-3 text-[15px] leading-6 text-paper"
       >
         <p class="whitespace-pre-wrap break-words">{{ message.content }}</p>
       </div>
@@ -239,7 +239,7 @@ function isImageReady(image: GeneratedImage, index: number) {
 
       <div
         v-if="message.status === 'pending'"
-        class="chat-bubble-assistant chat-bubble-assistant--pending relative w-full overflow-hidden rounded-[22px] rounded-bl-[8px] border border-line bg-vellum p-3 shadow-paper-2"
+        class="chat-bubble-assistant chat-bubble-assistant--pending relative w-full overflow-hidden rounded-[22px] rounded-bl-[8px] p-3"
         role="status"
         aria-live="polite"
       >
@@ -303,7 +303,7 @@ function isImageReady(image: GeneratedImage, index: number) {
 
       <div
         v-else
-        class="chat-bubble-assistant w-full rounded-[22px] rounded-bl-[8px] border border-line bg-vellum p-3 shadow-paper-2"
+        class="chat-bubble-assistant w-full rounded-[22px] rounded-bl-[8px] p-3"
       >
         <div
           v-if="(message.images?.length ?? 0) > 0"
@@ -418,8 +418,46 @@ function isImageReady(image: GeneratedImage, index: number) {
 </template>
 
 <style scoped>
+/* ------------------------------------------------------------------
+ * Mobile chat bubbles — glass / gradient language.
+ * User: ink gradient pill with a faint accent sheen.
+ * Assistant: translucent glass card, frosted over the gradient bg.
+ * ------------------------------------------------------------------ */
+
 .chat-bubble-user {
+  position: relative;
+  isolation: isolate;
   font-feature-settings: 'ss01', 'cv11';
+  background:
+    linear-gradient(135deg, rgb(var(--color-ink)) 0%, rgb(18 18 30) 100%);
+  box-shadow:
+    var(--shadow-glass),
+    inset 0 1px 0 rgb(255 255 255 / 0.08);
+}
+
+/* iridescent top-edge sheen so the user pill reads as "AI", not flat black */
+.chat-bubble-user::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(135deg, rgb(var(--color-accent) / 0.28), transparent 55%);
+  opacity: 0.7;
+  pointer-events: none;
+  z-index: -1;
+}
+
+.chat-bubble-assistant {
+  border: 1px solid rgb(var(--color-line) / 0.4);
+  background: rgb(var(--color-ivory) / 0.5);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  box-shadow: var(--shadow-glass), var(--shadow-inner-glass);
+}
+
+.chat-bubble-assistant--pending {
+  border-color: rgb(var(--color-accent) / 0.25);
+  box-shadow: var(--shadow-glass), var(--shadow-glow-accent), var(--shadow-inner-glass);
 }
 
 .chat-meta-row {
@@ -643,20 +681,22 @@ function isImageReady(image: GeneratedImage, index: number) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.35rem;
-  height: 32px;
-  padding: 0 0.7rem;
+  gap: 0.4rem;
+  height: 36px;
+  min-width: 36px;
+  padding: 0 0.85rem;
   border-radius: 999px;
-  border: 1px solid rgb(var(--color-paper) / 0.45);
-  background: rgb(var(--color-ink) / 0.78);
-  color: rgb(var(--color-paper));
-  font-size: 11px;
+  border: 1px solid rgb(255 255 255 / 0.22);
+  background: rgb(var(--color-shadow) / 0.62);
+  color: #fff;
+  font-size: 12px;
   font-weight: 500;
   letter-spacing: 0.01em;
   cursor: pointer;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  transition: background 160ms ease, transform 160ms ease, box-shadow 160ms ease;
+  backdrop-filter: blur(12px) saturate(1.4);
+  -webkit-backdrop-filter: blur(12px) saturate(1.4);
+  box-shadow: var(--shadow-glass-sm);
+  transition: background 160ms var(--motion-soft), transform 160ms var(--motion-press), box-shadow 160ms var(--motion-soft);
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
 }
@@ -664,28 +704,29 @@ function isImageReady(image: GeneratedImage, index: number) {
 .chat-image-action::before {
   content: '';
   position: absolute;
-  inset: -6px -3px;
+  inset: -8px -4px;
 }
 
 .chat-image-action:hover {
-  background: rgb(var(--color-ink));
+  background: rgb(var(--color-shadow) / 0.78);
   transform: translateY(-1px);
-  box-shadow: 0 10px 24px -16px rgb(var(--color-ink) / 0.6);
+  box-shadow: var(--shadow-glass);
 }
 
 .chat-image-action:active {
-  transform: translateY(0);
+  transform: scale(0.94);
 }
 
 .chat-image-action--primary {
-  background: linear-gradient(135deg, rgb(var(--color-accent) / 0.95), rgb(var(--color-ochre) / 0.92));
-  border-color: rgb(var(--color-paper) / 0.55);
+  background: var(--gradient-primary);
+  border-color: rgb(255 255 255 / 0.4);
   font-weight: 600;
+  box-shadow: var(--shadow-glass), var(--shadow-glow-accent);
 }
 
 .chat-image-action--primary:hover {
-  background: linear-gradient(135deg, rgb(var(--color-accent)), rgb(var(--color-ochre)));
-  box-shadow: 0 12px 28px -14px rgb(var(--color-accent) / 0.55);
+  background: var(--gradient-primary);
+  box-shadow: var(--shadow-glass-lg), 0 0 24px -6px rgb(var(--color-accent) / 0.5);
 }
 
 .chat-continuation-chip {
@@ -768,29 +809,33 @@ function isImageReady(image: GeneratedImage, index: number) {
   position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
-  padding: 0.4rem 0.75rem;
-  min-height: 32px;
+  gap: 0.4rem;
+  padding: 0.5rem 0.85rem;
+  min-height: 36px;
   border-radius: 999px;
-  border: 1px solid rgb(var(--color-line));
-  background: rgb(var(--color-cream));
+  border: 1px solid rgb(var(--color-line) / 0.6);
+  background: rgb(var(--color-ivory) / 0.55);
+  backdrop-filter: blur(10px) saturate(1.4);
+  -webkit-backdrop-filter: blur(10px) saturate(1.4);
+  box-shadow: var(--shadow-inner-glass);
   color: rgb(var(--color-ink));
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
   letter-spacing: 0.01em;
-  transition: border-color 140ms ease, background-color 140ms ease, transform 140ms ease;
+  transition: border-color 140ms ease, background-color 140ms ease, box-shadow 160ms ease, transform 140ms ease;
   touch-action: manipulation;
 }
 
 .chat-action-chip--quiet {
   background: transparent;
-  border-color: rgb(var(--color-line) / 0.7);
+  box-shadow: none;
+  border-color: rgb(var(--color-line) / 0.5);
   color: rgb(var(--color-muted));
   font-weight: 500;
 }
 
 .chat-action-chip--quiet:hover {
-  background: rgb(var(--color-cream));
+  background: rgb(var(--color-ivory) / 0.5);
   color: rgb(var(--color-ink));
 }
 
@@ -811,28 +856,29 @@ function isImageReady(image: GeneratedImage, index: number) {
 }
 
 .chat-action-chip--primary {
-  background: rgb(var(--color-ink));
-  color: rgb(var(--color-paper));
-  border-color: rgb(var(--color-ink));
+  background: var(--gradient-primary);
+  color: #fff;
+  border-color: transparent;
+  box-shadow: var(--shadow-glass), var(--shadow-glow-accent);
 }
 
 .chat-action-chip--primary:hover {
-  background: rgb(var(--color-ink) / 0.9);
-  border-color: rgb(var(--color-ink));
+  box-shadow: var(--shadow-glass-lg), 0 0 24px -6px rgb(var(--color-accent) / 0.4);
+  transform: translateY(-1px);
 }
 
 .chat-retry-chip {
   position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
-  padding: 0.4rem 0.8rem;
-  min-height: 32px;
+  gap: 0.4rem;
+  padding: 0.5rem 0.9rem;
+  min-height: 36px;
   border-radius: 999px;
-  border: 1px solid currentColor;
-  background: rgb(var(--color-accent) / 0.08);
+  border: 1px solid rgb(var(--color-accent) / 0.4);
+  background: rgb(var(--color-accent) / 0.1);
   color: rgb(var(--color-accent));
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.02em;
   transition: background-color 140ms ease, transform 140ms ease;

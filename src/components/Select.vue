@@ -364,30 +364,37 @@ onBeforeUnmount(() => {
   gap: 0.5rem;
   padding: 0 2.25rem 0 0.875rem;
   border-radius: var(--radius-field);
-  border: 1px solid rgb(var(--color-line));
-  background: rgb(var(--color-ivory) / 0.58);
+  border: 1px solid rgb(var(--color-line) / 0.6);
+  background: rgb(var(--color-ivory) / 0.5);
+  backdrop-filter: blur(12px) saturate(1.4);
+  -webkit-backdrop-filter: blur(12px) saturate(1.4);
   color: rgb(var(--color-ink));
   text-align: left;
   cursor: pointer;
-  box-shadow: var(--shadow-inner-paper);
-  transition: border-color 160ms var(--motion-soft), background-color 160ms var(--motion-soft), box-shadow 180ms var(--motion-soft), transform 160ms var(--motion-press), color 160ms var(--motion-soft);
+  box-shadow: var(--shadow-inner-glass);
+  transition: border-color 180ms var(--motion-soft), background-color 180ms var(--motion-soft), box-shadow 200ms var(--motion-soft), transform 160ms var(--motion-press), color 160ms var(--motion-soft);
 }
 
 .select-trigger:hover {
-  border-color: rgb(var(--color-line-strong));
-  background: rgb(var(--color-ivory) / 0.82);
+  border-color: rgb(var(--color-line-strong) / 0.8);
+  background: rgb(var(--color-ivory) / 0.65);
+  transform: translateY(-1px);
 }
 
 .select-trigger:focus-visible {
   outline: none;
-  border-color: rgb(var(--color-forest));
-  box-shadow: var(--focus-ring);
+  border-color: rgb(var(--color-accent) / 0.5);
+  box-shadow: var(--focus-ring), var(--shadow-glow-accent);
 }
 
 .select-trigger.is-open {
-  border-color: rgb(var(--color-forest));
-  background: rgb(var(--color-vellum));
-  box-shadow: var(--focus-ring);
+  border-color: rgb(var(--color-accent) / 0.5);
+  background: rgb(var(--color-ivory) / 0.7);
+  box-shadow: var(--focus-ring), var(--shadow-glow-accent);
+}
+
+.select-trigger:active {
+  transform: scale(0.99);
 }
 
 .select-trigger.is-placeholder {
@@ -400,22 +407,26 @@ onBeforeUnmount(() => {
   max-width: 100%;
   border-radius: 999px;
   padding: 0 1.75rem 0 0.625rem;
-  background: rgb(var(--color-ivory) / 0.66);
-  border-color: rgb(var(--color-line-strong));
+  background: rgb(var(--color-ivory) / 0.45);
+  border-color: rgb(var(--color-line) / 0.5);
   font-weight: 500;
   letter-spacing: 0.01em;
 }
 
 .select-trigger--chip:hover {
-  background: rgb(var(--color-vellum));
-  border-color: rgb(var(--color-ink));
+  background: rgb(var(--color-ivory) / 0.65);
+  border-color: rgb(var(--color-line-strong) / 0.7);
 }
 
 .select-trigger--chip.is-open {
-  background: rgb(var(--color-ink));
-  color: rgb(var(--color-paper));
-  border-color: rgb(var(--color-ink));
-  box-shadow: 0 1px 0 rgb(var(--color-ink) / 0.04), 0 0 0 3px rgb(var(--color-ink) / 0.12);
+  background: var(--gradient-primary);
+  color: #fff;
+  border-color: transparent;
+  box-shadow: var(--shadow-glass), var(--shadow-glow-accent);
+}
+
+.select-trigger--chip.is-open .select-trigger__caret {
+  color: #fff;
 }
 
 .select-trigger--chip .select-trigger__label {
@@ -458,14 +469,13 @@ onBeforeUnmount(() => {
 }
 
 .select-popover {
-  border-radius: 14px;
-  background:
-    linear-gradient(180deg, rgb(var(--color-ivory) / 0.96), rgb(var(--color-vellum) / 0.96)),
-    rgb(var(--color-vellum));
-  border: 1px solid rgb(var(--color-line-strong));
-  box-shadow: var(--shadow-paper-3);
+  border-radius: var(--radius-card);
+  background: var(--gradient-surface);
+  border: 1px solid rgb(var(--color-line) / 0.4);
+  box-shadow: var(--shadow-glass-lg), var(--shadow-inner-glass);
   overflow: hidden;
-  backdrop-filter: blur(8px);
+  backdrop-filter: blur(calc(var(--glass-blur) * 1.2)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 1.2)) saturate(var(--glass-saturate));
   transform-origin: var(--pop-origin, top center);
 }
 
@@ -503,24 +513,25 @@ onBeforeUnmount(() => {
   align-items: flex-start;
   gap: 0.625rem;
   padding: 0.55rem 0.625rem;
-  border-radius: 10px;
+  border-radius: var(--radius-field);
   cursor: pointer;
   color: rgb(var(--color-ink));
-  transition: background-color 140ms ease, color 140ms ease;
+  transition: background-color 160ms var(--motion-soft), color 160ms var(--motion-soft), box-shadow 160ms var(--motion-soft);
   user-select: none;
 }
 
 .select-option[data-active] {
-  background: rgb(var(--color-ink) / 0.06);
+  background: rgb(var(--color-accent) / 0.08);
 }
 
 .select-option[data-selected] {
-  background: linear-gradient(135deg, rgb(var(--color-ink)), rgb(var(--color-blueprint)));
-  color: rgb(var(--color-paper));
+  background: var(--gradient-primary);
+  color: #fff;
+  box-shadow: var(--shadow-glow-accent);
 }
 
 .select-option[data-selected][data-active] {
-  background: rgb(var(--color-ink));
+  filter: brightness(1.05);
 }
 
 .select-option[data-disabled] {

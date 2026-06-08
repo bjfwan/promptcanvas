@@ -236,10 +236,10 @@ function isImageReady(image: GeneratedImage, index: number) {
 
     <div
       v-if="errorMessage"
-      class="flex items-start gap-3 rounded-2xl border border-accent/30 bg-accent/[0.06] px-4 py-3 text-[13px] leading-6 text-accent"
+      class="reveal flex items-start gap-3 rounded-[var(--radius-panel)] border border-clay/30 bg-clay/[0.07] px-4 py-3 text-[13px] leading-6 text-clay backdrop-blur-glass"
       role="alert"
     >
-      <Icon name="warning" :size="16" class="mt-0.5" />
+      <Icon name="warning" :size="16" class="mt-0.5 shrink-0" />
       <span>{{ errorMessage }}</span>
     </div>
 
@@ -293,7 +293,7 @@ function isImageReady(image: GeneratedImage, index: number) {
             loading="eager"
             fetchpriority="high"
             decoding="async"
-            class="result-image max-h-full max-w-full rounded-xl object-contain shadow-paper-1"
+            class="result-image max-h-full max-w-full rounded-[var(--radius-panel)] object-contain shadow-glass"
             :class="isImageReady(activeImage, activeImageIndex) ? 'result-image--ready' : 'result-image--loading'"
             @load="markImageReady(activeImage, activeImageIndex)"
             @error="markImageReady(activeImage, activeImageIndex)"
@@ -481,7 +481,7 @@ function isImageReady(image: GeneratedImage, index: number) {
         <div class="max-w-md px-6">
           <template v-if="!providerConfigured">
             <div
-              class="canvas-hero__badge mx-auto mb-5 grid h-14 w-14 place-items-center rounded-[1.15rem]"
+              class="canvas-hero__badge mx-auto mb-5 grid h-14 w-14 place-items-center rounded-[var(--radius-card)]"
               aria-hidden="true"
             >
               <Icon name="settings" :size="22" />
@@ -508,7 +508,7 @@ function isImageReady(image: GeneratedImage, index: number) {
 
           <template v-else>
             <div
-              class="canvas-hero__badge mx-auto mb-5 grid h-14 w-14 place-items-center rounded-[1.15rem]"
+              class="canvas-hero__badge mx-auto mb-5 grid h-14 w-14 place-items-center rounded-[var(--radius-card)]"
               aria-hidden="true"
             >
               <img src="/brand/promptcanvas-icon-96.png" alt="" width="56" height="56" decoding="async" />
@@ -583,13 +583,15 @@ function isImageReady(image: GeneratedImage, index: number) {
   justify-content: center;
   gap: 0.45rem;
   min-height: 44px;
-  border-radius: 13px;
-  border: 1px solid rgb(var(--color-line));
-  background: rgb(var(--color-ivory) / 0.6);
+  border-radius: var(--radius-field);
+  border: 1px solid rgb(var(--color-line) / 0.5);
+  background: rgb(var(--color-ivory) / 0.45);
+  backdrop-filter: blur(12px) saturate(1.4);
+  -webkit-backdrop-filter: blur(12px) saturate(1.4);
   color: rgb(var(--color-ink));
   font-size: 12px;
   font-weight: 720;
-  box-shadow: var(--shadow-inner-paper);
+  box-shadow: var(--shadow-inner-glass);
   transition: transform 160ms var(--motion-press), background-color 160ms var(--motion-soft), border-color 160ms var(--motion-soft), box-shadow 180ms var(--motion-soft), color 160ms var(--motion-soft);
 }
 
@@ -633,19 +635,20 @@ function isImageReady(image: GeneratedImage, index: number) {
   place-items: center;
   width: 36px;
   height: 36px;
-  border-radius: 999px;
-  border: 1px solid rgb(var(--color-paper) / 0.6);
-  background: rgb(var(--color-ink) / 0.62);
-  color: rgb(var(--color-paper));
-  box-shadow: 0 14px 28px -16px rgb(0 0 0 / 0.56);
-  backdrop-filter: blur(10px) saturate(140%);
-  -webkit-backdrop-filter: blur(10px) saturate(140%);
-  transition: transform 160ms var(--motion-press), background-color 160ms var(--motion-soft), border-color 160ms ease;
+  border-radius: 9px;
+  border: 1px solid rgb(var(--color-paper) / 0.18);
+  background: rgb(18 20 30 / 0.42);
+  color: rgb(255 255 255 / 0.94);
+  box-shadow: 0 10px 28px -16px rgb(0 0 0 / 0.6), inset 0 1px 0 rgb(255 255 255 / 0.18);
+  backdrop-filter: blur(14px) saturate(1.6);
+  -webkit-backdrop-filter: blur(14px) saturate(1.6);
+  transition: transform 160ms var(--motion-press), background-color 160ms var(--motion-soft), border-color 160ms ease, box-shadow 180ms var(--motion-soft);
 }
 
 .canvas-tool-btn:hover {
-  background: rgb(var(--color-ink) / 0.82);
-  border-color: rgb(var(--color-paper) / 0.8);
+  background: linear-gradient(135deg, rgb(102 126 234 / 0.55), rgb(118 75 162 / 0.55));
+  border-color: rgb(255 255 255 / 0.34);
+  box-shadow: 0 12px 30px -14px rgb(0 0 0 / 0.6), 0 0 18px -4px rgb(var(--color-accent) / 0.45), inset 0 1px 0 rgb(255 255 255 / 0.22);
   transform: translateY(-1px);
 }
 
@@ -662,29 +665,25 @@ function isImageReady(image: GeneratedImage, index: number) {
 
 .canvas-action:hover {
   transform: translateY(-1px);
-  border-color: rgb(var(--color-line-strong));
-  background: rgb(var(--color-vellum));
-  box-shadow: var(--shadow-paper-1), var(--shadow-inner-paper);
+  border-color: rgb(var(--color-line-strong) / 0.7);
+  background: rgb(var(--color-ivory) / 0.65);
+  box-shadow: var(--shadow-glass-sm), var(--shadow-inner-glass);
 }
 
 .canvas-action:active {
-  transform: translateY(0);
+  transform: scale(0.97);
 }
 
 .canvas-action--primary {
-  border-color: rgb(var(--color-ink));
-  background:
-    linear-gradient(135deg, rgb(var(--color-ink)), rgb(var(--color-blueprint))),
-    rgb(var(--color-ink));
-  color: rgb(var(--color-paper));
-  box-shadow: var(--shadow-paper-2);
+  border: none;
+  background: var(--gradient-primary);
+  color: #fff;
+  box-shadow: var(--shadow-glass), var(--shadow-glow-accent);
 }
 
 .canvas-action--primary:hover {
-  border-color: rgb(var(--color-ink));
-  background:
-    linear-gradient(135deg, rgb(var(--color-ink)), rgb(var(--color-forest))),
-    rgb(var(--color-ink));
+  background: var(--gradient-primary);
+  box-shadow: var(--shadow-glass-lg), 0 0 28px -6px rgb(var(--color-accent) / 0.4);
 }
 
 .canvas-prompt-card {
@@ -692,15 +691,15 @@ function isImageReady(image: GeneratedImage, index: number) {
   display: block;
   min-height: 128px;
   overflow: hidden;
-  border-radius: 17px;
-  border: 1px solid rgb(var(--color-line));
-  background:
-    linear-gradient(135deg, rgb(var(--color-ivory) / 0.7), rgb(var(--color-vellum) / 0.44)),
-    rgb(var(--color-cream) / 0.26);
-  padding: 0.75rem;
+  border-radius: var(--radius-card);
+  border: 1px solid rgb(var(--color-line) / 0.4);
+  background: rgb(var(--color-ivory) / 0.45);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  padding: 0.85rem;
   text-align: left;
-  box-shadow: var(--shadow-inner-paper);
-  transition: transform 160ms var(--motion-press), background-color 160ms var(--motion-soft), border-color 160ms var(--motion-soft), box-shadow 180ms var(--motion-soft);
+  box-shadow: var(--shadow-inner-glass);
+  transition: transform 180ms var(--motion-press), background-color 180ms var(--motion-soft), border-color 180ms var(--motion-soft), box-shadow 200ms var(--motion-soft);
 }
 
 .canvas-prompt-card::before {
@@ -708,15 +707,15 @@ function isImageReady(image: GeneratedImage, index: number) {
   position: absolute;
   inset: 0 auto 0 0;
   width: 3px;
-  background: rgb(var(--color-forest));
-  opacity: 0.7;
+  background: var(--gradient-primary);
+  opacity: 0.85;
 }
 
 .canvas-prompt-card:hover {
-  transform: translateY(-1px);
-  border-color: rgb(var(--color-line-strong));
-  background: rgb(var(--color-ivory) / 0.78);
-  box-shadow: var(--shadow-paper-1), var(--shadow-inner-paper);
+  transform: translateY(-2px);
+  border-color: rgb(var(--color-accent) / 0.4);
+  background: rgb(var(--color-ivory) / 0.62);
+  box-shadow: var(--shadow-glass), 0 0 20px -6px rgb(var(--color-accent) / 0.3);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -730,7 +729,11 @@ function isImageReady(image: GeneratedImage, index: number) {
   display: grid;
   place-items: center;
   pointer-events: none;
-  background: linear-gradient(180deg, rgb(var(--color-vellum) / 0.94), rgb(var(--color-paper) / 0.62));
+  background:
+    radial-gradient(120% 90% at 30% 10%, rgb(var(--color-accent) / 0.07), transparent 60%),
+    linear-gradient(180deg, rgb(var(--color-ivory) / 0.6), rgb(var(--color-vellum) / 0.45));
+  backdrop-filter: blur(calc(var(--glass-blur) * 0.6)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 0.6)) saturate(var(--glass-saturate));
 }
 
 .canvas-image-placeholder__glow {
@@ -738,8 +741,8 @@ function isImageReady(image: GeneratedImage, index: number) {
   width: min(44%, 220px);
   height: min(44%, 220px);
   border-radius: 999px;
-  background: radial-gradient(circle, rgb(var(--color-vellum) / 0.96), rgb(var(--color-vellum) / 0) 70%);
-  filter: blur(8px);
+  background: radial-gradient(circle, rgb(var(--color-accent) / 0.16), rgb(var(--color-blueprint) / 0) 70%);
+  filter: blur(14px);
 }
 
 .canvas-image-placeholder__loader {
@@ -749,15 +752,18 @@ function isImageReady(image: GeneratedImage, index: number) {
   gap: 7px;
   padding: 0.7rem 0.95rem;
   border-radius: 999px;
-  background: rgb(var(--color-vellum) / 0.88);
-  box-shadow: 0 24px 40px -30px rgb(var(--color-ink) / 0.5);
+  border: 1px solid rgb(var(--color-line) / 0.4);
+  background: rgb(var(--color-ivory) / 0.55);
+  backdrop-filter: blur(12px) saturate(1.5);
+  -webkit-backdrop-filter: blur(12px) saturate(1.5);
+  box-shadow: var(--shadow-glass), var(--shadow-inner-glass);
 }
 
 .canvas-image-placeholder__loader span {
   width: 6px;
   height: 6px;
   border-radius: 999px;
-  background: rgb(var(--color-ink) / 0.58);
+  background: var(--gradient-primary);
   animation: canvas-image-loader 1.15s ease-in-out infinite;
 }
 
@@ -774,8 +780,8 @@ function isImageReady(image: GeneratedImage, index: number) {
   inset: 0 auto 0 0;
   width: var(--progress, 0%);
   border-radius: inherit;
-  background: linear-gradient(90deg, rgb(var(--color-forest) / 0.72), rgb(var(--color-accent) / 0.82));
-  box-shadow: 0 0 18px rgb(var(--color-accent) / 0.18);
+  background: var(--gradient-primary);
+  box-shadow: 0 0 18px rgb(var(--color-accent) / 0.3);
   transition: width 0.7s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
@@ -850,15 +856,19 @@ function isImageReady(image: GeneratedImage, index: number) {
   overflow: hidden;
   border-style: solid;
   background:
-    radial-gradient(140% 90% at 30% 0%, rgb(var(--color-ivory) / 0.9), transparent 62%),
-    rgb(var(--color-vellum));
+    radial-gradient(120% 80% at 20% 0%, rgb(var(--color-accent) / 0.1), transparent 55%),
+    radial-gradient(110% 90% at 90% 100%, rgb(var(--color-blueprint) / 0.08), transparent 60%),
+    rgb(var(--color-ivory) / 0.45);
 }
 
 .canvas-hero__badge {
-  border: 1px solid rgb(var(--color-line-strong) / 0.6);
-  background: rgb(var(--color-vellum));
+  border: 1px solid rgb(var(--color-line) / 0.4);
+  border-radius: var(--radius-card);
+  background: var(--gradient-glass);
   color: rgb(var(--color-ink));
-  box-shadow: var(--shadow-inner-paper), var(--shadow-paper-2);
+  box-shadow: var(--shadow-glass), var(--shadow-inner-glass), var(--shadow-glow-accent);
+  backdrop-filter: blur(12px) saturate(1.5);
+  -webkit-backdrop-filter: blur(12px) saturate(1.5);
   overflow: hidden;
 }
 
@@ -872,9 +882,12 @@ function isImageReady(image: GeneratedImage, index: number) {
   display: inline-flex;
   align-items: center;
   padding: 0.08rem 0.42rem;
-  border-radius: 6px;
-  border: 1px solid rgb(var(--color-line-strong) / 0.7);
-  background: rgb(var(--color-vellum));
+  border-radius: 5px;
+  border: 1px solid rgb(var(--color-line) / 0.6);
+  background: rgb(var(--color-ivory) / 0.5);
+  backdrop-filter: blur(8px) saturate(1.4);
+  -webkit-backdrop-filter: blur(8px) saturate(1.4);
+  box-shadow: var(--shadow-inner-glass);
   color: rgb(var(--color-muted));
   font-family: 'JetBrains Mono', ui-monospace, monospace;
   font-size: 10px;
@@ -895,12 +908,12 @@ function isImageReady(image: GeneratedImage, index: number) {
   display: grid;
   gap: 0.6rem;
   padding: 0.7rem;
-  border-radius: 22px;
-  border: 1px solid rgb(var(--color-line));
-  background:
-    linear-gradient(180deg, rgb(var(--color-ivory) / 0.6), rgb(var(--color-vellum) / 0.34)),
-    rgb(var(--color-cream) / 0.18);
-  box-shadow: var(--shadow-paper-2), var(--shadow-inner-paper);
+  border-radius: var(--radius-card);
+  border: 1px solid rgb(var(--color-line) / 0.35);
+  background: var(--gradient-surface);
+  backdrop-filter: blur(calc(var(--glass-blur) * 1.2)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 1.2)) saturate(var(--glass-saturate));
+  box-shadow: var(--shadow-glass), var(--shadow-inner-glass);
 }
 
 .canvas-mosaic[data-orient="portrait"]   { aspect-ratio: 4 / 5; max-height: 70dvh; }
@@ -945,22 +958,22 @@ function isImageReady(image: GeneratedImage, index: number) {
 .canvas-mosaic__cell {
   position: relative;
   overflow: hidden;
-  border-radius: 16px;
-  border: 1px solid rgb(var(--color-line));
-  background: rgb(var(--color-paper-soft));
-  box-shadow: var(--shadow-inner-paper);
+  border-radius: var(--radius-panel);
+  border: 1px solid rgb(var(--color-line) / 0.4);
+  background: rgb(var(--color-ivory) / 0.4);
+  box-shadow: var(--shadow-inner-glass);
   transition: border-color 200ms var(--motion-soft), box-shadow 220ms var(--motion-soft), transform 200ms var(--motion-press);
 }
 
 .canvas-mosaic__cell:hover {
-  border-color: rgb(var(--color-line-strong));
+  border-color: rgb(var(--color-line-strong) / 0.6);
   transform: translateY(-1px);
-  box-shadow: var(--shadow-paper-1), var(--shadow-inner-paper);
+  box-shadow: var(--shadow-glass-sm), var(--shadow-inner-glass);
 }
 
 .canvas-mosaic__cell--active {
-  border-color: rgb(var(--color-ink));
-  box-shadow: 0 0 0 2px rgb(var(--color-ink) / 0.16), var(--shadow-paper-2);
+  border-color: rgb(var(--color-accent) / 0.5);
+  box-shadow: 0 0 0 2px rgb(var(--color-accent) / 0.25), var(--shadow-glow-accent), var(--shadow-glass);
 }
 
 .canvas-mosaic__cell--active:hover {
@@ -1020,14 +1033,15 @@ function isImageReady(image: GeneratedImage, index: number) {
   display: inline-flex;
   align-items: center;
   padding: 0.18rem 0.5rem;
-  border-radius: 999px;
-  background: rgb(var(--color-ink) / 0.55);
+  border-radius: 6px;
+  border: 1px solid rgb(var(--color-ivory) / 0.18);
+  background: rgb(var(--color-ink) / 0.5);
   color: rgb(var(--color-paper));
   font-family: 'JetBrains Mono', ui-monospace, monospace;
   font-size: 10px;
   letter-spacing: 0.04em;
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(10px) saturate(1.4);
+  -webkit-backdrop-filter: blur(10px) saturate(1.4);
   pointer-events: none;
 }
 
@@ -1040,9 +1054,9 @@ function isImageReady(image: GeneratedImage, index: number) {
   width: 24px;
   height: 24px;
   border-radius: 999px;
-  background: rgb(var(--color-ink));
-  color: rgb(var(--color-paper));
-  box-shadow: 0 8px 18px -10px rgb(var(--color-ink) / 0.6);
+  background: var(--gradient-primary);
+  color: #fff;
+  box-shadow: var(--shadow-glow-accent), 0 8px 18px -10px rgb(var(--color-accent) / 0.6);
   pointer-events: none;
   animation: canvas-mosaic-mark 320ms var(--motion-snap);
 }
@@ -1081,19 +1095,20 @@ function isImageReady(image: GeneratedImage, index: number) {
   place-items: center;
   width: 30px;
   height: 30px;
-  border-radius: 999px;
-  border: 1px solid rgb(var(--color-paper) / 0.6);
-  background: rgb(var(--color-ink) / 0.6);
+  border-radius: 8px;
+  border: 1px solid rgb(var(--color-ivory) / 0.22);
+  background: rgb(var(--color-ink) / 0.55);
   color: rgb(var(--color-paper));
   box-shadow: 0 8px 18px -12px rgb(0 0 0 / 0.5);
-  backdrop-filter: blur(8px) saturate(140%);
-  -webkit-backdrop-filter: blur(8px) saturate(140%);
+  backdrop-filter: blur(10px) saturate(1.5);
+  -webkit-backdrop-filter: blur(10px) saturate(1.5);
   cursor: pointer;
-  transition: background-color 140ms ease, transform 140ms var(--motion-press);
+  transition: background-color 140ms var(--motion-soft), border-color 140ms var(--motion-soft), transform 140ms var(--motion-press);
 }
 
 .canvas-mosaic__tool:hover {
-  background: rgb(var(--color-ink) / 0.82);
+  background: rgb(var(--color-accent) / 0.78);
+  border-color: rgb(var(--color-ivory) / 0.4);
   transform: translateY(-1px);
 }
 
@@ -1123,12 +1138,12 @@ function isImageReady(image: GeneratedImage, index: number) {
   z-index: 30;
   display: grid;
   place-items: center;
-  border-radius: 24px;
+  border-radius: var(--radius-card);
   border: 2px dashed rgb(var(--color-forest) / 0.55);
   background:
-    radial-gradient(circle at 50% 50%, rgb(var(--color-forest) / 0.12), rgb(var(--color-vellum) / 0.6) 60%);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
+    radial-gradient(circle at 50% 50%, rgb(var(--color-forest) / 0.14), rgb(var(--color-ivory) / 0.4) 60%);
+  backdrop-filter: blur(10px) saturate(1.4);
+  -webkit-backdrop-filter: blur(10px) saturate(1.4);
   pointer-events: none;
 }
 
@@ -1137,28 +1152,11 @@ function isImageReady(image: GeneratedImage, index: number) {
   justify-items: center;
   gap: 0.5rem;
   padding: 1rem 1.5rem;
-  border-radius: 20px;
-  background: rgb(var(--color-vellum) / 0.94);
+  border-radius: var(--radius-panel);
+  background: rgb(var(--color-ivory) / 0.7);
   border: 1px solid rgb(var(--color-forest) / 0.32);
   color: rgb(var(--color-forest));
-  box-shadow: var(--shadow-paper-3);
-}
-
-.canvas-drop-fade-enter-from,
-.canvas-drop-fade-leave-to {
-  opacity: 0;
-  transform: scale(0.985);
-}
-
-.canvas-drop-fade-enter-active,
-.canvas-drop-fade-leave-active {
-  transition: opacity 160ms ease-out, transform 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .canvas-drop-fade-enter-active,
-  .canvas-drop-fade-leave-active {
-    transition: none;
-  }
+  backdrop-filter: blur(10px) saturate(1.4);
+  -webkit-backdrop-filter: blur(10px) saturate(1.4);
 }
 </style>

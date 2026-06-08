@@ -150,13 +150,13 @@ defineExpose({ scrollToBottom, scrollToMessage })
         </div>
 
         <template v-if="!providerConfigured">
-          <p class="font-display text-2xl italic tracking-tightish text-ink/85">{{ t('stream.empty.unconfigured.title') }}</p>
-          <p class="mt-2 max-w-[28ch] text-[13px] leading-6 text-muted">
+          <p class="font-display text-[1.75rem] italic leading-tight tracking-tightish text-ink/85">{{ t('stream.empty.unconfigured.title') }}</p>
+          <p class="mt-2.5 max-w-[28ch] text-[13.5px] leading-6 text-muted">
             {{ t('stream.empty.unconfigured.body') }}
           </p>
           <button
             type="button"
-            class="mt-5 inline-flex items-center gap-2 rounded-full border border-ink bg-ink px-4 py-2.5 text-[13px] font-semibold text-paper shadow-paper-2 active:translate-y-px"
+            class="empty-cta mt-6 inline-flex min-h-[48px] items-center gap-2 rounded-full px-5 text-[13.5px] font-semibold text-white active:scale-[0.97]"
             @click="emit('open-settings')"
           >
             <Icon name="settings" :size="14" />
@@ -169,23 +169,26 @@ defineExpose({ scrollToBottom, scrollToMessage })
         </template>
 
         <template v-else>
-          <p class="font-display text-2xl italic tracking-tightish text-ink/85">{{ t('stream.empty.title') }}</p>
-          <p class="mt-2 max-w-[26ch] text-[13px] leading-6 text-muted">
+          <p class="font-display text-[1.75rem] italic leading-tight tracking-tightish">
+            <span class="gradient-text">{{ t('stream.empty.title') }}</span>
+          </p>
+          <p class="mt-2.5 max-w-[26ch] text-[13.5px] leading-6 text-muted">
             {{ t('stream.empty.body') }}
           </p>
 
-          <ul class="mt-6 grid w-full max-w-sm grid-cols-1 gap-2 min-[380px]:grid-cols-2">
+          <ul class="empty-suggestions mt-7 grid w-full max-w-sm grid-cols-1 gap-2.5 min-[380px]:grid-cols-2">
             <li v-for="item in suggestionStyles" :key="item.value">
               <button
                 type="button"
-                class="group flex w-full items-center gap-3 rounded-2xl border border-line bg-cream p-2.5 text-left transition hover:-translate-y-px hover:border-line-strong hover:bg-paper-soft"
+                class="empty-suggestion group flex w-full items-center gap-3 p-3 text-left"
                 @click="emit('pick-suggestion', item.value)"
               >
-                <StyleSwatch :variant="item.value" :size="36" />
+                <StyleSwatch :variant="item.value" :size="38" />
                 <span class="min-w-0 flex-1">
-                  <span class="block text-[13px] font-medium leading-tight text-ink">{{ item.label }}</span>
-                  <span class="mt-0.5 block text-[11px] leading-snug text-muted">{{ item.accent }}</span>
+                  <span class="block text-[13.5px] font-semibold leading-tight text-ink">{{ item.label }}</span>
+                  <span class="mt-0.5 block text-[11.5px] leading-snug text-muted">{{ item.accent }}</span>
                 </span>
+                <Icon name="arrowRight" :size="13" class="empty-suggestion__arrow shrink-0 text-muted" />
               </button>
             </li>
           </ul>
@@ -302,10 +305,102 @@ defineExpose({ scrollToBottom, scrollToMessage })
 }
 
 .empty-studio-mark {
+  position: relative;
   background:
-    linear-gradient(135deg, rgb(var(--color-vellum) / 0.96), rgb(var(--color-paper-soft) / 0.72)),
-    radial-gradient(circle at 30% 20%, rgb(var(--color-accent) / 0.16), transparent 55%);
-  box-shadow: var(--shadow-inner-paper), var(--shadow-paper-2);
+    var(--gradient-surface),
+    radial-gradient(circle at 30% 20%, rgb(var(--color-accent) / 0.22), transparent 58%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  box-shadow: var(--shadow-glass), var(--shadow-inner-glass);
+}
+
+/* iridescent halo behind the brand mark */
+.empty-studio-mark::after {
+  content: '';
+  position: absolute;
+  inset: -8px;
+  z-index: -1;
+  border-radius: inherit;
+  background: conic-gradient(
+    from 0deg,
+    rgb(var(--color-accent) / 0.28),
+    rgb(var(--color-blueprint) / 0.22),
+    rgb(var(--color-forest) / 0.2),
+    rgb(var(--color-accent) / 0.28)
+  );
+  filter: blur(14px);
+  opacity: 0.7;
+  animation: empty-mark-spin 14s linear infinite;
+}
+
+@keyframes empty-mark-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ─── Empty-state suggestion cards — glass tiles ─── */
+.empty-suggestion {
+  position: relative;
+  min-height: 64px;
+  border-radius: var(--radius-card);
+  border: 1px solid rgb(var(--color-line) / 0.4);
+  background: rgb(var(--color-ivory) / 0.5);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  box-shadow: var(--shadow-glass-sm), var(--shadow-inner-glass);
+  transition:
+    transform 180ms var(--motion-soft),
+    border-color 180ms var(--motion-soft),
+    box-shadow 200ms var(--motion-soft),
+    background-color 180ms var(--motion-soft);
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.empty-suggestion:hover {
+  transform: translateY(-2px);
+  border-color: rgb(var(--color-accent) / 0.4);
+  background: rgb(var(--color-ivory) / 0.7);
+  box-shadow: var(--shadow-glass), var(--shadow-glow-accent);
+}
+
+.empty-suggestion:active {
+  transform: translateY(0) scale(0.98);
+}
+
+.empty-suggestion__arrow {
+  opacity: 0;
+  transform: translateX(-4px);
+  transition: opacity 180ms var(--motion-soft), transform 180ms var(--motion-soft);
+}
+
+.empty-suggestion:hover .empty-suggestion__arrow {
+  opacity: 1;
+  transform: translateX(0);
+  color: rgb(var(--color-accent));
+}
+
+/* On touch (no hover) keep the arrow softly visible as an affordance. */
+@media (hover: none) {
+  .empty-suggestion__arrow {
+    opacity: 0.5;
+    transform: translateX(0);
+  }
+}
+
+/* ─── Empty-state primary CTA (unconfigured) — gradient pill ─── */
+.empty-cta {
+  background: var(--gradient-primary);
+  box-shadow: var(--shadow-glass), var(--shadow-glow-accent);
+  transition:
+    transform 140ms var(--motion-press),
+    box-shadow 200ms var(--motion-soft);
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.empty-cta:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-glass-lg), 0 0 28px -6px rgb(var(--color-accent) / 0.4);
 }
 
 .chat-stream__jump {
@@ -313,21 +408,27 @@ defineExpose({ scrollToBottom, scrollToMessage })
   right: 14px;
   display: inline-grid;
   place-items: center;
-  width: 44px;
-  height: 44px;
+  width: 48px;
+  height: 48px;
   border-radius: 999px;
-  border: 1px solid rgb(var(--color-line-strong));
-  background: rgb(var(--color-vellum) / 0.95);
+  border: 1px solid rgb(var(--color-line) / 0.4);
+  background: rgb(var(--color-ivory) / 0.6);
   color: rgb(var(--color-ink));
-  box-shadow: var(--shadow-paper-2);
-  backdrop-filter: blur(8px);
-  transition: transform 160ms ease, background-color 160ms ease;
+  box-shadow: var(--shadow-glass-lg), var(--shadow-inner-glass);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  transition: transform 180ms var(--motion-soft), background-color 160ms var(--motion-soft), box-shadow 200ms var(--motion-soft);
   touch-action: manipulation;
 }
 
 .chat-stream__jump:hover {
-  transform: translateY(-1px);
-  background: rgb(var(--color-vellum));
+  transform: translateY(-2px);
+  border-color: rgb(var(--color-accent) / 0.4);
+  box-shadow: var(--shadow-glass-lg), var(--shadow-glow-accent);
+}
+
+.chat-stream__jump:active {
+  transform: scale(0.92);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -335,6 +436,13 @@ defineExpose({ scrollToBottom, scrollToMessage })
     scroll-behavior: auto;
   }
 
+  .empty-studio-mark::after {
+    animation: none;
+  }
+
+  .empty-suggestion,
+  .empty-suggestion__arrow,
+  .empty-cta,
   .chat-stream__jump {
     transition: none;
   }

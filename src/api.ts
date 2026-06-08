@@ -163,6 +163,11 @@ async function buildEditFormData(payload: {
     name: string
     file?: File
   }>
+  /**
+   * Optional inpainting mask (PNG). Black pixels = keep, white pixels = edit.
+   * When supplied, only one referenceImage is used (the first) as the source.
+   */
+  mask?: Blob
 }, requestId: string) {
   const formData = new FormData()
 
@@ -186,7 +191,9 @@ async function buildEditFormData(payload: {
       formData.append('image', pngBlob, 'image.png')
     }
 
-    if (payload.referenceImages.length > 1) {
+    // When inpainting, only the first reference image is the canvas;
+    // additional references are ignored to keep mask alignment unambiguous.
+    if (!payload.mask && payload.referenceImages.length > 1) {
       for (const image of payload.referenceImages.slice(1)) {
         if (image.file) {
           const pngBlob = await ensurePngBlob(image.file)
@@ -194,6 +201,10 @@ async function buildEditFormData(payload: {
         }
       }
     }
+  }
+
+  if (payload.mask) {
+    formData.append('mask', payload.mask, 'mask.png')
   }
 
   return formData
@@ -363,6 +374,7 @@ export async function generateImage(
             quality: validated.quality,
             model: validated.model,
             referenceImages: validated.referenceImages,
+            mask: validated.inpaintMask,
           },
           requestId,
         )
@@ -377,6 +389,7 @@ export async function generateImage(
     group.log('request mode', hasReferenceImages ? 'reference-edit' : 'text-generate')
     if (hasReferenceImages) {
       group.log('reference images', summarizeReferenceImages(validated.referenceImages))
+      group.log('inpaint mask', validated.inpaintMask ? `${Math.round(validated.inpaintMask.size / 1024)}KB` : 'none')
       group.log('upstream body (fields)', {
         prompt: promptText,
         size: validated.size,

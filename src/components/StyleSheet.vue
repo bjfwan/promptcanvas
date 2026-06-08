@@ -157,7 +157,7 @@ onBeforeUnmount(() => {
       <section
         ref="sheetRef"
         v-if="open"
-        class="style-sheet fixed inset-x-0 bottom-0 z-sheet flex flex-col rounded-t-[28px] border-t border-line bg-paper text-ink shadow-paper-3"
+        class="style-sheet fixed inset-x-0 bottom-0 z-sheet flex flex-col rounded-t-[20px] border-t border-line/50 text-ink"
         :class="{ 'style-sheet--dragging': dragging }"
         :style="sheetTransform ? { transform: sheetTransform } : undefined"
         role="dialog"
@@ -307,8 +307,11 @@ onBeforeUnmount(() => {
 .style-sheet {
   max-height: min(86dvh, 760px);
   background:
-    linear-gradient(180deg, rgb(var(--color-ivory) / 0.78), rgb(var(--color-vellum) / 0.97)),
-    rgb(var(--color-paper));
+    radial-gradient(120% 60% at 50% 0%, rgb(var(--color-accent) / 0.07), transparent 60%),
+    linear-gradient(180deg, rgb(var(--color-ivory) / 0.72), rgb(var(--color-vellum) / 0.78));
+  backdrop-filter: blur(calc(var(--glass-blur) * 1.4)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 1.4)) saturate(var(--glass-saturate));
+  box-shadow: var(--shadow-glass-xl);
   transition: transform 280ms var(--motion-soft);
   will-change: transform;
 }
@@ -336,18 +339,19 @@ onBeforeUnmount(() => {
   height: 4px;
   border-radius: 999px;
   background: rgb(var(--color-line-strong) / 0.6);
-  transition: background-color 160ms var(--motion-soft);
+  transition: background-color 160ms var(--motion-soft), width 200ms var(--motion-soft);
 }
 
 .style-sheet__grabber:hover .style-sheet__grabber-handle,
 .style-sheet--dragging .style-sheet__grabber-handle {
-  background: rgb(var(--color-ink) / 0.55);
+  background: var(--gradient-primary);
+  width: 56px;
 }
 
 .style-sheet__header {
-  background: linear-gradient(180deg, rgb(var(--color-ivory) / 0.55), transparent 78%);
+  background: linear-gradient(180deg, rgb(var(--color-ivory) / 0.45), transparent 78%);
   padding-bottom: 0.85rem;
-  border-bottom: 1px solid rgb(var(--color-line) / 0.7);
+  border-bottom: 1px solid rgb(var(--color-line) / 0.4);
 }
 
 .style-sheet__main {
@@ -400,15 +404,15 @@ onBeforeUnmount(() => {
   width: 100%;
   min-height: 64px;
   overflow: hidden;
-  border-radius: 16px;
-  border: 1px solid rgb(var(--color-line));
-  background:
-    linear-gradient(135deg, rgb(var(--color-ivory) / 0.7), rgb(var(--color-vellum) / 0.45)),
-    rgb(var(--color-cream) / 0.18);
+  border-radius: var(--radius-panel);
+  border: 1px solid rgb(var(--color-line) / 0.4);
+  background: rgb(var(--color-ivory) / 0.4);
+  backdrop-filter: blur(12px) saturate(1.4);
+  -webkit-backdrop-filter: blur(12px) saturate(1.4);
   padding: 0.55rem 0.7rem 0.55rem 0.85rem;
   color: rgb(var(--color-ink));
   text-align: left;
-  box-shadow: var(--shadow-inner-paper);
+  box-shadow: var(--shadow-inner-glass);
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
   transition:
@@ -419,23 +423,35 @@ onBeforeUnmount(() => {
     color 160ms var(--motion-soft);
 }
 
+.style-tile:hover {
+  transform: translateY(-1px);
+  border-color: rgb(var(--color-line-strong) / 0.6);
+  background: rgb(var(--color-ivory) / 0.6);
+  box-shadow: var(--shadow-glass-sm), var(--shadow-inner-glass);
+}
+
 .style-tile:active {
   transform: scale(0.97);
 }
 
 .style-tile--focused {
-  border-color: rgb(var(--color-ink));
-  background: rgb(var(--color-ink));
-  color: rgb(var(--color-paper));
-  box-shadow: var(--shadow-paper-2), 0 0 0 3px rgb(var(--color-ink) / 0.08);
+  border-color: rgb(var(--color-accent) / 0.5);
+  background: rgb(var(--color-ivory) / 0.65);
+  color: rgb(var(--color-ink));
+  box-shadow: var(--shadow-glow-accent), var(--shadow-glass), 0 0 0 1px rgb(var(--color-accent) / 0.2);
+}
+
+.style-tile--focused:hover {
+  background: rgb(var(--color-ivory) / 0.7);
 }
 
 .style-tile__rail {
   position: absolute;
   inset: 0 auto 0 0;
   width: 3px;
-  background: rgb(var(--color-forest));
-  opacity: 0.7;
+  background: var(--gradient-primary);
+  opacity: 0.6;
+  transition: width 160ms var(--motion-soft), opacity 160ms var(--motion-soft);
 }
 
 .style-tile--focused .style-tile__rail {
@@ -476,7 +492,7 @@ onBeforeUnmount(() => {
 }
 
 .style-tile--focused .style-tile__accent {
-  color: rgb(var(--color-paper) / 0.62);
+  color: rgb(var(--color-accent) / 0.85);
 }
 
 .style-tile__current-flag {
@@ -485,15 +501,15 @@ onBeforeUnmount(() => {
   width: 18px;
   height: 18px;
   border-radius: 999px;
-  background: rgb(var(--color-forest));
-  color: rgb(var(--color-paper));
-  box-shadow: 0 0 0 2px rgb(var(--color-paper));
+  background: var(--gradient-primary);
+  color: #fff;
+  box-shadow: var(--shadow-glow-accent);
 }
 
 .style-tile--focused .style-tile__current-flag {
-  background: rgb(var(--color-ochre));
-  color: rgb(var(--color-ink));
-  box-shadow: 0 0 0 2px rgb(var(--color-ink));
+  background: var(--gradient-primary);
+  color: #fff;
+  box-shadow: var(--shadow-glow-accent);
 }
 
 .style-sheet__preview {
@@ -503,11 +519,12 @@ onBeforeUnmount(() => {
   gap: 0.55rem;
   margin: 0.4rem 0.85rem 0;
   padding: 0.85rem 0.95rem 0.95rem;
-  border-radius: 18px;
-  border: 1px solid rgb(var(--color-line) / 0.85);
-  background:
-    linear-gradient(180deg, rgb(var(--color-vellum) / 0.86), rgb(var(--color-ivory) / 0.72));
-  box-shadow: var(--shadow-inner-paper);
+  border-radius: var(--radius-card);
+  border: 1px solid rgb(var(--color-line) / 0.3);
+  background: var(--gradient-surface);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  box-shadow: var(--shadow-glass), var(--shadow-inner-glass);
   max-height: min(34dvh, 240px);
   overflow-y: auto;
   scrollbar-width: thin;
@@ -574,7 +591,7 @@ onBeforeUnmount(() => {
   gap: 0.4rem;
   margin: 0;
   padding: 0.45rem 0.6rem;
-  border-radius: 12px;
+  border-radius: var(--radius-field);
   background: rgb(var(--color-accent) / 0.1);
   border: 1px solid rgb(var(--color-accent) / 0.3);
   color: rgb(var(--color-accent));
@@ -588,10 +605,11 @@ onBeforeUnmount(() => {
   grid-template-columns: minmax(0, 1fr);
   gap: 0.5rem;
   padding: 0.7rem 0.85rem calc(env(safe-area-inset-bottom, 0px) + 0.85rem);
-  border-top: 1px solid rgb(var(--color-line) / 0.8);
+  border-top: 1px solid rgb(var(--color-line) / 0.6);
   background:
-    linear-gradient(180deg, rgb(var(--color-paper) / 0.9), rgb(var(--color-vellum) / 0.95));
-  backdrop-filter: blur(8px);
+    linear-gradient(180deg, rgb(var(--color-ivory) / 0.55), rgb(var(--color-vellum) / 0.7));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
 }
 
 .style-sheet__footer:has(.style-sheet__btn + .style-sheet__btn) {
@@ -605,7 +623,7 @@ onBeforeUnmount(() => {
   gap: 0.45rem;
   height: 46px;
   padding: 0 1rem;
-  border-radius: 999px;
+  border-radius: var(--radius-field);
   font-size: 13.5px;
   font-weight: 700;
   letter-spacing: 0.01em;
@@ -624,62 +642,12 @@ onBeforeUnmount(() => {
 }
 
 .style-sheet__btn--primary {
-  border: 1px solid rgb(var(--color-ink));
-  background: rgb(var(--color-ink));
-  color: rgb(var(--color-paper));
-  box-shadow: 0 12px 24px -16px rgb(var(--color-ink) / 0.65);
+  border: none;
+  background: var(--gradient-primary);
+  color: #fff;
+  box-shadow: var(--shadow-glass), var(--shadow-glow-accent);
 }
 
-.style-sheet__btn--primary:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-  box-shadow: none;
-}
-
-.style-sheet__btn--ghost {
-  border: 1px solid rgb(var(--color-line-strong));
-  background: rgb(var(--color-ivory) / 0.7);
-  color: rgb(var(--color-ink));
-}
-
-.style-sheet__btn--ghost:active:not(:disabled) {
-  background: rgb(var(--color-vellum));
-}
-
-.style-scrim-enter-from,
-.style-scrim-leave-to {
-  opacity: 0;
-}
-
-.style-scrim-enter-active,
-.style-scrim-leave-active {
-  transition: opacity 0.24s ease-out;
-}
-
-.style-sheet-enter-from {
-  transform: translateY(100%);
-}
-
-.style-sheet-leave-to {
-  transform: translateY(100%);
-}
-
-.style-sheet-enter-active,
-.style-sheet-leave-active {
-  transition: transform 0.36s cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .style-tile,
-  .style-sheet__btn,
-  .style-sheet,
-  .style-scrim-enter-active,
-  .style-scrim-leave-active,
-  .style-sheet-enter-active,
-  .style-sheet-leave-active,
-  .style-sheet__preview-text {
-    transition: none;
-    animation: none;
-  }
-}
-</style>
+.style-sheet__btn--primary:hover:not(:disabled) {
+  box-shadow: var(--shadow-glass-lg), 0 0 28px -6px rgb(var(--color-accent) / 0.4);
+  transform: tra

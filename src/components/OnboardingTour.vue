@@ -312,14 +312,14 @@ const totalSteps = steps.length
 .onboarding__tooltip {
   position: fixed;
   z-index: 81;
-  border-radius: 18px;
-  background:
-    linear-gradient(180deg, rgb(var(--color-ivory) / 0.96), rgb(var(--color-vellum) / 0.98)),
-    rgb(var(--color-vellum));
-  border: 1px solid rgb(var(--color-line-strong));
+  border-radius: var(--radius-card);
+  background: var(--gradient-surface);
+  border: 1px solid rgb(var(--color-line) / 0.3);
+  backdrop-filter: blur(calc(var(--glass-blur) * 1.4)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 1.4)) saturate(var(--glass-saturate));
   color: rgb(var(--color-ink));
   padding: 1rem 1.05rem 0.85rem;
-  box-shadow: var(--shadow-paper-3);
+  box-shadow: var(--shadow-glass-xl), var(--shadow-inner-glass);
   transition: top 320ms cubic-bezier(0.2, 0.8, 0.2, 1), left 320ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
@@ -370,7 +370,7 @@ const totalSteps = steps.length
 }
 
 .onboarding__progress-dot--filled {
-  background: rgb(var(--color-ink));
+  background: var(--gradient-primary);
   width: 22px;
 }
 
@@ -406,7 +406,7 @@ const totalSteps = steps.length
 .onboarding__skip:hover,
 .onboarding__back:hover {
   color: rgb(var(--color-ink));
-  background: rgb(var(--color-paper-soft) / 0.7);
+  background: rgb(var(--color-ivory) / 0.55);
 }
 
 .onboarding__next {
@@ -415,18 +415,19 @@ const totalSteps = steps.length
   gap: 0.42rem;
   padding: 0.5rem 0.85rem;
   border-radius: 12px;
-  border: 1px solid rgb(var(--color-ink));
-  background: rgb(var(--color-ink));
-  color: rgb(var(--color-paper));
+  border: 0;
+  background: var(--gradient-primary);
+  color: #fff;
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
-  box-shadow: 0 14px 26px -18px rgb(var(--color-ink) / 0.5);
-  transition: transform 160ms var(--motion-press), background-color 160ms ease;
+  box-shadow: var(--shadow-glass), var(--shadow-glow-accent);
+  transition: transform 160ms var(--motion-press), box-shadow 200ms var(--motion-soft);
 }
 
 .onboarding__next:hover {
   transform: translateY(-1px);
+  box-shadow: var(--shadow-glass-lg), 0 0 28px -6px rgb(var(--color-accent) / 0.4);
 }
 
 .onboarding__next:active {

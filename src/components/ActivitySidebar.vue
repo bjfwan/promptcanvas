@@ -246,12 +246,12 @@ function previewSrc(item: GenerationHistoryItem): string {
   gap: 1.1rem;
   max-height: calc(100dvh - 8.25rem);
   overflow-y: auto;
-  border: 1px solid rgb(var(--color-line) / 0.85);
-  border-radius: 22px;
-  background:
-    linear-gradient(180deg, rgb(var(--color-ivory) / 0.7), rgb(var(--color-vellum) / 0.46)),
-    rgb(var(--color-vellum) / 0.6);
-  box-shadow: var(--shadow-paper-2), var(--shadow-inner-paper);
+  border: 1px solid rgb(var(--color-line) / 0.4);
+  border-radius: var(--radius-card);
+  background: var(--gradient-surface);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  box-shadow: var(--shadow-glass), var(--shadow-inner-glass);
   padding: 1.1rem 1rem;
   scrollbar-gutter: stable;
 }
@@ -286,10 +286,13 @@ function previewSrc(item: GenerationHistoryItem): string {
   gap: 0.7rem;
   padding: 0.7rem 0.85rem;
   margin-bottom: 0.45rem;
-  border-radius: 16px;
-  border: 1px solid rgb(var(--color-forest) / 0.34);
+  border-radius: var(--radius-panel);
+  border: 1px solid rgb(var(--color-accent) / 0.3);
   background:
-    linear-gradient(135deg, rgb(var(--color-forest) / 0.12), rgb(var(--color-ochre) / 0.08));
+    linear-gradient(135deg, rgb(var(--color-accent) / 0.12), rgb(var(--color-blueprint) / 0.08));
+  backdrop-filter: blur(10px) saturate(1.4);
+  -webkit-backdrop-filter: blur(10px) saturate(1.4);
+  box-shadow: var(--shadow-inner-glass);
   color: rgb(var(--color-ink));
 }
 
@@ -297,7 +300,7 @@ function previewSrc(item: GenerationHistoryItem): string {
   width: 9px;
   height: 9px;
   border-radius: 999px;
-  background: rgb(var(--color-forest));
+  background: var(--gradient-primary);
   flex-shrink: 0;
   animation: activity-pulse 1.4s ease-in-out infinite;
 }
@@ -350,15 +353,16 @@ function previewSrc(item: GenerationHistoryItem): string {
   width: 9px;
   height: 9px;
   border-radius: 999px;
-  background: rgb(var(--color-vellum));
-  border: 1px solid rgb(var(--color-line-strong));
+  background: rgb(var(--color-ivory) / 0.8);
+  border: 1px solid rgb(var(--color-line-strong) / 0.7);
   transform: translate(-50%, -50%);
-  transition: background-color 160ms ease, border-color 160ms ease, transform 160ms ease;
+  transition: background-color 160ms ease, border-color 160ms ease, transform 160ms ease, box-shadow 160ms ease;
 }
 
 .activity-sidebar__item--active .activity-sidebar__node {
-  background: rgb(var(--color-ink));
-  border-color: rgb(var(--color-ink));
+  background: var(--gradient-primary);
+  border-color: rgb(var(--color-accent) / 0.5);
+  box-shadow: var(--shadow-glow-accent);
   transform: translate(-50%, -50%) scale(1.18);
 }
 
@@ -368,9 +372,11 @@ function previewSrc(item: GenerationHistoryItem): string {
   align-items: center;
   gap: 0.65rem;
   padding: 0.55rem 0.65rem;
-  border-radius: 14px;
-  border: 1px solid transparent;
-  background: rgb(var(--color-ivory) / 0.4);
+  border-radius: var(--radius-panel);
+  border: 1px solid rgb(var(--color-line) / 0.35);
+  background: rgb(var(--color-ivory) / 0.35);
+  backdrop-filter: blur(12px) saturate(1.4);
+  -webkit-backdrop-filter: blur(12px) saturate(1.4);
   color: rgb(var(--color-ink));
   cursor: pointer;
   transition: border-color 160ms ease, background-color 160ms ease, transform 160ms var(--motion-press), box-shadow 180ms ease;
@@ -380,15 +386,15 @@ function previewSrc(item: GenerationHistoryItem): string {
 
 .activity-sidebar__card:hover {
   transform: translateY(-1px);
-  border-color: rgb(var(--color-line));
-  background: rgb(var(--color-ivory) / 0.7);
-  box-shadow: var(--shadow-paper-1);
+  border-color: rgb(var(--color-line-strong) / 0.6);
+  background: rgb(var(--color-ivory) / 0.6);
+  box-shadow: var(--shadow-glass-sm), var(--shadow-inner-glass);
 }
 
 .activity-sidebar__item--active .activity-sidebar__card {
-  border-color: rgb(var(--color-ink));
-  background: rgb(var(--color-vellum));
-  box-shadow: var(--shadow-paper-1);
+  border-color: rgb(var(--color-accent) / 0.45);
+  background: rgb(var(--color-ivory) / 0.7);
+  box-shadow: var(--shadow-glow-accent), var(--shadow-inner-glass);
 }
 
 .activity-sidebar__thumb {
@@ -397,9 +403,10 @@ function previewSrc(item: GenerationHistoryItem): string {
   width: 56px;
   height: 56px;
   overflow: hidden;
-  border-radius: 12px;
-  border: 1px solid rgb(var(--color-line));
-  background: rgb(var(--color-paper-soft));
+  border-radius: var(--radius-field);
+  border: 1px solid rgb(var(--color-line) / 0.5);
+  background: rgb(var(--color-ivory) / 0.4);
+  box-shadow: var(--shadow-inner-glass);
 }
 
 .activity-sidebar__thumb img {
@@ -421,12 +428,14 @@ function previewSrc(item: GenerationHistoryItem): string {
   bottom: 3px;
   right: 3px;
   padding: 0.05rem 0.32rem;
-  border-radius: 999px;
-  background: rgb(var(--color-ink) / 0.78);
+  border-radius: 5px;
+  background: rgb(var(--color-ink) / 0.55);
   color: rgb(var(--color-paper));
   font-family: 'JetBrains Mono', ui-monospace, monospace;
   font-size: 9px;
   letter-spacing: 0.04em;
+  backdrop-filter: blur(8px) saturate(1.4);
+  -webkit-backdrop-filter: blur(8px) saturate(1.4);
 }
 
 .activity-sidebar__empty {
@@ -434,9 +443,11 @@ function previewSrc(item: GenerationHistoryItem): string {
   align-items: flex-start;
   gap: 0.55rem;
   padding: 0.85rem;
-  border-radius: 14px;
-  border: 1px dashed rgb(var(--color-line));
-  background: rgb(var(--color-cream) / 0.34);
+  border-radius: var(--radius-panel);
+  border: 1px dashed rgb(var(--color-line) / 0.7);
+  background: rgb(var(--color-ivory) / 0.3);
+  backdrop-filter: blur(8px) saturate(1.3);
+  -webkit-backdrop-filter: blur(8px) saturate(1.3);
 }
 
 .activity-sidebar__foot {
@@ -455,9 +466,9 @@ function previewSrc(item: GenerationHistoryItem): string {
 }
 
 .activity-sidebar__item--expanded .activity-sidebar__card {
-  border-color: rgb(var(--color-line-strong));
-  background: rgb(var(--color-ivory) / 0.85);
-  box-shadow: var(--shadow-paper-1);
+  border-color: rgb(var(--color-line-strong) / 0.5);
+  background: rgb(var(--color-ivory) / 0.7);
+  box-shadow: var(--shadow-glass-sm), var(--shadow-inner-glass);
 }
 
 .activity-sidebar__actions {
@@ -465,10 +476,13 @@ function previewSrc(item: GenerationHistoryItem): string {
   flex-wrap: wrap;
   gap: 5px;
   padding: 0.55rem 0.6rem 0.6rem;
-  border-radius: 14px;
-  border: 1px solid rgb(var(--color-line));
-  border-top: 1px dashed rgb(var(--color-line) / 0.7);
-  background: rgb(var(--color-cream) / 0.55);
+  border-radius: var(--radius-panel);
+  border: 1px solid rgb(var(--color-line) / 0.4);
+  border-top: 1px dashed rgb(var(--color-line) / 0.6);
+  background: rgb(var(--color-ivory) / 0.4);
+  backdrop-filter: blur(12px) saturate(1.4);
+  -webkit-backdrop-filter: blur(12px) saturate(1.4);
+  box-shadow: var(--shadow-inner-glass);
   animation: activity-actions-in 220ms var(--motion-soft);
 }
 
@@ -479,17 +493,21 @@ function previewSrc(item: GenerationHistoryItem): string {
   gap: 4px;
   height: 26px;
   padding: 0 9px;
-  border-radius: 999px;
-  border: 1px solid rgb(var(--color-line));
-  background: rgb(var(--color-paper) / 0.7);
+  border-radius: 6px;
+  border: 1px solid rgb(var(--color-line) / 0.5);
+  background: rgb(var(--color-ivory) / 0.5);
   color: rgb(var(--color-ink));
   font-size: 10.5px;
   font-weight: 500;
   cursor: pointer;
+  backdrop-filter: blur(8px) saturate(1.4);
+  -webkit-backdrop-filter: blur(8px) saturate(1.4);
+  box-shadow: var(--shadow-inner-glass);
   transition:
     background-color 140ms var(--motion-soft),
     border-color 140ms var(--motion-soft),
     color 140ms var(--motion-soft),
+    box-shadow 140ms var(--motion-soft),
     transform 140ms var(--motion-press);
   -webkit-tap-highlight-color: transparent;
 }
@@ -502,8 +520,9 @@ function previewSrc(item: GenerationHistoryItem): string {
 }
 
 .activity-sidebar__chip:hover {
-  background: rgb(var(--color-vellum));
-  border-color: rgb(var(--color-line-strong));
+  background: rgb(var(--color-ivory) / 0.7);
+  border-color: rgb(var(--color-line-strong) / 0.6);
+  box-shadow: var(--shadow-glass-sm);
 }
 
 .activity-sidebar__chip:active {
@@ -512,14 +531,15 @@ function previewSrc(item: GenerationHistoryItem): string {
 
 .activity-sidebar__chip--primary {
   margin-left: auto;
-  background: rgb(var(--color-ink));
-  border-color: rgb(var(--color-ink));
-  color: rgb(var(--color-paper));
+  background: var(--gradient-primary);
+  border: none;
+  color: #fff;
+  box-shadow: var(--shadow-glow-accent);
 }
 
 .activity-sidebar__chip--primary:hover {
-  background: rgb(var(--color-ink) / 0.9);
-  border-color: rgb(var(--color-ink) / 0.9);
+  background: var(--gradient-primary);
+  box-shadow: var(--shadow-glow-accent), var(--shadow-glass-sm);
 }
 
 @keyframes activity-actions-in {
@@ -546,52 +566,4 @@ function previewSrc(item: GenerationHistoryItem): string {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   word-break: break-word;
-  scrollbar-width: thin;
-  scrollbar-color: rgb(var(--color-line-strong) / 0.55) transparent;
-  /* 仅在内容溢出时才把滚轮事件留给自己，否则交回给外层 sidebar */
-  overscroll-behavior: contain;
-}
-
-.activity-sidebar__prompt::-webkit-scrollbar {
-  width: 4px;
-}
-
-.activity-sidebar__prompt::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.activity-sidebar__prompt::-webkit-scrollbar-thumb {
-  border-radius: 999px;
-  background: rgb(var(--color-line-strong) / 0.45);
-}
-
-.activity-sidebar__card:hover .activity-sidebar__prompt::-webkit-scrollbar-thumb,
-.activity-sidebar__item--active .activity-sidebar__prompt::-webkit-scrollbar-thumb {
-  background: rgb(var(--color-ink) / 0.5);
-}
-
-@keyframes activity-pulse {
-  0%, 100% {
-    box-shadow: 0 0 0 0 rgb(var(--color-forest) / 0.5);
-    transform: scale(0.9);
-  }
-  50% {
-    box-shadow: 0 0 0 5px rgb(var(--color-forest) / 0);
-    transform: scale(1.05);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .activity-sidebar__live-dot,
-  .activity-sidebar__card,
-  .activity-sidebar__chip,
-  .activity-sidebar__chevron {
-    animation: none;
-    transition: none;
-  }
-
-  .activity-sidebar__actions {
-    animation: none;
-  }
-}
-</style>
+ 

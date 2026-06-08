@@ -112,14 +112,14 @@ useBodyLock(() => props.open)
           <div
             v-if="open"
             ref="dialogRef"
-            class="shortcuts-shell relative flex max-h-[88dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-[28px] border border-line-strong bg-vellum text-ink shadow-paper-3 sm:max-h-[78dvh] sm:rounded-3xl"
+            class="shortcuts-shell relative flex max-h-[88dvh] w-full max-w-lg flex-col overflow-hidden text-ink sm:max-h-[78dvh]"
           >
-            <header class="flex items-start justify-between border-b border-line/70 px-5 py-4 sm:px-6 sm:py-5">
+            <header class="flex items-start justify-between border-b border-line/40 px-5 py-4 sm:px-6 sm:py-5">
               <div>
                 <p class="display-eyebrow">{{ t('shortcuts.eyebrow') }}</p>
                 <h2 class="mt-1 inline-flex items-center gap-2 font-display text-2xl tracking-tightish">
-                  <Icon name="keyboard" :size="18" class="text-muted" />
-                  <span>{{ t('shortcuts.title') }}</span>
+                  <Icon name="keyboard" :size="18" class="text-accent" />
+                  <span class="gradient-text">{{ t('shortcuts.title') }}</span>
                 </h2>
               </div>
               <button type="button" class="icon-btn-sm" :aria-label="t('header.menuShortcuts')" @click="close">
@@ -150,7 +150,7 @@ useBodyLock(() => props.open)
               </section>
             </div>
 
-            <footer class="border-t border-line/70 bg-paper-soft/50 px-5 py-3 text-[11px] leading-snug text-muted sm:px-6">
+            <footer class="border-t border-line/40 bg-ivory/30 px-5 py-3 text-[11px] leading-snug text-muted backdrop-blur-sm sm:px-6">
               <span>{{ t('shortcuts.note') }}</span>
             </footer>
           </div>
@@ -162,9 +162,22 @@ useBodyLock(() => props.open)
 
 <style scoped>
 .shortcuts-shell {
-  background:
-    linear-gradient(180deg, rgb(var(--color-ivory) / 0.92), rgb(var(--color-vellum) / 0.96)),
-    rgb(var(--color-vellum));
+  border: 1px solid rgb(var(--color-line) / 0.3);
+  border-radius: var(--radius-card);
+  background: var(--gradient-surface);
+  backdrop-filter: blur(calc(var(--glass-blur) * 1.4)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 1.4)) saturate(var(--glass-saturate));
+  box-shadow: var(--shadow-glass-xl), var(--shadow-inner-glass);
+}
+
+@media (max-width: 639px) {
+  .shortcuts-shell {
+    border-bottom: 0;
+    border-top-left-radius: 28px;
+    border-top-right-radius: 28px;
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+  }
 }
 
 .shortcuts-group {
@@ -204,7 +217,7 @@ useBodyLock(() => props.open)
 }
 
 .shortcuts-row:hover {
-  background: rgb(var(--color-paper-soft) / 0.6);
+  background: rgb(var(--color-ivory) / 0.45);
 }
 
 .shortcuts-row__label {
@@ -235,14 +248,16 @@ useBodyLock(() => props.open)
   min-width: 24px;
   padding: 0.18rem 0.5rem;
   border-radius: 7px;
-  border: 1px solid rgb(var(--color-line-strong) / 0.7);
-  background: rgb(var(--color-vellum));
+  border: 1px solid rgb(var(--color-line-strong) / 0.4);
+  background: rgb(var(--color-ivory) / 0.55);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   color: rgb(var(--color-ink));
   font-family: 'JetBrains Mono', ui-monospace, monospace;
   font-size: 11px;
   font-weight: 500;
   letter-spacing: 0.04em;
-  box-shadow: 0 1px 0 rgb(var(--color-ink) / 0.06), inset 0 -1px 0 rgb(var(--color-ink) / 0.05);
+  box-shadow: var(--shadow-inner-glass);
 }
 
 .shortcuts-kbd--inline {

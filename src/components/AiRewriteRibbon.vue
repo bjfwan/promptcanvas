@@ -160,14 +160,16 @@ const phaseLabel = computed(() => {
   align-items: center;
   gap: 0.65rem;
   padding: 0.5rem 0.75rem;
-  border-radius: 14px;
-  border: 1px solid rgb(var(--color-line-strong) / 0.65);
+  border-radius: var(--radius-panel);
+  border: 1px solid rgb(var(--color-line) / 0.4);
   background:
-    linear-gradient(180deg, rgb(var(--color-vellum) / 0.95), rgb(var(--color-paper) / 0.95)),
-    radial-gradient(circle at 0% 0%, rgb(var(--color-ochre) / 0.18), transparent 60%);
+    var(--gradient-surface),
+    radial-gradient(circle at 0% 0%, rgb(var(--color-ochre) / 0.16), transparent 60%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   box-shadow:
-    var(--shadow-inner-paper),
-    0 12px 22px -18px rgb(var(--color-ink) / 0.42);
+    var(--shadow-glass),
+    var(--shadow-inner-glass);
   font-size: 12.5px;
   color: rgb(var(--color-ink));
   contain: layout paint style;
@@ -178,13 +180,15 @@ const phaseLabel = computed(() => {
 }
 
 .ribbon--phase-error {
-  border-color: rgb(var(--color-accent) / 0.45);
-  background: rgb(var(--color-accent) / 0.07);
+  border-color: rgb(var(--color-clay) / 0.4);
+  background:
+    linear-gradient(135deg, rgb(var(--color-clay) / 0.12), rgb(var(--color-accent) / 0.08)),
+    var(--gradient-surface);
 }
 
 .ribbon--phase-aborted {
-  border-color: rgb(var(--color-line) / 0.7);
-  background: rgb(var(--color-paper-soft) / 0.65);
+  border-color: rgb(var(--color-line) / 0.4);
+  background: rgb(var(--color-ivory) / 0.4);
   opacity: 0.85;
 }
 
@@ -221,8 +225,11 @@ const phaseLabel = computed(() => {
   align-items: center;
   padding: 1px 7px;
   border-radius: 999px;
-  border: 1px solid rgb(var(--color-line));
-  background: rgb(var(--color-paper));
+  border: 1px solid rgb(var(--color-line) / 0.5);
+  background: rgb(var(--color-ivory) / 0.5);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: var(--shadow-inner-glass);
   color: rgb(var(--color-ink));
   font-weight: 700;
 }
@@ -264,9 +271,9 @@ const phaseLabel = computed(() => {
   height: 24px;
   flex-shrink: 0;
   border-radius: 999px;
-  background: rgb(var(--color-forest));
-  color: rgb(var(--color-paper));
-  box-shadow: 0 6px 12px -8px rgb(var(--color-forest) / 0.6);
+  background: var(--gradient-primary);
+  color: #fff;
+  box-shadow: var(--shadow-glow-accent);
 }
 
 .ribbon__icon-error {
@@ -276,7 +283,9 @@ const phaseLabel = computed(() => {
   height: 24px;
   flex-shrink: 0;
   border-radius: 999px;
-  background: rgb(var(--color-accent) / 0.18);
+  background: rgb(var(--color-accent) / 0.16);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   color: rgb(var(--color-accent));
 }
 
@@ -287,7 +296,10 @@ const phaseLabel = computed(() => {
   height: 24px;
   flex-shrink: 0;
   border-radius: 999px;
-  background: rgb(var(--color-paper-soft));
+  background: rgb(var(--color-ivory) / 0.5);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: var(--shadow-inner-glass);
   color: rgb(var(--color-muted));
 }
 
@@ -306,8 +318,11 @@ const phaseLabel = computed(() => {
   height: 28px;
   padding: 0 0.6rem;
   border-radius: 999px;
-  border: 1px solid rgb(var(--color-line));
-  background: rgb(var(--color-paper));
+  border: 1px solid rgb(var(--color-line) / 0.5);
+  background: rgb(var(--color-ivory) / 0.5);
+  backdrop-filter: blur(10px) saturate(1.4);
+  -webkit-backdrop-filter: blur(10px) saturate(1.4);
+  box-shadow: var(--shadow-inner-glass);
   color: rgb(var(--color-ink));
   font-size: 11.5px;
   font-weight: 660;
@@ -317,6 +332,7 @@ const phaseLabel = computed(() => {
   transition:
     background 160ms var(--motion-soft),
     border-color 160ms var(--motion-soft),
+    box-shadow 180ms var(--motion-soft),
     transform 140ms var(--motion-press);
 }
 
@@ -326,27 +342,37 @@ const phaseLabel = computed(() => {
   inset: -6px;
 }
 
-.ribbon__btn:hover { background: rgb(var(--color-paper-soft)); }
+.ribbon__btn:hover {
+  background: rgb(var(--color-ivory) / 0.7);
+  border-color: rgb(var(--color-line-strong) / 0.6);
+  box-shadow: var(--shadow-glass-sm);
+  transform: translateY(-1px);
+}
 .ribbon__btn:active { transform: scale(0.96); }
 
 .ribbon__btn--primary {
-  background: rgb(var(--color-ink));
-  border-color: rgb(var(--color-ink));
-  color: rgb(var(--color-paper));
+  background: var(--gradient-primary);
+  border-color: transparent;
+  color: #fff;
+  box-shadow: var(--shadow-glass), var(--shadow-glow-accent);
 }
 
-.ribbon__btn--primary:hover { background: rgb(var(--color-ink) / 0.92); }
+.ribbon__btn--primary:hover {
+  background: var(--gradient-primary);
+  filter: brightness(1.05);
+  box-shadow: var(--shadow-glass-lg), var(--shadow-glow-accent);
+}
 
 .ribbon__btn--ghost {
-  background: transparent;
-  border-color: rgb(var(--color-line) / 0.7);
+  background: rgb(var(--color-ivory) / 0.35);
+  border-color: rgb(var(--color-line) / 0.5);
   color: rgb(var(--color-muted));
 }
 
 .ribbon__btn--ghost:hover {
   color: rgb(var(--color-ink));
-  border-color: rgb(var(--color-ink) / 0.4);
-  background: rgb(var(--color-paper-soft));
+  border-color: rgb(var(--color-line-strong) / 0.6);
+  background: rgb(var(--color-ivory) / 0.6);
 }
 
 .ribbon-enter-from,

@@ -797,9 +797,9 @@ useFocusTrap(() => true, dialogRef)
   display: grid;
   place-items: start center;
   padding: calc(env(safe-area-inset-top, 0px) + 4.75rem) 1rem 1rem;
-  background: rgb(var(--color-ink) / 0.18);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  background: rgb(var(--color-shadow) / 0.28);
+  backdrop-filter: blur(12px) saturate(1.2);
+  -webkit-backdrop-filter: blur(12px) saturate(1.2);
 }
 
 .magic-layer--compact {
@@ -813,20 +813,41 @@ useFocusTrap(() => true, dialogRef)
   overflow: auto;
   overscroll-behavior: contain;
   padding: 0.85rem;
-  border-radius: 24px;
-  border: 1px solid rgb(var(--color-line-strong) / 0.78);
+  border-radius: var(--radius-card);
+  border: 1px solid rgb(var(--color-line) / 0.4);
   background:
-    linear-gradient(180deg, rgb(var(--color-vellum) / 0.98), rgb(var(--color-paper) / 0.98)),
-    radial-gradient(circle at 16% 0%, rgb(var(--color-forest) / 0.12), transparent 36%),
-    radial-gradient(circle at 92% 20%, rgb(var(--color-accent) / 0.1), transparent 32%);
+    var(--gradient-surface),
+    radial-gradient(circle at 16% 0%, rgb(var(--color-accent) / 0.14), transparent 38%),
+    radial-gradient(circle at 92% 14%, rgb(var(--color-blueprint) / 0.12), transparent 34%),
+    radial-gradient(circle at 78% 96%, rgb(var(--color-forest) / 0.1), transparent 36%);
+  backdrop-filter: blur(calc(var(--glass-blur) * 1.4)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 1.4)) saturate(var(--glass-saturate));
   color: rgb(var(--color-ink));
   box-shadow:
-    0 32px 72px -32px rgb(var(--color-ink) / 0.46),
-    0 10px 24px -14px rgb(var(--color-ink) / 0.26);
+    var(--shadow-glass-xl),
+    var(--shadow-inner-glass);
   scrollbar-width: thin;
   scrollbar-color: rgb(var(--color-line-strong) / 0.55) transparent;
   scrollbar-gutter: stable;
   touch-action: pan-y;
+  animation: magic-menu-in 0.42s var(--motion-snap) both;
+}
+
+@keyframes magic-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .magic-menu {
+    animation: none;
+  }
 }
 
 .magic-menu::-webkit-scrollbar {
@@ -855,7 +876,7 @@ useFocusTrap(() => true, dialogRef)
 .magic-menu--compact {
   width: min(100%, 560px);
   max-height: min(82dvh, 680px);
-  border-radius: 24px 24px 18px 18px;
+  border-radius: var(--radius-card) var(--radius-card) var(--radius-panel) var(--radius-panel);
 }
 
 .magic-menu__hero {
@@ -868,10 +889,10 @@ useFocusTrap(() => true, dialogRef)
   gap: 0.65rem;
   margin: -0.85rem -0.85rem 0;
   padding: 0.85rem;
-  border-bottom: 1px solid rgb(var(--color-line) / 0.66);
-  background: rgb(var(--color-vellum) / 0.92);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+  border-bottom: 1px solid rgb(var(--color-line) / 0.4);
+  background: rgb(var(--color-ivory) / 0.72);
+  backdrop-filter: blur(calc(var(--glass-blur) * 1.4)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 1.4)) saturate(var(--glass-saturate));
 }
 
 .magic-menu__brand {
@@ -888,9 +909,9 @@ useFocusTrap(() => true, dialogRef)
   height: 34px;
   flex-shrink: 0;
   border-radius: 12px;
-  background: rgb(var(--color-ink));
-  color: rgb(var(--color-paper));
-  box-shadow: 0 12px 24px -16px rgb(var(--color-ink) / 0.45);
+  background: var(--gradient-primary);
+  color: #fff;
+  box-shadow: var(--shadow-glass), var(--shadow-glow-accent);
 }
 
 .magic-menu__title,
@@ -923,8 +944,11 @@ useFocusTrap(() => true, dialogRef)
   height: 50px;
   flex-shrink: 0;
   border-radius: 16px;
-  border: 1px solid rgb(var(--color-line));
-  background: rgb(var(--color-paper));
+  border: 1px solid rgb(var(--color-line) / 0.5);
+  background: rgb(var(--color-ivory) / 0.5);
+  backdrop-filter: blur(12px) saturate(1.4);
+  -webkit-backdrop-filter: blur(12px) saturate(1.4);
+  box-shadow: var(--shadow-inner-glass);
 }
 
 .magic-menu__score span {
@@ -965,16 +989,20 @@ useFocusTrap(() => true, dialogRef)
   width: 38px;
   height: 38px;
   border-radius: 999px;
-  border: 1px solid rgb(var(--color-line) / 0.78);
-  background: rgb(var(--color-paper) / 0.72);
+  border: 1px solid rgb(var(--color-line) / 0.4);
+  background: rgb(var(--color-ivory) / 0.45);
+  backdrop-filter: blur(12px) saturate(1.4);
+  -webkit-backdrop-filter: blur(12px) saturate(1.4);
+  box-shadow: var(--shadow-inner-glass);
   color: rgb(var(--color-muted));
   cursor: pointer;
-  transition: background 150ms ease, color 150ms ease, transform 150ms ease;
+  transition: background 160ms var(--motion-soft), color 160ms var(--motion-soft), transform 150ms var(--motion-press), box-shadow 160ms var(--motion-soft);
 }
 
 .magic-menu__close:hover {
-  background: rgb(var(--color-paper));
+  background: rgb(var(--color-ivory) / 0.65);
   color: rgb(var(--color-ink));
+  box-shadow: var(--shadow-glass-sm);
 }
 
 .magic-menu__close:active {
@@ -1000,9 +1028,12 @@ useFocusTrap(() => true, dialogRef)
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
-  border-radius: 18px;
-  border: 1px solid rgb(var(--color-line) / 0.8);
-  background: rgb(var(--color-paper) / 0.68);
+  border-radius: var(--radius-card);
+  border: 1px solid rgb(var(--color-line) / 0.4);
+  background: rgb(var(--color-ivory) / 0.4);
+  backdrop-filter: blur(12px) saturate(1.4);
+  -webkit-backdrop-filter: blur(12px) saturate(1.4);
+  box-shadow: var(--shadow-inner-glass);
   padding: 0.7rem 0.75rem;
 }
 
@@ -1042,7 +1073,11 @@ useFocusTrap(() => true, dialogRef)
   gap: 0.26rem;
   max-width: 100%;
   border-radius: 999px;
-  background: rgb(var(--color-paper-soft) / 0.86);
+  border: 1px solid rgb(var(--color-line) / 0.4);
+  background: rgb(var(--color-ivory) / 0.4);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: var(--shadow-inner-glass);
   padding: 0.28rem 0.56rem;
   font-size: 10px;
   font-weight: 650;
@@ -1200,11 +1235,14 @@ useFocusTrap(() => true, dialogRef)
 .magic-menu__seg-btn,
 .magic-menu__dim-chip,
 .magic-menu__variant {
-  border: 1px solid rgb(var(--color-line) / 0.86);
-  background: rgb(var(--color-paper) / 0.72);
+  border: 1px solid rgb(var(--color-line) / 0.45);
+  background: rgb(var(--color-ivory) / 0.45);
+  backdrop-filter: blur(12px) saturate(1.4);
+  -webkit-backdrop-filter: blur(12px) saturate(1.4);
+  box-shadow: var(--shadow-inner-glass);
   color: rgb(var(--color-ink));
   cursor: pointer;
-  transition: background 150ms ease, border-color 150ms ease, color 150ms ease, transform 150ms ease, box-shadow 150ms ease;
+  transition: background 160ms var(--motion-soft), border-color 160ms var(--motion-soft), color 160ms var(--motion-soft), transform 150ms var(--motion-press), box-shadow 160ms var(--motion-soft);
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -1253,18 +1291,20 @@ useFocusTrap(() => true, dialogRef)
 .magic-menu__seg-btn:hover,
 .magic-menu__dim-chip:hover,
 .magic-menu__variant:hover {
-  border-color: rgb(var(--color-line-strong));
-  background: rgb(var(--color-vellum));
+  border-color: rgb(var(--color-line-strong) / 0.7);
+  background: rgb(var(--color-ivory) / 0.7);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-glass-sm);
 }
 
 .magic-menu__intent.is-active,
 .magic-menu__mode.is-active,
 .magic-menu__seg-btn.is-active,
 .magic-menu__variant.is-active {
-  border-color: rgb(var(--color-ink));
-  background: rgb(var(--color-ink));
-  color: rgb(var(--color-paper));
-  box-shadow: 0 10px 20px -16px rgb(var(--color-ink) / 0.5);
+  border-color: transparent;
+  background: var(--gradient-primary);
+  color: #fff;
+  box-shadow: var(--shadow-glass), var(--shadow-glow-accent);
 }
 
 .magic-menu__diagnosis {
@@ -1277,8 +1317,12 @@ useFocusTrap(() => true, dialogRef)
 
 .magic-menu__metric {
   min-width: 0;
-  border-radius: 14px;
-  background: rgb(var(--color-paper) / 0.52);
+  border-radius: var(--radius-panel);
+  border: 1px solid rgb(var(--color-line) / 0.4);
+  background: rgb(var(--color-ivory) / 0.4);
+  backdrop-filter: blur(10px) saturate(1.4);
+  -webkit-backdrop-filter: blur(10px) saturate(1.4);
+  box-shadow: var(--shadow-inner-glass);
   padding: 0.55rem;
 }
 
@@ -1314,15 +1358,16 @@ useFocusTrap(() => true, dialogRef)
   height: 100%;
   min-width: 8%;
   border-radius: inherit;
-  background: rgb(var(--color-forest));
+  background: linear-gradient(90deg, rgb(var(--color-forest) / 0.8), rgb(var(--color-forest)));
+  transition: width 420ms var(--motion-snap);
 }
 
 .magic-menu__bar span.is-weak {
-  background: rgb(var(--color-ochre));
+  background: linear-gradient(90deg, rgb(var(--color-ochre) / 0.8), rgb(var(--color-ochre)));
 }
 
 .magic-menu__bar span.is-missing {
-  background: rgb(var(--color-accent));
+  background: linear-gradient(90deg, rgb(var(--color-clay) / 0.8), rgb(var(--color-accent)));
 }
 
 .magic-menu__insight {
@@ -1390,9 +1435,12 @@ useFocusTrap(() => true, dialogRef)
   min-width: 0;
   max-height: 190px;
   overflow: auto;
-  border-radius: 18px;
-  border: 1px solid rgb(var(--color-line) / 0.72);
-  background: rgb(var(--color-paper) / 0.56);
+  border-radius: var(--radius-card);
+  border: 1px solid rgb(var(--color-line) / 0.4);
+  background: rgb(var(--color-ivory) / 0.4);
+  backdrop-filter: blur(12px) saturate(1.4);
+  -webkit-backdrop-filter: blur(12px) saturate(1.4);
+  box-shadow: var(--shadow-inner-glass);
   padding: 0.65rem;
 }
 
@@ -1417,19 +1465,21 @@ useFocusTrap(() => true, dialogRef)
   min-height: 50px;
   margin: 0.72rem -0.85rem -0.85rem;
   border: 0;
-  border-top: 1px solid rgb(var(--color-line) / 0.74);
-  background: linear-gradient(135deg, rgb(var(--color-ink)), rgb(var(--color-forest) / 0.96));
-  color: rgb(var(--color-paper));
+  border-top: 1px solid rgb(var(--color-line) / 0.4);
+  background: var(--gradient-primary);
+  color: #fff;
   font-size: 14px;
   font-weight: 780;
   cursor: pointer;
-  box-shadow: 0 -16px 28px -24px rgb(var(--color-ink) / 0.42);
-  transition: filter 160ms ease, transform 160ms ease, opacity 160ms ease;
+  box-shadow: var(--shadow-glass-lg), var(--shadow-glow-accent);
+  transition: filter 160ms var(--motion-soft), transform 160ms var(--motion-press), box-shadow 200ms var(--motion-soft), opacity 160ms var(--motion-soft);
   -webkit-tap-highlight-color: transparent;
 }
 
 .magic-menu__apply:hover:not(:disabled) {
   filter: brightness(1.06);
+  box-shadow: var(--shadow-glass-xl), 0 0 28px -6px rgb(var(--color-accent) / 0.45);
+  transform: translateY(-1px);
 }
 
 .magic-menu__apply:active:not(:disabled),
@@ -1536,9 +1586,12 @@ useFocusTrap(() => true, dialogRef)
   gap: 0.32rem;
   min-width: 0;
   padding: 0.55rem 0.6rem;
-  border-radius: 14px;
-  border: 1px solid rgb(var(--color-line) / 0.78);
-  background: rgb(var(--color-paper) / 0.7);
+  border-radius: var(--radius-card);
+  border: 1px solid rgb(var(--color-line) / 0.4);
+  background: rgb(var(--color-ivory) / 0.45);
+  backdrop-filter: blur(12px) saturate(1.4);
+  -webkit-backdrop-filter: blur(12px) saturate(1.4);
+  box-shadow: var(--shadow-inner-glass);
 }
 
 .magic-menu__slot-card.is-missing {
@@ -1605,17 +1658,20 @@ useFocusTrap(() => true, dialogRef)
 .magic-menu__lint-item {
   display: flex;
   gap: 0.4rem;
-  padding: 0.45rem 0.6rem;
-  border-radius: 12px;
-  border: 1px solid rgb(var(--color-line));
-  background: rgb(var(--color-paper) / 0.5);
+  padding: 0.5rem 0.65rem;
+  border-radius: var(--radius-panel);
+  border: 1px solid rgb(var(--color-line) / 0.4);
+  background: rgb(var(--color-ivory) / 0.4);
+  backdrop-filter: blur(10px) saturate(1.4);
+  -webkit-backdrop-filter: blur(10px) saturate(1.4);
+  box-shadow: var(--shadow-inner-glass);
   font-size: 11px;
 }
 
 .magic-menu__lint-item.is-error {
-  border-color: rgb(var(--color-accent) / 0.4);
-  background: rgb(var(--color-accent) / 0.08);
-  color: rgb(var(--color-accent));
+  border-color: rgb(var(--color-clay) / 0.4);
+  background: rgb(var(--color-clay) / 0.08);
+  color: rgb(var(--color-clay));
 }
 
 .magic-menu__lint-item.is-warning {
@@ -1653,20 +1709,23 @@ useFocusTrap(() => true, dialogRef)
   display: inline-flex;
   align-items: center;
   gap: 0.28rem;
-  padding: 0.22rem 0.55rem;
+  padding: 0.24rem 0.6rem;
   border-radius: 999px;
   border: 1px solid currentColor;
-  background: rgb(var(--color-paper) / 0.6);
+  background: rgb(var(--color-ivory) / 0.5);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   color: inherit;
   font-size: 10px;
   font-weight: 700;
   cursor: pointer;
-  transition: background 140ms ease, transform 140ms ease;
+  transition: background 160ms var(--motion-soft), transform 140ms var(--motion-press), box-shadow 160ms var(--motion-soft);
 }
 
 .magic-menu__lint-fix:hover {
-  background: rgb(var(--color-paper));
+  background: rgb(var(--color-ivory) / 0.7);
   transform: translateY(-1px);
+  box-shadow: var(--shadow-glass-sm);
 }
 
 .magic-menu__lint-fix:active {
@@ -1689,27 +1748,29 @@ useFocusTrap(() => true, dialogRef)
   max-height: 240px;
   overflow: auto;
   padding: 0.4rem;
-  border-radius: 14px;
-  border: 1px solid rgb(var(--color-line-strong) / 0.7);
-  background: rgb(var(--color-paper));
-  box-shadow: var(--shadow-paper-3);
+  border-radius: var(--radius-card);
+  border: 1px solid rgb(var(--color-line) / 0.4);
+  background: var(--gradient-surface);
+  backdrop-filter: blur(calc(var(--glass-blur) * 1.2)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 1.2)) saturate(var(--glass-saturate));
+  box-shadow: var(--shadow-glass-lg), var(--shadow-inner-glass);
 }
 
 .magic-menu__lookbook-item {
   display: grid;
   gap: 0.2rem;
   padding: 0.45rem 0.55rem;
-  border-radius: 10px;
+  border-radius: var(--radius-field);
   border: 1px solid transparent;
-  background: rgb(var(--color-paper-soft) / 0.6);
+  background: rgb(var(--color-ivory) / 0.4);
   text-align: left;
   cursor: pointer;
-  transition: background 140ms ease, border-color 140ms ease;
+  transition: background 160ms var(--motion-soft), border-color 160ms var(--motion-soft);
 }
 
 .magic-menu__lookbook-item:hover {
-  border-color: rgb(var(--color-line-strong) / 0.6);
-  background: rgb(var(--color-vellum));
+  border-color: rgb(var(--color-line-strong) / 0.5);
+  background: rgb(var(--color-ivory) / 0.65);
 }
 
 .magic-menu__lookbook-item strong {
@@ -1729,14 +1790,14 @@ useFocusTrap(() => true, dialogRef)
 }
 
 .magic-menu__slot-card.is-overridden {
-  border-color: rgb(var(--color-ink));
-  background: rgb(var(--color-vellum));
-  box-shadow: 0 0 0 1px rgb(var(--color-ink) / 0.18);
+  border-color: rgb(var(--color-accent) / 0.5);
+  background: rgb(var(--color-accent) / 0.07);
+  box-shadow: var(--shadow-inner-glass), 0 0 14px -6px rgb(var(--color-accent) / 0.4);
 }
 
 .magic-menu__slot-card.is-editing {
   border-style: solid;
-  border-color: rgb(var(--color-ink));
+  border-color: rgb(var(--color-accent) / 0.6);
 }
 
 .magic-menu__slot-actions {
@@ -1750,33 +1811,43 @@ useFocusTrap(() => true, dialogRef)
   display: inline-flex;
   align-items: center;
   gap: 0.26rem;
-  padding: 0.18rem 0.5rem;
+  padding: 0.2rem 0.55rem;
   border-radius: 999px;
-  border: 1px solid rgb(var(--color-line) / 0.78);
-  background: rgb(var(--color-paper) / 0.65);
+  border: 1px solid rgb(var(--color-line) / 0.5);
+  background: rgb(var(--color-ivory) / 0.45);
+  backdrop-filter: blur(8px) saturate(1.4);
+  -webkit-backdrop-filter: blur(8px) saturate(1.4);
+  box-shadow: var(--shadow-inner-glass);
   color: rgb(var(--color-muted));
   font-size: 10px;
   font-weight: 680;
   cursor: pointer;
-  transition: background 140ms ease, color 140ms ease, border-color 140ms ease;
+  transition: background 150ms var(--motion-soft), color 150ms var(--motion-soft), border-color 150ms var(--motion-soft), transform 140ms var(--motion-press), box-shadow 150ms var(--motion-soft);
 }
 
 .magic-menu__slot-btn:hover {
-  border-color: rgb(var(--color-line-strong));
-  background: rgb(var(--color-vellum));
+  border-color: rgb(var(--color-line-strong) / 0.7);
+  background: rgb(var(--color-ivory) / 0.65);
   color: rgb(var(--color-ink));
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-glass-sm);
+}
+
+.magic-menu__slot-btn:active {
+  transform: translateY(0);
 }
 
 .magic-menu__slot-btn.is-primary {
-  border-color: rgb(var(--color-ink));
-  background: rgb(var(--color-ink));
-  color: rgb(var(--color-paper));
+  border-color: transparent;
+  background: var(--gradient-primary);
+  color: #fff;
+  box-shadow: var(--shadow-glow-accent);
 }
 
 .magic-menu__slot-btn.is-danger {
-  border-color: rgb(var(--color-accent) / 0.4);
-  background: rgb(var(--color-accent) / 0.08);
-  color: rgb(var(--color-accent));
+  border-color: rgb(var(--color-clay) / 0.4);
+  background: rgb(var(--color-clay) / 0.1);
+  color: rgb(var(--color-clay));
 }
 
 .magic-menu__slot-edit {
@@ -1789,18 +1860,23 @@ useFocusTrap(() => true, dialogRef)
   resize: vertical;
   min-height: 56px;
   padding: 0.4rem 0.5rem;
-  border-radius: 10px;
-  border: 1px solid rgb(var(--color-line) / 0.85);
-  background: rgb(var(--color-paper));
+  border-radius: var(--radius-field);
+  border: 1px solid rgb(var(--color-line) / 0.6);
+  background: rgb(var(--color-ivory) / 0.5);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: var(--shadow-inner-glass);
   color: rgb(var(--color-ink));
   font-size: 11px;
   line-height: 1.5;
   font-family: inherit;
+  transition: border-color 160ms var(--motion-soft), box-shadow 180ms var(--motion-soft);
 }
 
 .magic-menu__slot-textarea:focus {
   outline: none;
-  border-color: rgb(var(--color-ink));
+  border-color: rgb(var(--color-accent) / 0.5);
+  box-shadow: var(--focus-ring), var(--shadow-glow-accent);
 }
 
 .magic-menu__slot-edit-actions {
@@ -1818,33 +1894,41 @@ useFocusTrap(() => true, dialogRef)
 .magic-menu__variant-tab {
   padding: 0.32rem 0.7rem;
   border-radius: 999px;
-  border: 1px solid rgb(var(--color-line) / 0.85);
-  background: rgb(var(--color-paper) / 0.7);
+  border: 1px solid rgb(var(--color-line) / 0.5);
+  background: rgb(var(--color-ivory) / 0.45);
+  backdrop-filter: blur(8px) saturate(1.4);
+  -webkit-backdrop-filter: blur(8px) saturate(1.4);
+  box-shadow: var(--shadow-inner-glass);
   color: rgb(var(--color-muted));
   font-size: 11px;
   font-weight: 680;
   cursor: pointer;
-  transition: background 140ms ease, color 140ms ease, border-color 140ms ease;
+  transition: background 160ms var(--motion-soft), color 160ms var(--motion-soft), border-color 160ms var(--motion-soft), transform 140ms var(--motion-press), box-shadow 160ms var(--motion-soft);
 }
 
 .magic-menu__variant-tab:hover {
-  border-color: rgb(var(--color-line-strong));
-  background: rgb(var(--color-vellum));
+  border-color: rgb(var(--color-line-strong) / 0.7);
+  background: rgb(var(--color-ivory) / 0.65);
   color: rgb(var(--color-ink));
+  transform: translateY(-1px);
 }
 
 .magic-menu__variant-tab.is-active {
-  border-color: rgb(var(--color-ink));
-  background: rgb(var(--color-ink));
-  color: rgb(var(--color-paper));
+  border-color: transparent;
+  background: var(--gradient-primary);
+  color: #fff;
+  box-shadow: var(--shadow-glow-accent);
 }
 
 .magic-menu__ab-toggle {
   margin-top: 0.7rem;
   padding: 0.55rem 0.65rem;
-  border-radius: 14px;
-  border: 1px solid rgb(var(--color-line) / 0.74);
-  background: rgb(var(--color-paper) / 0.6);
+  border-radius: var(--radius-panel);
+  border: 1px solid rgb(var(--color-line) / 0.4);
+  background: rgb(var(--color-ivory) / 0.4);
+  backdrop-filter: blur(10px) saturate(1.4);
+  -webkit-backdrop-filter: blur(10px) saturate(1.4);
+  box-shadow: var(--shadow-inner-glass);
 }
 
 .magic-menu__ab-label {

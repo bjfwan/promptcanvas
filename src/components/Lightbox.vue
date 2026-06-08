@@ -387,18 +387,6 @@ async function shareCurrent() {
   }
 }
 
-function enterEditMode() {
-  if (!activeImage.value || !activeSrc.value) return
-  vibrate('tap')
-  resetTransform()
-  lightbox.switchToEdit()
-}
-
-function exitEditMode() {
-  vibrate('tap')
-  lightbox.switchToView()
-}
-
 function handleInpaintSubmit(payload: { mask: Blob; prompt: string }) {
   if (!activeSrc.value) return
   emit('inpaint-submit', {
@@ -430,7 +418,7 @@ function handleInpaintSubmit(payload: { mask: Blob; prompt: string }) {
           @click.stop
         >
           <div class="flex items-center gap-2 text-paper/85">
-            <span class="grid h-8 w-8 place-items-center overflow-hidden rounded-xl border border-paper/20 bg-paper/10">
+            <span class="grid h-8 w-8 place-items-center overflow-hidden rounded-xl border border-paper/15 bg-paper/[0.06] backdrop-blur-md">
               <img src="/brand/favicon.png" alt="" width="32" height="32" decoding="async" />
             </span>
             <span class="font-mono text-[10px] uppercase tracking-[0.24em]">{{ counter || 'Canvas · 1' }}</span>
@@ -438,7 +426,7 @@ function handleInpaintSubmit(payload: { mask: Blob; prompt: string }) {
           <div class="flex items-center gap-1.5">
             <button
               type="button"
-              class="hidden sm:inline-flex h-11 items-center gap-1.5 rounded-full border border-paper/20 px-3 text-paper transition hover:bg-paper/10"
+              class="hidden sm:inline-flex h-11 items-center gap-1.5 rounded-full border border-paper/15 bg-paper/[0.06] px-3 text-paper backdrop-blur-md transition hover:border-paper/30 hover:bg-paper/15"
               aria-label="编辑这张图"
               @click="lightbox.switchToEdit()"
             >
@@ -447,7 +435,7 @@ function handleInpaintSubmit(payload: { mask: Blob; prompt: string }) {
             </button>
             <button
               type="button"
-              class="sm:hidden grid h-11 w-11 place-items-center rounded-full border border-paper/20 text-paper transition hover:bg-paper/10"
+              class="sm:hidden grid h-11 w-11 place-items-center rounded-full border border-paper/15 bg-paper/[0.06] text-paper backdrop-blur-md transition hover:border-paper/30 hover:bg-paper/15"
               aria-label="编辑这张图"
               @click="lightbox.switchToEdit()"
             >
@@ -455,7 +443,7 @@ function handleInpaintSubmit(payload: { mask: Blob; prompt: string }) {
             </button>
             <button
               type="button"
-              class="grid h-11 w-11 place-items-center rounded-full border border-paper/20 text-paper transition hover:bg-paper/10"
+              class="grid h-11 w-11 place-items-center rounded-full border border-paper/15 bg-paper/[0.06] text-paper backdrop-blur-md transition hover:border-paper/30 hover:bg-paper/15"
               :aria-pressed="infoOpen"
               :aria-label="infoOpen ? t('lightbox.info.close') : t('lightbox.info.expand')"
               @click="infoOpen = !infoOpen"
@@ -464,7 +452,7 @@ function handleInpaintSubmit(payload: { mask: Blob; prompt: string }) {
             </button>
             <button
               type="button"
-              class="grid h-11 w-11 place-items-center rounded-full border border-paper/20 text-paper transition hover:bg-paper/10"
+              class="grid h-11 w-11 place-items-center rounded-full border border-paper/15 bg-paper/[0.06] text-paper backdrop-blur-md transition hover:border-paper/30 hover:bg-paper/15"
               :aria-pressed="isZoomed"
               :aria-label="t('lightbox.toggleZoom')"
               @click="isZoomed ? resetTransform() : setScale(DOUBLE_TAP_SCALE)"
@@ -473,7 +461,7 @@ function handleInpaintSubmit(payload: { mask: Blob; prompt: string }) {
             </button>
             <button
               type="button"
-              class="grid h-11 w-11 place-items-center rounded-full border border-paper/20 text-paper transition hover:bg-paper/10"
+              class="grid h-11 w-11 place-items-center rounded-full border border-paper/15 bg-paper/[0.06] text-paper backdrop-blur-md transition hover:border-paper/30 hover:bg-paper/15"
               :aria-label="t('lightbox.download')"
               @click="downloadCurrent"
             >
@@ -482,7 +470,7 @@ function handleInpaintSubmit(payload: { mask: Blob; prompt: string }) {
             <button
               v-if="shareSupported"
               type="button"
-              class="grid h-11 w-11 place-items-center rounded-full border border-paper/20 text-paper transition hover:bg-paper/10"
+              class="grid h-11 w-11 place-items-center rounded-full border border-paper/15 bg-paper/[0.06] text-paper backdrop-blur-md transition hover:border-paper/30 hover:bg-paper/15"
               :aria-label="t('lightbox.share')"
               @click="shareCurrent"
             >
@@ -490,7 +478,7 @@ function handleInpaintSubmit(payload: { mask: Blob; prompt: string }) {
             </button>
             <button
               type="button"
-              class="grid h-11 w-11 place-items-center rounded-full border border-paper/20 text-paper transition hover:bg-paper/10"
+              class="grid h-11 w-11 place-items-center rounded-full border border-paper/15 bg-paper/[0.06] text-paper backdrop-blur-md transition hover:border-paper/30 hover:bg-paper/15"
               :aria-label="t('lightbox.close')"
               @click="lightbox.close"
             >
@@ -545,7 +533,7 @@ function handleInpaintSubmit(payload: { mask: Blob; prompt: string }) {
           <button
             v-if="lightbox.state.images.length > 1 && !isZoomed"
             type="button"
-            class="absolute left-2 top-1/2 grid h-12 w-12 -translate-y-1/2 place-items-center rounded-full border border-paper/20 bg-ink/40 text-paper transition hover:bg-paper/15"
+            class="absolute left-2 top-1/2 grid h-12 w-12 -translate-y-1/2 place-items-center rounded-full border border-paper/15 bg-ink/30 text-paper backdrop-blur-md transition hover:border-paper/30 hover:bg-paper/15"
             :aria-label="t('lightbox.prev')"
             @click="lightbox.prev"
           >
@@ -554,7 +542,7 @@ function handleInpaintSubmit(payload: { mask: Blob; prompt: string }) {
           <button
             v-if="lightbox.state.images.length > 1 && !isZoomed"
             type="button"
-            class="absolute right-2 top-1/2 grid h-12 w-12 -translate-y-1/2 place-items-center rounded-full border border-paper/20 bg-ink/40 text-paper transition hover:bg-paper/15"
+            class="absolute right-2 top-1/2 grid h-12 w-12 -translate-y-1/2 place-items-center rounded-full border border-paper/15 bg-ink/30 text-paper backdrop-blur-md transition hover:border-paper/30 hover:bg-paper/15"
             :aria-label="t('lightbox.next')"
             @click="lightbox.next"
           >
@@ -639,9 +627,9 @@ function handleInpaintSubmit(payload: { mask: Blob; prompt: string }) {
 <style scoped>
 .lightbox-shell {
   background:
-    radial-gradient(circle at 18% 0%, rgb(47 70 84 / 0.34), transparent 34%),
-    radial-gradient(circle at 82% 100%, rgb(176 127 48 / 0.22), transparent 38%),
-    rgb(14 17 16 / 0.96);
+    radial-gradient(circle at 18% 0%, rgb(var(--color-accent) / 0.28), transparent 36%),
+    radial-gradient(circle at 82% 100%, rgb(var(--color-blueprint) / 0.22), transparent 40%),
+    rgb(10 11 16 / 0.97);
 }
 
 .lb-fade-enter-from,
@@ -802,31 +790,4 @@ function handleInpaintSubmit(payload: { mask: Blob; prompt: string }) {
   margin: 0;
   font-size: 11px;
   line-height: 1.5;
-  color: rgb(var(--color-paper) / 0.6);
-}
-
-.lb-info-enter-from,
-.lb-info-leave-to {
-  opacity: 0;
-  transform: translateX(20px);
-}
-
-.lb-info-enter-active,
-.lb-info-leave-active {
-  transition: opacity 220ms ease-out, transform 280ms cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-
-@media (max-width: 640px) {
-  .lb-info-enter-from,
-  .lb-info-leave-to {
-    transform: translateY(20px);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .lb-info-enter-active,
-  .lb-info-leave-active {
-    transition: none;
-  }
-}
-</style>
+  co

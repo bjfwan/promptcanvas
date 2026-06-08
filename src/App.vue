@@ -13,6 +13,7 @@ import type {
   ImageQuality,
   ImageSize,
   ImageStyle,
+  ReferenceImageAttachment,
 } from './types'
 import { createId } from './lib/id'
 import { payloadToMeta } from './lib/chatMessage'
@@ -356,6 +357,101 @@ function handleCancelContinuation() {
   pendingContinuation.value = null
   clearComposerReferenceImages()
   toast.info('已取消接着画', '回到自由创作模式')
+}
+
+// Inpaint: user painted a mask in the lightbox and described what the selected
+// region should become. We fetch the source image as a File, attach it as the
+// single reference image, attach the mask PNG, and run a one-off /images/edits
+// request. The mask + source must travel together (validation enforces exactly
+// one reference image when a mask is present).
+async function handleInpaintSubmit(payload: {
+  mask: Blob
+  prompt: string
+  imageSrc: string
+  imageIndex: number
+}) {
+  const trimmed = payload.prompt.trim()
+  if (!trimmed) {
+    toast.error('描述为空', '先描述选中区域要变成什么')
+    return
+  }
+
+  if (healthStatus.value === 'offline') {
+    toast.error('API 未配置', '请先在「设置」中填写 baseUrl 与 Key')
+    return
+  }
+
+  if (isGenerating.value) {
+    toast.info('正在生成中，请稍候')
+    return
+  }
+
+  vibrate('tap')
+  const preparingId = toast.info('正在准备局部重绘', '读取原图与蒙版')
+
+  let sourceFile: File
+  try {
+    const blob = await fetchContinuationBlob(payload.imageSrc)
+    const mimeType = (blob.type || 'image/png').split(';')[0] || 'image/png'
+    const ext = mimeType.split('/')[1] || 'png'
+    sourceFile = new File([blob], `inpaint-source-${Date.now()}.${ext}`, { type: mimeType })
+  } catch (err) {
+    toast.dismiss(preparingId)
+    console.error('Inpaint source fetch failed:', err)
+    toast.error('原图读取失败', '图源跨域受限，建议先下载再上传后重绘')
+    return
+  }
+
+  toast.dismiss(preparingId)
+
+  const sourcePreview = URL.createObjectURL(sourceFile)
+  const referenceImage: ReferenceImageAttachment = {
+    id: createId(),
+    name: sourceFile.name,
+    mimeType: sourceFile.type,
+    sizeBytes: sourceFile.size,
+    previewUrl: sourcePreview,
+    file: sourceFile,
+  }
+
+  const resolvedModel =
+    modelChoice.value === customModelSentinel
+      ? customModel.value.trim()
+      : modelChoice.value.trim()
+
+  const inpaintPayload: GenerateImageRequest = {
+    prompt: trimmed,
+    style: style.value,
+    size: size.value,
+    count: count.value,
+    outputFormat: outputFormat.value,
+    negativePrompt: negativePrompt.value.trim() || undefined,
+    quality: quality.value,
+    creativity: creativity.value,
+    seed: seed.value.trim() || undefined,
+    model: resolvedModel || undefined,
+    referenceImages: [referenceImage],
+    inpaintMask: payload.mask,
+  }
+
+  const userId = createId()
+  messages.value = [
+    ...messages.value,
+    {
+      id: userId,
+      role: 'user',
+      content: trimmed,
+      createdAt: new Date().toISOString(),
+      meta: payloadToMeta(inpaintPayload),
+      referenceImages: [referenceImage],
+    },
+  ]
+
+  try {
+    await runGeneration({ payload: inpaintPayload, userMessageId: userId })
+  } finally {
+    URL.revokeObjectURL(sourcePreview)
+  }
 }
 
 function handleMagicEnhance(result: EnhanceResult) {
@@ -1551,8 +1647,9 @@ watch(sw.updateAvailable, (available) => {
       @dismiss="onboarding.dismiss"
     />
 
-    <Lightbox v-if="lightbox.state.open" />
+    <Lightbox v-if="lightbox.state.open" @inpaint-submit="handleInpaintSubmit" />
 
     <Toaster />
   </div>
 </template>
+
