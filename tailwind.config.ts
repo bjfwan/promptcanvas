@@ -25,6 +25,8 @@ export default {
         sage: 'rgb(var(--color-sage) / <alpha-value>)',
         clay: 'rgb(var(--color-clay) / <alpha-value>)',
         ivory: 'rgb(var(--color-ivory) / <alpha-value>)',
+        glass: 'rgb(var(--color-glass) / <alpha-value>)',
+        'glass-strong': 'rgb(var(--color-glass-strong) / <alpha-value>)',
       },
       letterSpacing: {
         tightish: '0',
@@ -34,6 +36,9 @@ export default {
         'paper-2': 'var(--shadow-paper-2)',
         'paper-3': 'var(--shadow-paper-3)',
         'inner-paper': 'var(--shadow-inner-paper)',
+        'glass': 'var(--shadow-glass)',
+        'glass-hover': 'var(--shadow-glass-hover)',
+        'glow': 'var(--shadow-glow)',
       },
       zIndex: {
         header: '40',
@@ -42,9 +47,16 @@ export default {
         lightbox: '55',
         toast: '60',
       },
+      backdropBlur: {
+        glass: '20px',
+        'glass-heavy': '40px',
+      },
       animation: {
         breathe: 'breathe 2.4s ease-in-out infinite',
         'progress-sweep': 'progress-sweep 1.6s linear infinite',
+        'shimmer': 'shimmer 2.4s ease-in-out infinite',
+        'float': 'float 6s ease-in-out infinite',
+        'glow-pulse': 'glow-pulse 3s ease-in-out infinite',
       },
       keyframes: {
         breathe: {
@@ -54,6 +66,18 @@ export default {
         'progress-sweep': {
           '0%': { transform: 'translateX(-100%)' },
           '100%': { transform: 'translateX(100%)' },
+        },
+        shimmer: {
+          '0%, 100%': { opacity: '0.5', transform: 'translateX(-2%)' },
+          '50%': { opacity: '1', transform: 'translateX(2%)' },
+        },
+        float: {
+          '0%, 100%': { transform: 'translateY(0)' },
+          '50%': { transform: 'translateY(-4px)' },
+        },
+        'glow-pulse': {
+          '0%, 100%': { opacity: '0.4', transform: 'scale(0.98)' },
+          '50%': { opacity: '0.8', transform: 'scale(1)' },
         },
       },
     },

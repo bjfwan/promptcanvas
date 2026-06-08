@@ -9,6 +9,11 @@ import { useI18n } from '../lib/i18n'
 import { useShare } from '../composables/useShare'
 import { useToast } from '../composables/useToast'
 import Icon from './Icon.vue'
+import InpaintEditor from './InpaintEditor.vue'
+
+const emit = defineEmits<{
+  (e: 'inpaint-submit', payload: { mask: Blob; prompt: string; imageSrc: string; imageIndex: number }): void
+}>()
 
 const lightbox = useLightbox()
 const { t } = useI18n()
@@ -381,6 +386,30 @@ async function shareCurrent() {
     toast.error(t('toast.shareFailed'))
   }
 }
+
+function enterEditMode() {
+  if (!activeImage.value || !activeSrc.value) return
+  vibrate('tap')
+  resetTransform()
+  lightbox.switchToEdit()
+}
+
+function exitEditMode() {
+  vibrate('tap')
+  lightbox.switchToView()
+}
+
+function handleInpaintSubmit(payload: { mask: Blob; prompt: string }) {
+  if (!activeSrc.value) return
+  emit('inpaint-submit', {
+    mask: payload.mask,
+    prompt: payload.prompt,
+    imageSrc: activeSrc.value,
+    imageIndex: lightbox.state.index,
+  })
+  // Close lightbox so user sees the generation progress in main canvas
+  lightbox.close()
+}
 </script>
 
 <template>
@@ -395,7 +424,11 @@ async function shareCurrent() {
         :aria-label="t('lightbox.label')"
         @click="lightbox.close"
       >
-        <header class="flex items-center justify-between px-4 pt-[max(env(safe-area-inset-top,0px),1rem)]" @click.stop>
+        <header
+          v-if="lightbox.state.mode !== 'edit'"
+          class="flex items-center justify-between px-4 pt-[max(env(safe-area-inset-top,0px),1rem)]"
+          @click.stop
+        >
           <div class="flex items-center gap-2 text-paper/85">
             <span class="grid h-8 w-8 place-items-center overflow-hidden rounded-xl border border-paper/20 bg-paper/10">
               <img src="/brand/favicon.png" alt="" width="32" height="32" decoding="async" />
@@ -403,6 +436,23 @@ async function shareCurrent() {
             <span class="font-mono text-[10px] uppercase tracking-[0.24em]">{{ counter || 'Canvas · 1' }}</span>
           </div>
           <div class="flex items-center gap-1.5">
+            <button
+              type="button"
+              class="hidden sm:inline-flex h-11 items-center gap-1.5 rounded-full border border-paper/20 px-3 text-paper transition hover:bg-paper/10"
+              aria-label="编辑这张图"
+              @click="lightbox.switchToEdit()"
+            >
+              <Icon name="brush" :size="14" />
+              <span class="font-mono text-[10px] uppercase tracking-[0.18em]">编辑</span>
+            </button>
+            <button
+              type="button"
+              class="sm:hidden grid h-11 w-11 place-items-center rounded-full border border-paper/20 text-paper transition hover:bg-paper/10"
+              aria-label="编辑这张图"
+              @click="lightbox.switchToEdit()"
+            >
+              <Icon name="brush" :size="16" />
+            </button>
             <button
               type="button"
               class="grid h-11 w-11 place-items-center rounded-full border border-paper/20 text-paper transition hover:bg-paper/10"
@@ -449,7 +499,23 @@ async function shareCurrent() {
           </div>
         </header>
 
-        <div class="lb-stage-row relative flex flex-1 min-h-0">
+        <!-- Edit mode: inpaint editor -->
+        <div
+          v-if="lightbox.state.mode === 'edit' && activeImage && activeSrc"
+          class="lb-edit-shell flex flex-1 min-h-0"
+          @click.stop
+        >
+          <InpaintEditor
+            :image-src="activeSrc"
+            @cancel="lightbox.switchToView()"
+            @submit="handleInpaintSubmit"
+          />
+        </div>
+
+        <div
+          v-else
+          class="lb-stage-row relative flex flex-1 min-h-0"
+        >
           <div
             ref="imageWrapRef"
             class="lb-stage relative flex-1 select-none overflow-hidden"
@@ -548,7 +614,11 @@ async function shareCurrent() {
           </Transition>
         </div>
 
-        <footer class="px-4 pb-[max(env(safe-area-inset-bottom,0px),1rem)] pt-2" @click.stop>
+        <footer
+          v-if="lightbox.state.mode === 'view'"
+          class="px-4 pb-[max(env(safe-area-inset-bottom,0px),1rem)] pt-2"
+          @click.stop
+        >
           <p
             v-if="lightbox.state.images.length > 1"
             class="hidden text-center font-mono text-[10px] uppercase tracking-[0.24em] text-paper/55 sm:block"

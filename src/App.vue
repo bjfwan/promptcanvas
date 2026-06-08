@@ -1295,7 +1295,7 @@ watch(sw.updateAvailable, (available) => {
 </script>
 
 <template>
-  <div class="paper-bg relative flex min-h-dvh flex-col overflow-x-hidden bg-paper text-ink" :style="mobileRootStyle">
+  <div class="paper-bg relative flex min-h-dvh flex-col overflow-x-hidden text-ink" :style="mobileRootStyle">
     <a
       href="#canvas"
       class="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[80] focus:rounded-md focus:bg-ink focus:px-3 focus:py-2 focus:text-paper"
@@ -1317,13 +1317,13 @@ watch(sw.updateAvailable, (available) => {
 
     <main
       v-if="isDesktop"
-      class="desktop-workbench relative z-[2] mx-auto grid w-full max-w-[1680px] flex-1 gap-6 px-8 pb-10 pt-7 xl:gap-7 2xl:px-10"
+      class="desktop-workbench relative z-[2] mx-auto grid w-full max-w-[1680px] flex-1 gap-5 px-6 pb-8 pt-5 xl:gap-6 2xl:px-8"
       :class="isWideDesktop
         ? 'grid-cols-[minmax(340px,420px)_minmax(0,1fr)_minmax(280px,340px)]'
         : 'grid-cols-[minmax(360px,440px)_minmax(0,1fr)]'
       "
     >
-      <section class="studio-panel reveal touch-scroll-y" style="--reveal-delay: 40ms;">
+      <section class="glass-panel studio-panel reveal touch-scroll-y" style="--reveal-delay: 40ms;">
         <PromptComposer
           ref="composerRef"
           v-model:prompt="prompt"
@@ -1366,7 +1366,7 @@ watch(sw.updateAvailable, (available) => {
         />
       </section>
 
-      <section id="canvas" class="studio-stage reveal" style="--reveal-delay: 120ms;">
+      <section id="canvas" class="studio-stage reveal glass-stage" style="--reveal-delay: 120ms;">
         <CanvasStage
           :images="images"
           :active-image-index="activeImageIndex"
@@ -1430,7 +1430,7 @@ watch(sw.updateAvailable, (available) => {
       </span>
     </footer>
 
-    <div v-if="!isDesktop" class="flex min-h-0 flex-1 flex-col overflow-hidden">
+    <div v-if="!isDesktop" class="mobile-shell flex min-h-0 flex-1 flex-col overflow-hidden">
       <ChatStream
         ref="chatStreamRef"
         :messages="messages"

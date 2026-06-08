@@ -47,4 +47,25 @@ export const editorIcons = {
   search: {
     paths: ['M11 4a7 7 0 1 1 0 14 7 7 0 0 1 0-14z', 'M16 16l5 5'],
   },
+  brush: {
+    paths: [
+      'M18 4l2 2-9 9-3 1 1-3 9-9z',
+      'M5 19c0 1 1 2 2 2s3-1 5-3',
+    ],
+  },
+  rectSelect: {
+    paths: [
+      'M4 7V4h3',
+      'M17 4h3v3',
+      'M20 17v3h-3',
+      'M7 20H4v-3',
+      'M8 8h8v8H8z',
+    ],
+  },
+  undo: {
+    paths: ['M4 7h12a4 4 0 0 1 0 8H8', 'M4 7l4-4', 'M4 7l4 4'],
+  },
+  trash: {
+    paths: ['M5 6h14', 'M9 6V4h6v2', 'M7 6l1 13h8l1-13', 'M10 10v6', 'M14 10v6'],
+  },
 } satisfies IconSet

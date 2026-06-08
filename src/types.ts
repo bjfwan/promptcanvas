@@ -47,6 +47,12 @@ export interface GenerateImageRequest {
   seed?: string
   model?: string
   referenceImages?: ReferenceImageAttachment[]
+  /**
+   * PNG mask for inpainting. Black = keep, white = edit.
+   * Sent as the `mask` field on /images/edits when present.
+   * Requires exactly one referenceImage as the source image.
+   */
+  inpaintMask?: Blob
   baseUrl?: string
   apiKey?: string
 }
