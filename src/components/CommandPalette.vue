@@ -4,6 +4,7 @@ import Icon from './Icon.vue'
 import { sizeOptions, styleOptions } from '../presets'
 import { useFocusTrap } from '../composables/useFocusTrap'
 import { useBodyLock } from '../composables/useBodyLock'
+import { useResolutionSupport } from '../composables/useResolutionSupport'
 import { useI18n } from '../lib/i18n'
 import type { ImageSize, ImageStyle } from '../types'
 

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, nextTick, onMounted, ref, shallowRef, watch } from 'vue'
 import { resolveImageSource } from './api'
-import { customModelSentinel, qualityOptions, sizeOptions, styleOptions, stylePresetById } from './presets'
+import { customModelSentinel, qualityOptions, sizeOptions, sizeTierById, styleOptions, stylePresetById } from './presets'
 import { clearDraft, clearHistory, hydrateHistoryImages, loadDraft, loadHistory } from './storage'
 import type {
   ChatMessage,
@@ -23,6 +23,7 @@ import { useTheme } from './composables/useTheme'
 import { useLightbox } from './composables/useLightbox'
 import { useProviderConfig } from './composables/useProviderConfig'
 import { useDiscoveredModels } from './composables/useDiscoveredModels'
+import { useResolutionSupport } from './composables/useResolutionSupport'
 import { useVibration } from './composables/useVibration'
 import { useReferenceImages } from './composables/useReferenceImages'
 import { useImagePriming } from './composables/useImagePriming'
@@ -96,6 +97,7 @@ const { theme, toggle: toggleTheme } = useTheme()
 const lightbox = useLightbox()
 const provider = useProviderConfig()
 const discoveredModels = useDiscoveredModels()
+const resolutionSupport = useResolutionSupport()
 const { vibrate } = useVibration()
 const settingsOpen = ref(false)
 const historyOpen = ref(false)
@@ -182,7 +184,12 @@ if (restoredDraft) {
   }
   if (typeof restoredDraft.negativePrompt === 'string') negativePrompt.value = restoredDraft.negativePrompt
   if (styleOptions.some((option) => option.value === restoredDraft.style)) style.value = restoredDraft.style as ImageStyle
-  if (sizeOptions.some((option) => option.value === restoredDraft.size)) size.value = restoredDraft.size as ImageSize
+  if (
+    sizeOptions.some((option) => option.value === restoredDraft.size) &&
+    resolutionSupport.isTierUnlocked(sizeTierById.get(restoredDraft.size as ImageSize) ?? '1k')
+  ) {
+    size.value = restoredDraft.size as ImageSize
+  }
   if (typeof restoredDraft.count === 'number' && Number.isInteger(restoredDraft.count) && restoredDraft.count >= 1 && restoredDraft.count <= 4) count.value = restoredDraft.count
   if (restoredDraft.outputFormat === 'png' || restoredDraft.outputFormat === 'jpeg' || restoredDraft.outputFormat === 'webp') outputFormat.value = restoredDraft.outputFormat
   if (qualityOptions.some((option) => option.value === restoredDraft.quality)) quality.value = restoredDraft.quality as ImageQuality
