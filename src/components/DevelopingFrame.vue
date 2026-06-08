@@ -1,24 +1,23 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import Icon from './Icon.vue'
 import FlipDigits from './FlipDigits.vue'
 
 interface Props {
-  /** 0~100 progress estimate (drives the ledger ruler fill). */
+  /** 0~100 progress estimate (drives the arc sweep). */
   progress: number
-  /** Elapsed seconds; rendered through FlipDigits in the developing disc. */
+  /** Elapsed seconds; rendered through FlipDigits. */
   elapsedSeconds: number
-  /** Stage label echoed at top-left / under the disc. */
+  /** Stage label. */
   stage: string
-  /** Optional ETA / remaining label (e.g. 约 8s / 即将出图 / 已超出预估…). */
+  /** Optional ETA / remaining label. */
   remainingLabel?: string
   /** First line of meta footer (typically size · style). */
   metaLabel?: string
-  /** Second line of meta footer (typically prompt preview, truncated). */
+  /** Second line of meta footer (prompt preview, truncated). */
   promptPreview?: string
-  /** Retained for call-site compatibility; layout now scales via `compact`. */
+  /** Retained for call-site compatibility. */
   ringSize?: number
-  /** Compact variant tightens everything for chat bubbles. */
+  /** Compact variant for chat bubbles. */
   compact?: boolean
 }
 
@@ -34,485 +33,540 @@ defineEmits<{
   (e: 'cancel'): void
 }>()
 
-const STAGE_ICONS = ['pencil', 'frame', 'palette', 'sparkle'] as const
-
-const stageIcon = computed(() => {
-  const p = props.progress
-  if (p < 26) return STAGE_ICONS[0]
-  if (p < 58) return STAGE_ICONS[1]
-  if (p < 84) return STAGE_ICONS[2]
-  return STAGE_ICONS[3]
-})
-
 const fillPct = computed(() => Math.max(0, Math.min(100, props.progress)))
+
+/** SVG arc path for progress ring. */
+const arcPath = computed(() => {
+  const r = 46
+  const cx = 50
+  const cy = 50
+  const angle = (fillPct.value / 100) * 360
+  if (angle === 0) return ''
+  if (angle >= 359.9) return `M ${cx} ${cy - r} A ${r} ${r} 0 1 1 ${cx - 0.01} ${cy - r}`
+  const rad = ((angle - 90) * Math.PI) / 180
+  const x = cx + r * Math.cos(rad)
+  const y = cy + r * Math.sin(rad)
+  const large = angle > 180 ? 1 : 0
+  return `M ${cx} ${cy - r} A ${r} ${r} 0 ${large} 1 ${x} ${y}`
+})
 </script>
 
 <template>
-  <div class="dev" :class="{ 'dev--compact': compact }">
-    <!-- Paper base -->
-    <div class="dev__paper" aria-hidden="true"></div>
+  <div class="epulse" :class="{ 'epulse--compact': compact }">
+    <!-- Ambient background glow -->
+    <div class="epulse__ambient" aria-hidden="true"></div>
 
-    <!-- Latent image: a photo surfacing in the developer tray, cell by cell. -->
-    <div class="dev__latent" aria-hidden="true">
-      <span v-for="i in 12" :key="i" :style="{ '--i': i }"></span>
+    <!-- Floating particles -->
+    <div class="epulse__particles" aria-hidden="true">
+      <span v-for="i in 8" :key="i" :style="{ '--p': i }"></span>
     </div>
 
-    <!-- Developer wash drifting bottom → top. -->
-    <div class="dev__wash" aria-hidden="true"></div>
+    <!-- Central orb composition -->
+    <div class="epulse__center">
+      <!-- Progress ring (SVG) -->
+      <svg class="epulse__ring" viewBox="0 0 100 100" aria-hidden="true">
+        <!-- Track -->
+        <circle cx="50" cy="50" r="46" class="epulse__ring-track" />
+        <!-- Fill arc -->
+        <path v-if="arcPath" :d="arcPath" class="epulse__ring-fill" />
+        <!-- Rotating accent dash -->
+        <circle cx="50" cy="50" r="40" class="epulse__ring-orbit" />
+      </svg>
 
-    <!-- Top strip: developing tag + cancel. -->
-    <div class="dev__top">
-      <span class="dev__tag">
-        <span class="dev__tag-dot" aria-hidden="true"></span>
-        <span>显影中</span>
+      <!-- Morphing inner glow -->
+      <div class="epulse__orb" aria-hidden="true">
+        <div class="epulse__orb-core"></div>
+        <div class="epulse__orb-halo"></div>
+      </div>
+
+      <!-- Elapsed time -->
+      <div class="epulse__time">
+        <FlipDigits :value="elapsedSeconds" suffix="s" :pad="2" haptic />
+      </div>
+    </div>
+
+    <!-- Stage label below orb -->
+    <div class="epulse__stage">{{ stage }}</div>
+
+    <!-- Top strip: tag + cancel -->
+    <div class="epulse__top">
+      <span class="epulse__tag">
+        <span class="epulse__tag-dot" aria-hidden="true"></span>
+        <span>生成中</span>
       </span>
       <button
         type="button"
-        class="dev__cancel"
+        class="epulse__cancel"
         aria-label="取消这次生成"
         @click="$emit('cancel')"
       >
-        <span aria-hidden="true">×</span>
+        <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+          <path d="M1 1l8 8M9 1l-8 8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+        </svg>
         <span>取消</span>
       </button>
     </div>
 
-    <!-- Center: spinning developer disc + stage glyph + elapsed. -->
-    <div class="dev__core">
-      <div class="dev__disc" aria-hidden="true"></div>
-      <div class="dev__glyph">
-        <Icon :name="stageIcon" :size="compact ? 18 : 22" />
+    <!-- Bottom info -->
+    <div class="epulse__bottom">
+      <div class="epulse__meta-row">
+        <p v-if="promptPreview" class="epulse__prompt">{{ promptPreview }}</p>
+        <span v-if="remainingLabel" class="epulse__remain">{{ remainingLabel }}</span>
       </div>
-      <div class="dev__elapsed">
-        <FlipDigits :value="elapsedSeconds" suffix="s" :pad="2" haptic />
-      </div>
-      <div class="dev__stage">{{ stage }}</div>
-    </div>
-
-    <!-- Bottom: ledger ruler carrying real progress + meta. -->
-    <div class="dev__rail">
-      <div class="dev__rail-head">
-        <p v-if="promptPreview" class="dev__prompt">{{ promptPreview }}</p>
-        <span v-if="remainingLabel" class="dev__remain">{{ remainingLabel }}</span>
-      </div>
-
-      <div class="dev__ruler">
-        <div class="dev__ruler-ticks"></div>
-        <div class="dev__ruler-fill" :style="{ width: `${fillPct}%` }">
-          <span class="dev__ruler-head" aria-hidden="true"></span>
-        </div>
-      </div>
-
-      <div class="dev__rail-foot">
-        <span v-if="metaLabel" class="dev__meta">{{ metaLabel }}</span>
-        <span class="dev__pct">{{ Math.round(fillPct) }}%</span>
+      <div class="epulse__progress-row">
+        <span v-if="metaLabel" class="epulse__meta">{{ metaLabel }}</span>
+        <span class="epulse__pct">{{ Math.round(fillPct) }}%</span>
       </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-.dev {
+.epulse {
   position: absolute;
   inset: 0;
   border-radius: inherit;
   overflow: hidden;
   isolation: isolate;
-  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-family: 'IBM Plex Sans', system-ui, sans-serif;
+  background:
+    radial-gradient(ellipse 80% 60% at 50% 45%, rgb(var(--color-forest) / 0.04), transparent 70%),
+    linear-gradient(160deg, rgb(var(--color-vellum)) 0%, rgb(var(--color-paper-soft)) 100%);
 }
 
-.dev__paper {
+/* ------------------------------------------------------------------
+ * Ambient background glow — slow color breathing.
+ * ------------------------------------------------------------------ */
+.epulse__ambient {
+  position: absolute;
+  inset: -20%;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 50% 50%,
+    rgb(var(--color-forest) / 0.06) 0%,
+    rgb(var(--color-ochre) / 0.03) 40%,
+    transparent 70%
+  );
+  animation: epulse-ambient 8s ease-in-out infinite;
+  pointer-events: none;
+}
+
+/* ------------------------------------------------------------------
+ * Floating particles.
+ * ------------------------------------------------------------------ */
+.epulse__particles {
   position: absolute;
   inset: 0;
-  background:
-    radial-gradient(120% 90% at 50% 8%, rgb(var(--color-vellum) / 0.7), transparent 60%),
-    linear-gradient(180deg, rgb(var(--color-vellum) / 0.66), rgb(var(--color-paper-soft) / 0.4)),
-    rgb(var(--color-paper-soft));
   pointer-events: none;
 }
 
-/* ------------------------------------------------------------------
- * Latent image — 4×3 cells surfacing in a diagonal wave.
- * ------------------------------------------------------------------ */
-.dev__latent {
+.epulse__particles > span {
   position: absolute;
-  inset: 7%;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: rgb(var(--color-forest) / 0.35);
+  top: 50%;
+  left: 50%;
+  animation: epulse-particle 6s ease-in-out infinite;
+  animation-delay: calc(var(--p) * -0.75s);
+}
+
+.epulse__particles > span:nth-child(odd) {
+  width: 2px;
+  height: 2px;
+  background: rgb(var(--color-ochre) / 0.3);
+}
+
+/* ------------------------------------------------------------------
+ * Center orb area.
+ * ------------------------------------------------------------------ */
+.epulse__center {
+  position: relative;
+  width: 140px;
+  height: 140px;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  grid-template-rows: repeat(3, 1fr);
-  gap: 0.5rem;
-  pointer-events: none;
+  place-items: center;
+  flex-shrink: 0;
 }
 
-.dev__latent > span {
-  border-radius: 12px;
+.epulse--compact .epulse__center {
+  width: 110px;
+  height: 110px;
+}
+
+/* Progress ring SVG */
+.epulse__ring {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.epulse__ring-track {
+  fill: none;
+  stroke: rgb(var(--color-line) / 0.3);
+  stroke-width: 1;
+}
+
+.epulse__ring-fill {
+  fill: none;
+  stroke: rgb(var(--color-forest));
+  stroke-width: 2;
+  stroke-linecap: round;
+  filter: drop-shadow(0 0 4px rgb(var(--color-forest) / 0.4));
+  transition: d 0.6s var(--motion-snap);
+}
+
+.epulse__ring-orbit {
+  fill: none;
+  stroke: rgb(var(--color-forest) / 0.15);
+  stroke-width: 0.5;
+  stroke-dasharray: 3 12;
+  animation: epulse-orbit 12s linear infinite;
+  transform-origin: center;
+}
+
+/* Morphing inner orb */
+.epulse__orb {
+  position: absolute;
+  width: 56px;
+  height: 56px;
+  display: grid;
+  place-items: center;
+}
+
+.epulse--compact .epulse__orb {
+  width: 44px;
+  height: 44px;
+}
+
+.epulse__orb-core {
+  position: absolute;
+  inset: 12%;
+  border-radius: 50%;
   background:
-    linear-gradient(135deg, rgb(var(--color-forest) / 0.16), rgb(var(--color-forest) / 0.04));
-  border: 1px solid rgb(var(--color-forest) / 0.07);
-  opacity: 0.08;
-  animation: dev-latent 3.4s ease-in-out infinite;
-  animation-delay: calc(var(--i) * -0.26s);
-  will-change: opacity, filter, transform;
+    radial-gradient(circle at 35% 35%, rgb(var(--color-forest) / 0.9), rgb(var(--color-forest) / 0.5) 60%, transparent 80%);
+  animation: epulse-morph 4s ease-in-out infinite;
+  filter: blur(1px);
+}
+
+.epulse__orb-halo {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: rgb(var(--color-forest) / 0.08);
+  border: 1px solid rgb(var(--color-forest) / 0.12);
+  animation: epulse-breathe 3s ease-in-out infinite;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+/* Elapsed time positioned below orb */
+.epulse__time {
+  position: absolute;
+  bottom: 8px;
+  font-size: 13px;
+  font-weight: 400;
+  color: rgb(var(--color-ink) / 0.85);
+  font-feature-settings: 'tnum';
+  letter-spacing: 0.02em;
+}
+
+.epulse--compact .epulse__time {
+  font-size: 11px;
+  bottom: 4px;
 }
 
 /* ------------------------------------------------------------------
- * Developer wash — soft luminous band drifting upward.
+ * Stage label.
  * ------------------------------------------------------------------ */
-.dev__wash {
-  position: absolute;
-  left: 0;
-  right: 0;
-  height: 55%;
-  bottom: -55%;
-  background: linear-gradient(
-    0deg,
-    transparent 0%,
-    rgb(var(--color-forest) / 0.05) 30%,
-    rgb(var(--color-vellum) / 0.28) 50%,
-    rgb(var(--color-forest) / 0.05) 70%,
-    transparent 100%
-  );
-  animation: dev-wash var(--dur-stage) linear infinite;
-  pointer-events: none;
-  mix-blend-mode: plus-lighter;
+.epulse__stage {
+  margin-top: 0.75rem;
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.28em;
+  color: rgb(var(--color-forest) / 0.8);
+  animation: epulse-fade-stage 2.4s ease-in-out infinite;
+}
+
+.epulse--compact .epulse__stage {
+  margin-top: 0.5rem;
+  font-size: 9px;
 }
 
 /* ------------------------------------------------------------------
  * Top strip.
  * ------------------------------------------------------------------ */
-.dev__top {
+.epulse__top {
   position: absolute;
-  inset: 1rem 1.1rem auto;
+  inset: 0.9rem 1rem auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
   pointer-events: none;
 }
 
-.dev--compact .dev__top {
-  inset: 0.65rem 0.7rem auto;
+.epulse--compact .epulse__top {
+  inset: 0.55rem 0.6rem auto;
 }
 
-.dev__tag {
+.epulse__tag {
   display: inline-flex;
   align-items: center;
-  gap: 0.45rem;
-  font-size: 10px;
-  letter-spacing: 0.24em;
-  text-transform: uppercase;
-  color: rgb(var(--color-muted) / 0.8);
-}
-
-.dev__tag-dot {
-  width: 5px;
-  height: 5px;
-  border-radius: 999px;
-  background: rgb(var(--color-forest));
-  animation: dev-pulse 1.6s ease-in-out infinite;
-}
-
-.dev__cancel {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  padding: 0.3rem 0.6rem;
-  border-radius: 999px;
-  border: 1px solid rgb(var(--color-line));
-  background: rgb(var(--color-vellum) / 0.86);
-  color: rgb(var(--color-muted));
-  font-size: 10px;
-  letter-spacing: 0.04em;
-  cursor: pointer;
-  pointer-events: auto;
-  transition: color var(--dur-feedback) var(--motion-soft),
-    border-color var(--dur-feedback) var(--motion-soft),
-    background-color var(--dur-feedback) var(--motion-soft),
-    transform var(--dur-feedback) var(--motion-press);
-  -webkit-tap-highlight-color: transparent;
-}
-
-.dev--compact .dev__cancel {
-  padding: 0.24rem 0.5rem;
+  gap: 0.4rem;
   font-size: 9px;
-}
-
-.dev__cancel:hover {
-  color: rgb(var(--color-accent));
-  border-color: rgb(var(--color-accent) / 0.45);
-  background: rgb(var(--color-accent) / 0.08);
-}
-
-.dev__cancel:active {
-  transform: scale(0.96);
-}
-
-.dev__cancel span:first-child {
-  font-size: 1.1em;
-  line-height: 1;
-}
-
-/* ------------------------------------------------------------------
- * Center developer disc.
- * ------------------------------------------------------------------ */
-.dev__core {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  align-content: center;
-  gap: 0.32rem;
-  pointer-events: none;
-  text-align: center;
-}
-
-.dev__disc {
-  grid-row: 1;
-  grid-column: 1;
-  width: 64px;
-  height: 64px;
-  border-radius: 999px;
-  background: conic-gradient(
-    from 0deg,
-    rgb(var(--color-forest) / 0) 0deg,
-    rgb(var(--color-forest) / 0) 140deg,
-    rgb(var(--color-forest) / 0.5) 300deg,
-    rgb(var(--color-forest)) 360deg
-  );
-  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px));
-  mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px));
-  animation: dev-spin 2.4s linear infinite;
-}
-
-.dev--compact .dev__disc {
-  width: 54px;
-  height: 54px;
-}
-
-.dev__glyph {
-  grid-row: 1;
-  grid-column: 1;
-  display: grid;
-  place-items: center;
-  width: 40px;
-  height: 40px;
-  border-radius: 999px;
-  background: rgb(var(--color-vellum) / 0.95);
-  border: 1px solid rgb(var(--color-line));
-  color: rgb(var(--color-forest));
-  box-shadow: var(--shadow-inner-paper);
-  animation: dev-breathe 2.6s ease-in-out infinite;
-}
-
-.dev--compact .dev__glyph {
-  width: 34px;
-  height: 34px;
-}
-
-.dev__elapsed {
-  font-size: 16px;
-  font-weight: 300;
-  color: rgb(var(--color-ink));
-  font-feature-settings: 'tnum';
-  line-height: 1;
-  margin-top: 0.55rem;
-}
-
-.dev--compact .dev__elapsed {
-  font-size: 13px;
-  margin-top: 0.4rem;
-}
-
-.dev__stage {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.2em;
-  color: rgb(var(--color-muted));
-}
-
-.dev--compact .dev__stage {
-  font-size: 9px;
-}
-
-/* ------------------------------------------------------------------
- * Bottom ledger ruler.
- * ------------------------------------------------------------------ */
-.dev__rail {
-  position: absolute;
-  inset: auto 1.2rem 1.05rem;
-  display: grid;
-  gap: 0.5rem;
-  pointer-events: none;
-}
-
-.dev--compact .dev__rail {
-  inset: auto 0.7rem 0.65rem;
-  gap: 0.35rem;
-}
-
-.dev__rail-head {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 0.7rem;
-}
-
-.dev__prompt {
-  margin: 0;
-  font-family: 'Fraunces', Georgia, serif;
-  font-style: italic;
-  font-size: 13px;
-  line-height: 1.35;
-  color: rgb(var(--color-ink) / 0.78);
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  max-width: 64%;
-}
-
-.dev--compact .dev__prompt {
-  font-size: 12px;
-  -webkit-line-clamp: 1;
-}
-
-.dev__remain {
-  flex-shrink: 0;
-  font-size: 11px;
-  letter-spacing: 0.04em;
-  color: rgb(var(--color-ink) / 0.78);
-  font-feature-settings: 'tnum';
-}
-
-.dev--compact .dev__remain {
-  font-size: 9px;
-}
-
-.dev__ruler {
-  position: relative;
-  height: 4px;
-  border-radius: 999px;
-  background: rgb(var(--color-line) / 0.55);
-  overflow: hidden;
-}
-
-.dev__ruler-ticks {
-  position: absolute;
-  inset: 0;
-  background: repeating-linear-gradient(
-    90deg,
-    rgb(var(--color-paper-soft) / 0.9) 0 1px,
-    transparent 1px 9px
-  );
-  opacity: 0.5;
-}
-
-.dev__ruler-fill {
-  position: relative;
-  height: 100%;
-  border-radius: 999px;
-  background: linear-gradient(90deg, rgb(var(--color-forest) / 0.55), rgb(var(--color-forest)));
-  transition: width 0.5s var(--motion-snap);
-}
-
-.dev__ruler-head {
-  position: absolute;
-  right: 0;
-  top: 50%;
-  width: 7px;
-  height: 7px;
-  border-radius: 999px;
-  background: rgb(var(--color-forest));
-  transform: translate(50%, -50%);
-  box-shadow: 0 0 6px rgb(var(--color-forest) / 0.6);
-}
-
-.dev__rail-foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.7rem;
-  font-size: 9px;
-  letter-spacing: 0.18em;
+  font-weight: 500;
+  letter-spacing: 0.22em;
   text-transform: uppercase;
   color: rgb(var(--color-muted) / 0.7);
 }
 
-.dev__pct {
+.epulse__tag-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: rgb(var(--color-forest));
+  animation: epulse-dot 2s ease-in-out infinite;
+  box-shadow: 0 0 6px rgb(var(--color-forest) / 0.5);
+}
+
+.epulse__cancel {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.28rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid rgb(var(--color-line) / 0.6);
+  background: rgb(var(--color-vellum) / 0.9);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  color: rgb(var(--color-muted) / 0.8);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  pointer-events: auto;
+  transition:
+    color var(--dur-feedback) var(--motion-soft),
+    border-color var(--dur-feedback) var(--motion-soft),
+    background-color var(--dur-feedback) var(--motion-soft),
+    transform var(--dur-feedback) var(--motion-press),
+    box-shadow var(--dur-feedback) var(--motion-soft);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.epulse__cancel:hover {
+  color: rgb(var(--color-accent));
+  border-color: rgb(var(--color-accent) / 0.35);
+  background: rgb(var(--color-accent) / 0.06);
+  box-shadow: 0 2px 8px -2px rgb(var(--color-accent) / 0.2);
+}
+
+.epulse__cancel:active {
+  transform: scale(0.94);
+}
+
+/* ------------------------------------------------------------------
+ * Bottom info area.
+ * ------------------------------------------------------------------ */
+.epulse__bottom {
+  position: absolute;
+  inset: auto 1.1rem 0.9rem;
+  display: grid;
+  gap: 0.4rem;
+  pointer-events: none;
+}
+
+.epulse--compact .epulse__bottom {
+  inset: auto 0.6rem 0.55rem;
+  gap: 0.3rem;
+}
+
+.epulse__meta-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.epulse__prompt {
+  margin: 0;
+  font-family: 'Fraunces', Georgia, serif;
+  font-style: italic;
+  font-size: 12px;
+  line-height: 1.4;
+  color: rgb(var(--color-ink) / 0.6);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  max-width: 65%;
+}
+
+.epulse--compact .epulse__prompt {
+  font-size: 11px;
+  -webkit-line-clamp: 1;
+}
+
+.epulse__remain {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  color: rgb(var(--color-ink) / 0.6);
   font-feature-settings: 'tnum';
-  color: rgb(var(--color-ink) / 0.7);
+}
+
+.epulse--compact .epulse__remain {
+  font-size: 9px;
+}
+
+.epulse__progress-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.epulse__meta {
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgb(var(--color-muted) / 0.6);
+}
+
+.epulse__pct {
+  font-size: 10px;
+  font-weight: 600;
+  font-feature-settings: 'tnum';
+  color: rgb(var(--color-forest) / 0.9);
+  letter-spacing: 0.02em;
 }
 
 /* ------------------------------------------------------------------
  * Keyframes.
  * ------------------------------------------------------------------ */
-@keyframes dev-latent {
+@keyframes epulse-ambient {
   0%, 100% {
-    opacity: 0.07;
-    filter: blur(3px);
-    transform: scale(0.97);
+    transform: scale(1) rotate(0deg);
+    opacity: 0.7;
   }
-  45% {
-    opacity: 0.5;
-    filter: blur(0);
-    transform: scale(1);
+  33% {
+    transform: scale(1.05) rotate(2deg);
+    opacity: 1;
+  }
+  66% {
+    transform: scale(0.95) rotate(-1deg);
+    opacity: 0.8;
   }
 }
 
-@keyframes dev-wash {
+@keyframes epulse-particle {
   0% {
-    transform: translateY(0);
+    transform: translate(0, 0) scale(0);
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+    transform: translate(0, 0) scale(1);
   }
   100% {
-    transform: translateY(-210%);
+    transform:
+      translate(
+        calc(cos(calc(var(--p) * 45deg)) * 80px),
+        calc(sin(calc(var(--p) * 45deg)) * 80px)
+      )
+      scale(0);
+    opacity: 0;
   }
 }
 
-@keyframes dev-spin {
+@keyframes epulse-orbit {
   to {
     transform: rotate(360deg);
   }
 }
 
-@keyframes dev-breathe {
+@keyframes epulse-morph {
   0%, 100% {
-    transform: scale(0.96);
-    opacity: 0.85;
+    border-radius: 50%;
+    transform: scale(0.9) rotate(0deg);
+  }
+  25% {
+    border-radius: 42% 58% 62% 38% / 45% 55% 45% 55%;
+    transform: scale(1) rotate(5deg);
   }
   50% {
-    transform: scale(1.04);
+    border-radius: 55% 45% 38% 62% / 58% 42% 58% 42%;
+    transform: scale(0.95) rotate(-3deg);
+  }
+  75% {
+    border-radius: 48% 52% 55% 45% / 40% 60% 40% 60%;
+    transform: scale(1.02) rotate(2deg);
+  }
+}
+
+@keyframes epulse-breathe {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.8;
+  }
+  50% {
+    transform: scale(1.08);
     opacity: 1;
   }
 }
 
-@keyframes dev-pulse {
+@keyframes epulse-dot {
   0%, 100% {
+    opacity: 0.5;
     transform: scale(0.8);
-    opacity: 0.6;
+    box-shadow: 0 0 4px rgb(var(--color-forest) / 0.3);
   }
   50% {
+    opacity: 1;
     transform: scale(1.1);
+    box-shadow: 0 0 8px rgb(var(--color-forest) / 0.6);
+  }
+}
+
+@keyframes epulse-fade-stage {
+  0%, 100% {
+    opacity: 0.7;
+  }
+  50% {
     opacity: 1;
   }
 }
 
+/* ------------------------------------------------------------------
+ * Reduced motion: keep things calm.
+ * ------------------------------------------------------------------ */
 @media (prefers-reduced-motion: reduce) {
-  .dev__latent > span {
+  .epulse__ambient,
+  .epulse__orb-core,
+  .epulse__orb-halo,
+  .epulse__ring-orbit,
+  .epulse__tag-dot {
     animation: none;
-    opacity: 0.32;
-    filter: none;
   }
 
-  .dev__wash {
+  .epulse__particles {
     display: none;
   }
 
-  .dev__disc,
-  .dev__glyph,
-  .dev__tag-dot {
+  .epulse__stage {
     animation: none;
+    opacity: 0.85;
   }
 
-  .dev__ruler-fill {
+  .epulse__ring-fill {
     transition: none;
   }
 }
