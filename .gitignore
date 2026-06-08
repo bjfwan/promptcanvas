@@ -25,3 +25,9 @@ playwright-report/
 test-results/
 proxy/package-lock.json
 .kiro
+
+# Build verification output
+dist-verify/
+
+# FUSE leftover temp files
+.fuse_hidden*
