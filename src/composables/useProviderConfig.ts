@@ -6,9 +6,15 @@ import {
   rawApiKeyIsEncrypted,
   saveProviderConfig,
 } from '../storage'
+import { defaultImageGenerationConfig, normalizeImageGenerationConfig } from '../lib/imageGenerationDetection'
 import type { ProviderConfig } from '../types'
 
-const state = reactive<ProviderConfig>({ baseUrl: '', apiKey: '', proxyUrl: DEFAULT_PROXY_URL })
+const state = reactive<ProviderConfig>({
+  baseUrl: '',
+  apiKey: '',
+  proxyUrl: DEFAULT_PROXY_URL,
+  imageGeneration: { ...defaultImageGenerationConfig },
+})
 
 const ready = { value: false } as { value: boolean }
 let saveTimer: number | undefined
@@ -21,6 +27,7 @@ async function hydrate() {
     state.apiKey = loaded.apiKey
     // loadProviderConfig 已经保证 proxyUrl 至少是内置默认值
     state.proxyUrl = loaded.proxyUrl ?? DEFAULT_PROXY_URL
+    state.imageGeneration = normalizeImageGenerationConfig(loaded.imageGeneration)
 
     if (loaded.apiKey && !rawApiKeyIsEncrypted()) {
       await saveProviderConfig(loaded)
@@ -34,7 +41,12 @@ async function hydrate() {
 void hydrate()
 
 watch(
-  () => ({ baseUrl: state.baseUrl, apiKey: state.apiKey, proxyUrl: state.proxyUrl }),
+  () => ({
+    baseUrl: state.baseUrl,
+    apiKey: state.apiKey,
+    proxyUrl: state.proxyUrl,
+    imageGeneration: state.imageGeneration,
+  }),
   (next) => {
     if (typeof window === 'undefined') return
     if (!ready.value) return
@@ -57,6 +69,7 @@ export function snapshotProviderConfig(): ProviderConfig {
     baseUrl: normalizeBaseUrl(state.baseUrl ?? ''),
     apiKey: (state.apiKey ?? '').trim(),
     proxyUrl: normalizeBaseUrl(state.proxyUrl ?? '') || DEFAULT_PROXY_URL,
+    imageGeneration: normalizeImageGenerationConfig(state.imageGeneration),
   }
 }
 
@@ -68,6 +81,7 @@ export function useProviderConfig() {
       if (typeof next.baseUrl === 'string') state.baseUrl = next.baseUrl
       if (typeof next.apiKey === 'string') state.apiKey = next.apiKey
       if (typeof next.proxyUrl === 'string') state.proxyUrl = next.proxyUrl
+      if (next.imageGeneration) state.imageGeneration = normalizeImageGenerationConfig(next.imageGeneration)
     },
     snapshot: snapshotProviderConfig,
     reset() {
@@ -75,6 +89,7 @@ export function useProviderConfig() {
       state.apiKey = ''
       // 保留内置代理：用户「清除凭据」只是为了清密钥，不应让请求改走直连
       state.proxyUrl = DEFAULT_PROXY_URL
+      state.imageGeneration = { ...defaultImageGenerationConfig }
     },
   }
 }

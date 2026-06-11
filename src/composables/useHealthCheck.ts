@@ -1,5 +1,6 @@
 import { ref, watch } from 'vue'
 import { ApiRequestError, testProvider } from '../api'
+import { t } from '../lib/i18n'
 import type { useDiscoveredModels } from './useDiscoveredModels'
 import type { useProviderConfig } from './useProviderConfig'
 import type { useToast } from './useToast'
@@ -7,6 +8,35 @@ import type { useToast } from './useToast'
 type Toast = ReturnType<typeof useToast>
 type ProviderStore = ReturnType<typeof useProviderConfig>
 type DiscoveredModelsStore = ReturnType<typeof useDiscoveredModels>
+
+function formatProviderResultMessage(result: {
+  modelCount?: number
+  durationMs: number
+  generationRouteOk: boolean
+}) {
+  if (result.modelCount !== undefined) {
+    return t(result.generationRouteOk ? 'providerTest.connectedModels' : 'providerTest.partialModels', {
+      count: result.modelCount,
+      ms: result.durationMs,
+    })
+  }
+  return t(result.generationRouteOk ? 'providerTest.connectedMs' : 'providerTest.partialMs', {
+    ms: result.durationMs,
+  })
+}
+
+function providerResultMessageToken(result: {
+  modelCount?: number
+  durationMs: number
+  generationRouteOk: boolean
+}) {
+  if (result.modelCount !== undefined) {
+    const key = result.generationRouteOk ? 'providerTest.connectedModels' : 'providerTest.partialModels'
+    return `${key}|${result.modelCount}|${result.durationMs}`
+  }
+  const key = result.generationRouteOk ? 'providerTest.connectedMs' : 'providerTest.partialMs'
+  return `${key}|${result.durationMs}`
+}
 
 export type HealthStatus = 'checking' | 'online' | 'offline'
 
@@ -16,17 +46,17 @@ export function useHealthCheck(deps: {
   toast: Toast
 }) {
   const status = ref<HealthStatus>('checking')
-  const message = ref('正在检查 API 配置')
+  const message = ref('health.checkingConfig')
 
   async function refresh(options?: { silent?: boolean }) {
     if (!deps.provider.isConfigured.value) {
       status.value = 'offline'
-      message.value = '未配置 API 服务商，请打开「设置」填写 baseUrl 与 Key'
+      message.value = 'health.unconfigured'
       return
     }
 
     status.value = 'checking'
-    message.value = '正在测试连接…'
+    message.value = 'health.testing'
 
     try {
       const result = await testProvider()
@@ -34,21 +64,22 @@ export function useHealthCheck(deps: {
       if (result.models?.length) {
         deps.discoveredModels.setModels(result.models)
       }
+      deps.provider.update({ imageGeneration: result.imageGeneration })
 
-      if (!result.generationsCorsOk) {
+      if (!result.generationRouteOk) {
         status.value = 'offline'
-        message.value = result.message
+        message.value = providerResultMessageToken(result)
         if (!options?.silent) {
-          deps.toast.error('生成路径 CORS 缺失', '生成会被浏览器拦截，但上游仍会扣费。详见「设置」中的测试面板')
+          deps.toast.error(t('health.generationCorsMissing'), t('health.generationCorsMissingHint'))
         }
         return
       }
 
       status.value = 'online'
-      message.value = result.message
+      message.value = providerResultMessageToken(result)
 
       if (!options?.silent) {
-        deps.toast.success('API 连接正常', result.message)
+        deps.toast.success(t('health.apiConnected'), formatProviderResultMessage(result))
       }
     } catch (error) {
       status.value = 'offline'
@@ -56,15 +87,15 @@ export function useHealthCheck(deps: {
       if (error instanceof ApiRequestError) {
         message.value = error.message
         if (!options?.silent) {
-          deps.toast.error('API 连接失败', error.message)
+          deps.toast.error(t('health.apiConnectionFailed'), error.message)
         }
         return
       }
 
-      const msg = error instanceof Error ? error.message : '连接测试失败'
+      const msg = error instanceof Error ? error.message : t('health.testFailed')
       message.value = msg
       if (!options?.silent) {
-        deps.toast.error('API 连接失败', msg)
+        deps.toast.error(t('health.apiConnectionFailed'), msg)
       }
     }
   }

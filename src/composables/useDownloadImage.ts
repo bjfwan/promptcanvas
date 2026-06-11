@@ -1,5 +1,6 @@
 import type { Ref } from 'vue'
 import { resolveImageSource } from '../api'
+import { t } from '../lib/i18n'
 import type { GeneratedImage } from '../types'
 import type { useProviderConfig } from './useProviderConfig'
 import type { useToast } from './useToast'
@@ -37,7 +38,7 @@ export function useDownloadImage(deps: {
     const source = resolveImageSource(image)
 
     if (!source) {
-      deps.toast.error('这张图片没有可下载地址')
+      deps.toast.error(t('toast.imageDownloadFailed'))
       return
     }
 
@@ -46,7 +47,7 @@ export function useDownloadImage(deps: {
       const blob = await response.blob()
       const ext = (image.mimeType?.split('/')[1] || deps.outputFormat.value).split(';')[0]
       triggerBlobDownload(blob, `promptcanvas-${Date.now()}-${index + 1}.${ext}`)
-      deps.toast.success('图片已下载')
+      deps.toast.success(t('toast.imageDownloaded'))
       return
     }
 
@@ -56,7 +57,7 @@ export function useDownloadImage(deps: {
     const direct = await fetchAsBlob(source)
     if (direct) {
       triggerBlobDownload(direct, filename)
-      deps.toast.success('图片已下载', filename)
+      deps.toast.success(t('toast.imageDownloaded'), filename)
       return
     }
 
@@ -69,7 +70,7 @@ export function useDownloadImage(deps: {
         const viaProxy = await fetchAsBlob(proxiedUrl, { 'X-Upstream-Base': upstreamBase })
         if (viaProxy) {
           triggerBlobDownload(viaProxy, filename)
-          deps.toast.success('图片已下载（经代理）', filename)
+          deps.toast.success(t('toast.imageDownloadedProxy'), filename)
           return
         }
       } catch {}
@@ -84,7 +85,7 @@ export function useDownloadImage(deps: {
       document.body.appendChild(anchor)
       anchor.click()
       anchor.remove()
-      deps.toast.info('已在新标签打开', '原站不允许跨域下载，可右键图片另存为')
+      deps.toast.info(t('toast.imageOpenedNewTab'), t('toast.imageOpenedNewTabHint'))
     } catch {
       window.open(source, '_blank', 'noopener,noreferrer')
     }

@@ -2,33 +2,34 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import Icon from './Icon.vue'
 import Select, { type SelectOption } from './Select.vue'
-import { customModelSentinel, qualityOptions } from '../presets'
+import { qualityOptions, sizeOptions } from '../presets'
 import { useProviderConfig } from '../composables/useProviderConfig'
 import { useDiscoveredModels, detectCapabilities } from '../composables/useDiscoveredModels'
 import { useResolutionSupport } from '../composables/useResolutionSupport'
 import { useFocusTrap } from '../composables/useFocusTrap'
 import { useBodyLock } from '../composables/useBodyLock'
 import { ApiRequestError, testProvider } from '../api'
-import { loadBrandKit, saveBrandKit, brandKitHasContent } from '../lib/brandKit'
-import { loadRewriteCustomInstruction, saveRewriteCustomInstruction } from '../storage'
-import { useInlineRewrite } from '../composables/useInlineRewrite'
-import { REWRITE_MODEL_LIST, type RewriteModelId } from '../lib/rewriteService'
-import {
-  loadLearnedPreference,
-  summarizeLearnedPreference,
-  clearLearnedPreference,
-} from '../lib/preferenceLearner'
 import { useI18n, type LocalePreference } from '../lib/i18n'
-import type { BrandKit } from '../lib/promptDoc'
-import type { GenerateImageRequest, ImageQuality } from '../types'
+import type { GenerateImageRequest, ImageQuality, ImageSize } from '../types'
 
 type OutputFormat = NonNullable<GenerateImageRequest['outputFormat']>
 
 interface Props {
   open: boolean
+  canTransparentBackground?: boolean
+  transparentBackgroundDisabledReason?: string
+  canStreamingWait?: boolean
+  canPartialPreview?: boolean
+  partialPreviewDisabledReason?: string
 }
 
-const props = defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), {
+  canTransparentBackground: false,
+  transparentBackgroundDisabledReason: '',
+  canStreamingWait: false,
+  canPartialPreview: false,
+  partialPreviewDisabledReason: '',
+})
 
 const emit = defineEmits<{
   (e: 'update:open', value: boolean): void
@@ -39,42 +40,95 @@ const emit = defineEmits<{
 }>()
 
 const negativePrompt = defineModel<string>('negativePrompt', { required: true })
+const size = defineModel<ImageSize>('size', { required: true })
+const count = defineModel<number>('count', { required: true })
 const outputFormat = defineModel<OutputFormat>('outputFormat', { required: true })
 const quality = defineModel<ImageQuality>('quality', { required: true })
+const transparentBackground = defineModel<boolean>('transparentBackground', { required: true })
+const streamingWait = defineModel<boolean>('streamingWait', { required: true })
+const partialPreview = defineModel<boolean>('partialPreview', { required: true })
 const creativity = defineModel<number>('creativity', { required: true })
 const seed = defineModel<string>('seed', { required: true })
-const modelChoice = defineModel<string>('modelChoice', { required: true })
-const customModel = defineModel<string>('customModel', { required: true })
 
 const provider = useProviderConfig()
 const discoveredModels = useDiscoveredModels()
 const resolutionSupport = useResolutionSupport()
 const i18n = useI18n()
+const minCount = 1
+const maxCount = 4
 
-// 单档状态标签：锁定 > 已解锁(真实生成) > 已检测(能力表) > 手动开启 > 关闭
+const settingsText = computed(() => {
+  if (i18n.locale.value === 'zh-CN') {
+    return {
+      imageEyebrow: 'Image · 图像',
+      imageTitle: '常用生成参数',
+      imageNote: '这些会直接影响每次生成的画幅、数量和输出方式。',
+      sizeHint: '选择画幅与分辨率。',
+      countHint: '一次生成的图片张数。',
+      transparentBackground: '透明背景',
+      transparentHint: '仅 PNG 输出可用。',
+      liveWait: '实时等待',
+      liveWaitHint: '生成时显示更及时的等待状态。',
+      stagePreview: '阶段预览',
+      stagePreviewHint: '支持时显示中间预览。',
+      advancedSummary: 'Advanced · 高级',
+      advancedTitle: '高级与手动能力',
+      advancedHint: '负面提示词、seed、创意强度和手动分辨率开关。',
+      manualResolution: '手动分辨率',
+    }
+  }
+
+  return {
+    imageEyebrow: 'Image',
+    imageTitle: 'Common image parameters',
+    imageNote: 'These control the frame, quantity, and output for each generation.',
+    sizeHint: 'Choose aspect ratio and resolution.',
+    countHint: 'Images to generate in one request.',
+    transparentBackground: 'Transparent background',
+    transparentHint: 'Available for PNG output.',
+    liveWait: 'Live wait',
+    liveWaitHint: 'Show more responsive waiting state while generating.',
+    stagePreview: 'Stage preview',
+    stagePreviewHint: 'Show intermediate previews when supported.',
+    advancedSummary: 'Advanced',
+    advancedTitle: 'Advanced and manual capability',
+    advancedHint: 'Negative prompt, seed, creativity, and manual resolution switches.',
+    manualResolution: 'Manual resolution',
+  }
+})
+
 function tierLabel(tier: '2k' | '4k'): string {
   const s = resolutionSupport.state
   if (tier === '2k') {
-    if (s.blocked2k) return '已锁定'
-    if (s.learned2k) return '已解锁'
-    if (s.detected2k) return '已检测'
-    return s.manual2k === 'on' ? '手动开启' : '关闭'
+    if (s.blocked2k) return i18n.t('settings.resolution.statusBlocked')
+    if (s.learned2k) return i18n.t('settings.resolution.statusUnlocked')
+    if (s.detected2k) return i18n.t('settings.resolution.statusDetected')
+    return s.manual2k === 'on'
+      ? i18n.t('settings.resolution.statusManual')
+      : i18n.t('settings.resolution.statusOff')
   }
-  if (s.blocked4k) return '已锁定'
-  if (s.learned4k) return '已解锁'
-  if (s.detected4k) return '已检测'
-  return s.manual4k === 'on' ? '手动开启' : '关闭'
+  if (s.blocked4k) return i18n.t('settings.resolution.statusBlocked')
+  if (s.learned4k) return i18n.t('settings.resolution.statusUnlocked')
+  if (s.detected4k) return i18n.t('settings.resolution.statusDetected')
+  return s.manual4k === 'on'
+    ? i18n.t('settings.resolution.statusManual')
+    : i18n.t('settings.resolution.statusOff')
 }
 
-// 其它能力维度的徽章（图生图 / 蒙版 / quality / 输出格式）
 const capabilityBadges = computed<string[]>(() => {
   const s = resolutionSupport.state
   const badges: string[] = []
-  if (s.supportsEdits) badges.push('图生图')
-  if (s.supportsMask) badges.push('蒙版重绘')
-  if (s.supportsQuality) badges.push('quality 分级')
+  if (s.supportsEdits) badges.push(i18n.t('settings.resolution.badgeEdits'))
+  if (s.supportsMask) badges.push(i18n.t('settings.resolution.badgeMask'))
+  if (s.supportsQuality) badges.push(i18n.t('settings.resolution.badgeQuality'))
   if (s.outputFormats?.length) badges.push(s.outputFormats.join(' / ').toUpperCase())
   return badges
+})
+
+const resolutionSummary = computed(() => {
+  if (resolutionSupport.unlocked4k.value) return i18n.t('settings.resolution.unlocked4k')
+  if (resolutionSupport.unlocked2k.value) return i18n.t('settings.resolution.unlocked2k')
+  return i18n.t('settings.resolution.only1k')
 })
 const showApiKey = ref(false)
 const dialogRef = ref<HTMLElement | null>(null)
@@ -84,60 +138,33 @@ const testStatus = ref<TestStatus>('idle')
 const testMessage = ref('')
 const testHint = ref('')
 
-const brandKitDraft = ref<BrandKit>(loadBrandKit())
-
-const rewriteInstructionDraft = ref<string>(loadRewriteCustomInstruction())
-
-function persistRewriteInstruction() {
-  saveRewriteCustomInstruction(rewriteInstructionDraft.value)
+function formatProviderResultMessage(result: {
+  modelCount?: number
+  durationMs: number
+  generationRouteOk: boolean
+}) {
+  if (result.modelCount !== undefined) {
+    return i18n.t(result.generationRouteOk ? 'providerTest.connectedModels' : 'providerTest.partialModels', {
+      count: result.modelCount,
+      ms: result.durationMs,
+    })
+  }
+  return i18n.t(result.generationRouteOk ? 'providerTest.connectedMs' : 'providerTest.partialMs', {
+    ms: result.durationMs,
+  })
 }
 
-const rewriteEngine = useInlineRewrite()
-function pickRewriteModel(id: RewriteModelId) {
-  rewriteEngine.selectModel(id)
-}
-
-function persistBrandKit() {
-  saveBrandKit(brandKitDraft.value)
-}
-
-const brandKitMeaningful = computed(() => brandKitHasContent(brandKitDraft.value))
-
-const learnedPreference = ref(loadLearnedPreference())
-const learnedSummary = computed(() => summarizeLearnedPreference(learnedPreference.value))
-const hasLearnedSamples = computed(() => learnedSummary.value.totalSamples >= 3)
-
-function refreshLearnedPreference() {
-  learnedPreference.value = loadLearnedPreference()
-}
-
-function handleClearLearned() {
-  clearLearnedPreference()
-  refreshLearnedPreference()
-}
-
-function adoptLearnedToBrandKit() {
-  const summary = learnedSummary.value
-  const lines: string[] = []
-  if (brandKitDraft.value.alwaysInclude.trim()) {
-    lines.push(brandKitDraft.value.alwaysInclude.trim())
+function providerResultMessageToken(result: {
+  modelCount?: number
+  durationMs: number
+  generationRouteOk: boolean
+}) {
+  if (result.modelCount !== undefined) {
+    const key = result.generationRouteOk ? 'providerTest.connectedModels' : 'providerTest.partialModels'
+    return `${key}|${result.modelCount}|${result.durationMs}`
   }
-  if (summary.topFocals[0]?.value) {
-    lines.push(`常用焦距 ${summary.topFocals[0].value}`)
-  }
-  if (summary.topTones[0]?.value) {
-    lines.push(`偏好色调：${summary.topTones[0].value}`)
-  }
-  if (summary.topStyleAnchors[0]?.value) {
-    lines.push(`偏好风格：${summary.topStyleAnchors[0].value}`)
-  }
-  brandKitDraft.value = {
-    ...brandKitDraft.value,
-    alwaysInclude: lines.filter(Boolean).join('；'),
-    signaturePalette: brandKitDraft.value.signaturePalette || summary.topTones[0]?.value || '',
-    signatureCamera: brandKitDraft.value.signatureCamera || summary.topFocals[0]?.value || '',
-  }
-  persistBrandKit()
+  const key = result.generationRouteOk ? 'providerTest.connectedMs' : 'providerTest.partialMs'
+  return `${key}|${result.durationMs}`
 }
 
 function handleResetProvider() {
@@ -157,14 +184,16 @@ async function handleTestProvider() {
 
   if (!baseUrl || !apiKey) {
     testStatus.value = 'error'
-    testMessage.value = '请先填写 API 端点和 API Key'
+    testMessage.value = i18n.t('settings.provider.testMissing')
     testHint.value = ''
     emit('test-result', { ok: false, message: testMessage.value })
     return
   }
 
   testStatus.value = 'testing'
-  testMessage.value = `正在请求 ${baseUrl.replace(/\/+$/, '')}/models ...`
+  testMessage.value = i18n.t('settings.provider.testingEndpoint', {
+    base: baseUrl.replace(/\/+$/, ''),
+  })
   testHint.value = ''
 
   try {
@@ -176,37 +205,47 @@ async function handleTestProvider() {
     if (result.models?.length) {
       discoveredModels.setModels(result.models)
     }
+    provider.update({ imageGeneration: result.imageGeneration })
     // 先把 reactive 状态切到当前 provider 的桶，再写入这次检测到的能力，
     // 避免把 A 站的能力误记到 B 站。
     resolutionSupport.selectProvider(baseUrl)
     const capability = detectCapabilities(result.models ?? [])
     resolutionSupport.setCapabilities(capability)
-    testMessage.value = result.message
+    const resultMessage = formatProviderResultMessage(result)
+    const resultMessageToken = providerResultMessageToken(result)
+    testMessage.value = resultMessage
     const imageCount = discoveredModels.imageOnly.value.length
-    if (!result.generationsCorsOk) {
+    if (!result.generationRouteOk) {
       testStatus.value = 'partial'
-      testHint.value = result.warnings[0] || '/images/generations 路径的 CORS 不完整，生成会被浏览器拦截但上游仍会扣费。'
+      testHint.value = i18n.t('settings.provider.partialCors')
       emit('test-result', {
         ok: false,
-        message: result.message,
+        message: resultMessageToken,
         code: 'PARTIAL_CORS',
       })
     } else {
       testStatus.value = 'success'
       const resHint = capability.supports4k
-        ? '检测到支持 2K/4K'
+        ? i18n.t('settings.provider.supportsRes2k4k')
         : capability.supports2k
-          ? '检测到支持 2K'
-          : '仅检测到 1024px'
+          ? i18n.t('settings.provider.supportsRes2k')
+          : i18n.t('settings.provider.supportsRes1k')
       const capBits: string[] = []
-      if (capability.supportsEdits) capBits.push('图生图')
-      if (capability.supportsMask) capBits.push('蒙版重绘')
-      const capHint = capBits.length ? `支持 ${capBits.join('、')}` : ''
+      if (capability.supportsEdits) capBits.push(i18n.t('settings.provider.supportsEdits'))
+      if (capability.supportsMask) capBits.push(i18n.t('settings.provider.supportsMask'))
+      const capHint = capBits.length
+        ? i18n.t('settings.provider.supportsPrefix', { features: capBits.join(' / ') })
+        : ''
       const imageHint = imageCount > 0
-        ? `已从中转站拉取 ${imageCount} 个图片模型`
-        : '未识别到明显的图片模型名，可选「自定义…」手动填写'
-      testHint.value = [imageHint, resHint, capHint, '生成路径 CORS 检测正常'].filter(Boolean).join('；')
-      emit('test-result', { ok: true, message: result.message })
+        ? i18n.t('settings.provider.loadedModels', { count: imageCount })
+        : i18n.t('settings.provider.noImageModels')
+      testHint.value = [
+        imageHint,
+        resHint,
+        capHint,
+        i18n.t('settings.provider.routeOk'),
+      ].filter(Boolean).join('；')
+      emit('test-result', { ok: true, message: resultMessageToken })
     }
   } catch (error) {
     testStatus.value = 'error'
@@ -219,25 +258,25 @@ async function handleTestProvider() {
       testHint.value = ''
       emit('test-result', { ok: false, message: error.message })
     } else {
-      testMessage.value = '测试失败'
+      testMessage.value = i18n.t('settings.provider.testFailed')
       testHint.value = ''
-      emit('test-result', { ok: false, message: '测试失败' })
+      emit('test-result', { ok: false, message: testMessage.value })
     }
   }
 }
 
 function inferErrorHint(error: ApiRequestError): string {
   if (error.code === 'NETWORK_ERROR') {
-    return '中转站可能不允许浏览器跨域调用（缺少 CORS 头），建议换一个支持浏览器直连的服务商'
+    return i18n.t('settings.provider.networkHint')
   }
   if (error.code === 'PROVIDER_NOT_CONFIGURED') {
     return ''
   }
-  if (error.code === 'OPENAI_REQUEST_FAILED' && /API Key/.test(error.message)) {
-    return '请检查 API Key 是否复制完整，以及它对应的 baseUrl 是否一致'
+  if (error.code === 'INVALID_API_KEY' || (error.code === 'OPENAI_REQUEST_FAILED' && /API Key/.test(error.message))) {
+    return i18n.t('settings.provider.keyHint')
   }
   if (error.code === 'RATE_LIMITED') {
-    return '稍等几秒再点一次'
+    return i18n.t('settings.provider.rateLimitHint')
   }
   return ''
 }
@@ -253,14 +292,25 @@ watch(
   },
 )
 
-const formatOptions: SelectOption<OutputFormat>[] = [
-  { value: 'png', label: 'PNG', hint: '无损 · 支持透明' },
-  { value: 'jpeg', label: 'JPEG', hint: '体积小 · 通用' },
-  { value: 'webp', label: 'WEBP', hint: '现代 · 平衡' },
-]
+const formatOptions = computed<SelectOption<OutputFormat>[]>(() => [
+  { value: 'png', label: 'PNG', hint: i18n.t('settings.format.pngHint') },
+  { value: 'jpeg', label: 'JPEG', hint: i18n.t('settings.format.jpegHint') },
+  { value: 'webp', label: 'WEBP', hint: i18n.t('settings.format.webpHint') },
+])
+
+const sizeSelectOptions = computed<SelectOption<ImageSize>[]>(() =>
+  sizeOptions.map((option) => ({
+    value: option.value,
+    label: i18n.t(`size.${option.value}.label`),
+    hint: `${option.value} · ${i18n.t(`size.${option.value}.hint`)}`,
+  })),
+)
 
 const qualitySelectOptions = computed<SelectOption<ImageQuality>[]>(() =>
-  qualityOptions.map((option) => ({ value: option.value, label: option.label })),
+  qualityOptions.map((option) => ({
+    value: option.value,
+    label: i18n.t(`settings.quality.${option.value}`),
+  })),
 )
 
 const localeSelectOptions = computed<SelectOption<LocalePreference>[]>(() => [
@@ -269,18 +319,35 @@ const localeSelectOptions = computed<SelectOption<LocalePreference>[]>(() => [
   { value: 'en', label: i18n.t('locale.en') },
 ])
 
-const modelSelectOptions = computed<SelectOption<string>[]>(() =>
-  discoveredModels.mergedModelOptions.value.map((option) => ({
-    value: option.value,
-    label: option.label,
-    hint: option.hint,
-  })),
+const transparentBackgroundHint = computed(() =>
+  props.canTransparentBackground
+    ? settingsText.value.transparentHint
+    : props.transparentBackgroundDisabledReason || i18n.t('capability.transparentUnsupported'),
 )
 
-const isCustomModel = computed(() => modelChoice.value === customModelSentinel)
+const streamingWaitHint = computed(() =>
+  props.canStreamingWait
+    ? settingsText.value.liveWaitHint
+    : i18n.t('capability.streamingUnsupported'),
+)
+
+const partialPreviewHint = computed(() =>
+  props.canPartialPreview
+    ? settingsText.value.stagePreviewHint
+    : props.partialPreviewDisabledReason || i18n.t('capability.previewUnsupported'),
+)
 
 function close() {
   emit('update:open', false)
+}
+
+function clampCount(value: number) {
+  if (!Number.isFinite(value)) return minCount
+  return Math.min(maxCount, Math.max(minCount, Math.round(value)))
+}
+
+function adjustCount(delta: number) {
+  count.value = clampCount(count.value + delta)
 }
 
 function rollSeed() {
@@ -300,7 +367,6 @@ watch(
   (open) => {
     if (open) {
       window.addEventListener('keydown', handleKey, { capture: true })
-      refreshLearnedPreference()
     } else {
       window.removeEventListener('keydown', handleKey, { capture: true })
     }
@@ -489,401 +555,141 @@ onBeforeUnmount(() => {
                 </div>
               </section>
 
-              <section
-                class="surface-1 p-4"
-              >
+              <section class="surface-1 p-4">
                 <div class="mb-3 flex items-center justify-between gap-2">
                   <div class="flex flex-col">
-                    <span class="display-eyebrow text-[10px]">分辨率能力 · Resolution</span>
-                    <span class="mt-1 text-[13px] font-medium text-ink">
-                      {{ resolutionSupport.unlocked4k.value ? '已解锁 4K 与 2K' : resolutionSupport.unlocked2k.value ? '已解锁 2K' : '仅 1024px' }}
-                    </span>
+                    <span class="display-eyebrow text-[10px]">{{ settingsText.imageEyebrow }}</span>
+                    <span class="mt-1 text-[13px] font-medium text-ink">{{ settingsText.imageTitle }}</span>
                   </div>
                 </div>
 
                 <p class="mb-3 text-[11px] leading-[1.6] text-muted">
-                  连接测试会按模型能力表推断中转站支持的尺寸；真实生成成功后会自动永久解锁、被上游拒绝则自动锁定。也可手动强制开启。
+                  {{ settingsText.imageNote }}
                 </p>
 
-                <div class="space-y-2">
-                  <div class="flex items-center justify-between gap-2 rounded-xl border border-line/40 bg-ivory/40 px-3 py-2 backdrop-blur-sm">
-                    <div class="flex items-center gap-2">
-                      <Icon name="check" :size="12" class="text-muted" />
-                      <span class="text-[12px] font-medium text-ink">2K 尺寸（2048px）</span>
-                    </div>
-                    <label class="res-toggle inline-flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        :checked="resolutionSupport.state.manual2k === 'on'"
-                        @change="(e) => resolutionSupport.setManual2k((e.target as HTMLInputElement).checked ? 'on' : 'auto')"
-                      />
-                      <span class="font-mono text-[10px] uppercase tracking-[0.16em]">
-                        {{ tierLabel('2k') }}
-                      </span>
+                <div class="settings-grid">
+                  <div class="settings-field settings-field--wide">
+                    <label class="label mb-2 inline-flex items-center gap-1.5" for="set-size">
+                      <Icon name="ratio" :size="12" />
+                      <span>{{ i18n.t('desktop.render.size') }}</span>
                     </label>
-                  </div>
-
-                  <div class="flex items-center justify-between gap-2 rounded-xl border border-line/40 bg-ivory/40 px-3 py-2 backdrop-blur-sm">
-                    <div class="flex items-center gap-2">
-                      <Icon name="star" :size="12" class="text-muted" />
-                      <span class="text-[12px] font-medium text-ink">4K 尺寸（4096px）</span>
-                    </div>
-                    <label class="res-toggle inline-flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        :checked="resolutionSupport.state.manual4k === 'on'"
-                        @change="(e) => resolutionSupport.setManual4k((e.target as HTMLInputElement).checked ? 'on' : 'auto')"
-                      />
-                      <span class="font-mono text-[10px] uppercase tracking-[0.16em]">
-                        {{ tierLabel('4k') }}
-                      </span>
-                    </label>
-                  </div>
-                </div>
-
-                <div v-if="capabilityBadges.length" class="mt-3 flex flex-wrap gap-1.5">
-                  <span
-                    v-for="badge in capabilityBadges"
-                    :key="badge"
-                    class="rounded-full border border-line/50 bg-ivory/60 px-2 py-0.5 font-mono text-[10px] tracking-[0.08em] text-muted"
-                  >
-                    {{ badge }}
-                  </span>
-                </div>
-
-                <p class="mt-2 text-[10px] text-muted">
-                  能力表是启发式推断；以「已检测」标注。真实生成的结果（已解锁 / 已锁定）始终优先。手动开启后若上游实际不支持，生成会被拒绝（4xx）。
-                </p>
-              </section>
-
-              <section
-                class="surface-1 p-4"
-              >
-                <div class="mb-3 flex items-center justify-between gap-2">
-                  <div class="flex flex-col">
-                    <span class="display-eyebrow text-[10px]">Brand Kit · 我的画风</span>
-                    <span class="mt-1 text-[13px] font-medium text-ink">每次生成自动注入</span>
-                  </div>
-                  <label class="brand-toggle inline-flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      v-model="brandKitDraft.enabled"
-                      @change="persistBrandKit"
+                    <Select
+                      id="set-size"
+                      v-model="size"
+                      :options="sizeSelectOptions"
+                      :aria-label="i18n.t('desktop.render.size')"
                     />
-                    <span class="font-mono text-[10px] uppercase tracking-[0.16em]">
-                      {{ brandKitDraft.enabled ? '已启用' : '关闭' }}
+                    <p class="settings-field__hint">{{ settingsText.sizeHint }}</p>
+                  </div>
+
+                  <div class="settings-field">
+                    <span class="label mb-2 inline-flex items-center gap-1.5">
+                      <Icon name="layers" :size="12" />
+                      <span>{{ i18n.t('desktop.render.count') }}</span>
                     </span>
-                  </label>
-                </div>
+                    <div class="settings-stepper" role="group" :aria-label="i18n.t('desktop.render.count')">
+                      <button
+                        type="button"
+                        class="settings-stepper__button"
+                        :disabled="count <= minCount"
+                        @click="adjustCount(-1)"
+                      >
+                        <Icon name="minus" :size="12" />
+                      </button>
+                      <span class="settings-stepper__value" aria-live="polite">{{ count }}</span>
+                      <button
+                        type="button"
+                        class="settings-stepper__button"
+                        :disabled="count >= maxCount"
+                        @click="adjustCount(1)"
+                      >
+                        <Icon name="plus" :size="12" />
+                      </button>
+                    </div>
+                    <p class="settings-field__hint">{{ settingsText.countHint }}</p>
+                  </div>
 
-                <p class="mb-3 text-[11px] leading-[1.6] text-muted">
-                  填进来的内容会作为上下文注入提示词工程引擎，所有生成都会照做。所有数据只保存在本机 localStorage。
-                </p>
-
-                <div class="space-y-3">
-                  <div>
-                    <label class="label mb-1.5 inline-flex items-center gap-1.5" for="brand-always">
-                      <Icon name="check" :size="12" />
-                      <span>始终包含</span>
+                  <div class="settings-field">
+                    <label class="label mb-2 inline-flex items-center gap-1.5" for="set-quality">
+                      <Icon name="star" :size="12" />
+                      <span>{{ i18n.t('settings.quality') }}</span>
                     </label>
-                    <textarea
-                      id="brand-always"
-                      v-model="brandKitDraft.alwaysInclude"
-                      rows="2"
-                      maxlength="400"
-                      class="field-textarea text-[12px]"
-                      placeholder="画面只用奶白、铁锈橙、雾蓝；人像保留毛孔与雀斑"
-                      @blur="persistBrandKit"
-                    ></textarea>
+                    <Select
+                      id="set-quality"
+                      v-model="quality"
+                      :options="qualitySelectOptions"
+                      :aria-label="i18n.t('settings.quality.label')"
+                    />
                   </div>
 
-                  <div>
-                    <label class="label mb-1.5 inline-flex items-center gap-1.5" for="brand-never">
-                      <Icon name="eyeOff" :size="12" />
-                      <span>永远避免</span>
+                  <div class="settings-field">
+                    <label class="label mb-2 inline-flex items-center gap-1.5" for="set-format">
+                      <Icon name="image" :size="12" />
+                      <span>{{ i18n.t('settings.format') }}</span>
                     </label>
-                    <textarea
-                      id="brand-never"
-                      v-model="brandKitDraft.neverInclude"
-                      rows="2"
-                      maxlength="400"
-                      class="field-textarea text-[12px]"
-                      placeholder="不要 HDR；不要塑料皮肤；不出现品牌 logo"
-                      @blur="persistBrandKit"
-                    ></textarea>
-                  </div>
-
-                  <div class="grid gap-3 sm:grid-cols-3">
-                    <div>
-                      <label class="label mb-1.5 inline-flex items-center gap-1.5" for="brand-palette">
-                        <Icon name="palette" :size="12" />
-                        <span>常用色板</span>
-                      </label>
-                      <input
-                        id="brand-palette"
-                        v-model="brandKitDraft.signaturePalette"
-                        type="text"
-                        class="field-input text-[12px]"
-                        placeholder="低饱和奶油"
-                        maxlength="80"
-                        @blur="persistBrandKit"
-                      />
-                    </div>
-                    <div>
-                      <label class="label mb-1.5 inline-flex items-center gap-1.5" for="brand-camera">
-                        <Icon name="camera" :size="12" />
-                        <span>常用镜头</span>
-                      </label>
-                      <input
-                        id="brand-camera"
-                        v-model="brandKitDraft.signatureCamera"
-                        type="text"
-                        class="field-input text-[12px]"
-                        placeholder="50mm f/2"
-                        maxlength="80"
-                        @blur="persistBrandKit"
-                      />
-                    </div>
-                    <div>
-                      <label class="label mb-1.5 inline-flex items-center gap-1.5" for="brand-lighting">
-                        <Icon name="sun" :size="12" />
-                        <span>常用光位</span>
-                      </label>
-                      <input
-                        id="brand-lighting"
-                        v-model="brandKitDraft.signatureLighting"
-                        type="text"
-                        class="field-input text-[12px]"
-                        placeholder="窗光左 30°"
-                        maxlength="80"
-                        @blur="persistBrandKit"
-                      />
-                    </div>
-                  </div>
-
-                  <div v-if="brandKitMeaningful" class="text-[10px] text-muted">
-                    已启用：{{ brandKitDraft.enabled ? '会注入到每次生成' : '已保存但未启用，开启上方开关后生效' }}
+                    <Select
+                      id="set-format"
+                      v-model="outputFormat"
+                      :options="formatOptions"
+                      :aria-label="i18n.t('settings.format.label')"
+                    />
                   </div>
                 </div>
-              </section>
 
-              <section
-                class="surface-1 p-4"
-              >
-                <div class="mb-3 flex flex-col">
-                  <span class="display-eyebrow text-[10px]">AI Rewrite · 改写引擎</span>
-                  <span class="mt-1 text-[13px] font-medium text-ink">
-                    项目方赞助 · 你不用配置 API
-                  </span>
-                </div>
-
-                <p class="mb-2 inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-muted">
-                  <Icon name="lightning" :size="11" />
-                  <span>选用模型</span>
-                </p>
-                <div class="rewrite-segmented" role="radiogroup" aria-label="AI 改写模型">
-                  <button
-                    v-for="m in REWRITE_MODEL_LIST"
-                    :key="m.id"
-                    type="button"
-                    role="radio"
-                    class="rewrite-seg"
-                    :class="{ 'is-active': rewriteEngine.state.modelId === m.id }"
-                    :aria-checked="rewriteEngine.state.modelId === m.id"
-                    @click="pickRewriteModel(m.id)"
+                <div class="settings-switch-list">
+                  <label
+                    class="settings-switch-row"
+                    :class="{ 'is-disabled': !canTransparentBackground }"
                   >
-                    <span class="rewrite-seg__label">{{ m.label }}</span>
-                    <span class="rewrite-seg__hint">
-                      <span>{{ m.tagline }}</span>
-                      <small>{{ m.expectedSeconds[0] }}–{{ m.expectedSeconds[1] }}s</small>
+                    <input
+                      v-model="transparentBackground"
+                      type="checkbox"
+                      :disabled="!canTransparentBackground"
+                    />
+                    <span class="settings-switch-row__body">
+                      <span class="settings-switch-row__label">
+                        <Icon name="image" :size="12" />
+                        <span>{{ settingsText.transparentBackground }}</span>
+                      </span>
+                      <span class="settings-switch-row__hint">{{ transparentBackgroundHint }}</span>
                     </span>
-                  </button>
-                </div>
-
-                <hr class="my-4 border-line/60" />
-
-                <p class="mb-2 inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-muted">
-                  <Icon name="pencil" :size="11" />
-                  <span>自定义指令（可选）</span>
-                </p>
-
-                <p class="mb-3 text-[11px] leading-[1.6] text-muted">
-                  填进来的内容会以最高优先级追加到 AI 改写的 system prompt 末尾。可以写"画面只用奶白和铁锈橙""人像保留毛孔与雀斑""我喜欢 35mm 胶片质感"等。空着也没事，引擎已经按 intent 自动分流。
-                </p>
-
-                <textarea
-                  v-model="rewriteInstructionDraft"
-                  rows="3"
-                  maxlength="400"
-                  class="field-textarea text-[12px]"
-                  placeholder="例：永远输出中文；尽量保留 35mm f/2 的镜头感；色调偏奶油..."
-                  @blur="persistRewriteInstruction"
-                ></textarea>
-
-                <p class="mt-2 text-[10px] text-muted">
-                  最多 400 字 · 仅作用于"AI 改写"，不影响图像生成本身
-                </p>
-              </section>
-
-              <section
-                class="surface-1 p-4"
-              >
-                <div class="mb-3 flex items-center justify-between gap-2">
-                  <div class="flex flex-col">
-                    <span class="display-eyebrow text-[10px]">Learned · 长期偏好</span>
-                    <span class="mt-1 text-[13px] font-medium text-ink">
-                      {{ hasLearnedSamples ? `已累积 ${learnedSummary.totalSamples} 次成功生成` : '继续生成会逐步学习你的口味' }}
-                    </span>
-                  </div>
-                  <span
-                    v-if="hasLearnedSamples"
-                    class="inline-flex items-center gap-1 rounded-full bg-blueprint/12 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em] text-blueprint"
-                  >
-                    <Icon name="pulse" :size="11" />
-                    <span>会自动注入</span>
-                  </span>
-                </div>
-
-                <p class="mb-3 text-[11px] leading-[1.6] text-muted">
-                  这里展示从你历史生成中统计出的偏好特征，每次生成都会自动作为上下文喂给提示词工程引擎。可以一键采纳到「我的画风」固化为永久协议。
-                </p>
-
-                <div v-if="hasLearnedSamples" class="grid gap-2.5 text-[11px]">
-                  <div v-if="learnedSummary.topFocals.length" class="learned-row">
-                    <span class="learned-row__label">焦距</span>
-                    <span class="learned-row__chips">
-                      <span
-                        v-for="entry in learnedSummary.topFocals"
-                        :key="entry.value"
-                      >{{ entry.value }} <small>×{{ entry.count }}</small></span>
-                    </span>
-                  </div>
-                  <div v-if="learnedSummary.topTones.length" class="learned-row">
-                    <span class="learned-row__label">色调</span>
-                    <span class="learned-row__chips">
-                      <span
-                        v-for="entry in learnedSummary.topTones"
-                        :key="entry.value"
-                      >{{ entry.value }} <small>×{{ entry.count }}</small></span>
-                    </span>
-                  </div>
-                  <div v-if="learnedSummary.topStyleAnchors.length" class="learned-row">
-                    <span class="learned-row__label">风格</span>
-                    <span class="learned-row__chips">
-                      <span
-                        v-for="entry in learnedSummary.topStyleAnchors"
-                        :key="entry.value"
-                      >{{ entry.value }} <small>×{{ entry.count }}</small></span>
-                    </span>
-                  </div>
-                  <div v-if="learnedSummary.topSubjects.length" class="learned-row">
-                    <span class="learned-row__label">常画</span>
-                    <span class="learned-row__chips">
-                      <span
-                        v-for="entry in learnedSummary.topSubjects"
-                        :key="entry.value"
-                      >{{ entry.value }} <small>×{{ entry.count }}</small></span>
-                    </span>
-                  </div>
-                  <div v-if="learnedSummary.topModes.length" class="learned-row">
-                    <span class="learned-row__label">模式</span>
-                    <span class="learned-row__chips">
-                      <span
-                        v-for="entry in learnedSummary.topModes"
-                        :key="entry.value"
-                      >{{ entry.value }} <small>×{{ entry.count }}</small></span>
-                    </span>
-                  </div>
-                </div>
-
-                <div v-else class="rounded-xl border border-dashed border-line/50 bg-ivory/30 px-3 py-3 text-[11px] text-muted backdrop-blur-sm">
-                  还没有足够样本。每成功生成一张图，引擎会从中提炼焦距、色调、风格等偏好。
-                </div>
-
-                <div class="mt-3 flex flex-wrap items-center justify-between gap-2">
-                  <button
-                    type="button"
-                    class="btn-quiet text-[11px]"
-                    :disabled="!hasLearnedSamples"
-                    @click="adoptLearnedToBrandKit"
-                  >
-                    <Icon name="check" :size="12" />
-                    采纳到我的画风
-                  </button>
-                  <button
-                    type="button"
-                    class="btn-quiet text-[11px]"
-                    :disabled="!hasLearnedSamples"
-                    @click="handleClearLearned"
-                  >
-                    <Icon name="trash" :size="12" />
-                    清空学习数据
-                  </button>
-                </div>
-              </section>
-
-              <section>
-                <label class="label mb-2 inline-flex items-center gap-1.5" for="set-neg">
-                  <Icon name="eyeOff" :size="12" />
-                  <span>{{ i18n.t('settings.negative') }}</span>
-                </label>
-                <textarea
-                  id="set-neg"
-                  v-model="negativePrompt"
-                  rows="2"
-                  maxlength="400"
-                  class="field-textarea"
-                  :placeholder="i18n.t('settings.negative.placeholder')"
-                ></textarea>
-              </section>
-
-              <section>
-                <label class="label mb-2 inline-flex items-center gap-1.5" for="set-model">
-                  <Icon name="settings" :size="12" />
-                  <span>{{ i18n.t('settings.model') }}</span>
-                </label>
-                <Select
-                  id="set-model"
-                  v-model="modelChoice"
-                  :options="modelSelectOptions"
-                  :aria-label="i18n.t('settings.model')"
-                />
-                <input
-                  v-if="isCustomModel"
-                  v-model="customModel"
-                  type="text"
-                  class="field-input mt-2 font-mono text-[12px]"
-                  :placeholder="i18n.t('settings.model.custom')"
-                  autocomplete="off"
-                  spellcheck="false"
-                  maxlength="64"
-                />
-              </section>
-
-              <section class="grid gap-4 sm:grid-cols-2">
-                <div>
-                  <label class="label mb-2 inline-flex items-center gap-1.5" for="set-quality">
-                    <Icon name="star" :size="12" />
-                    <span>{{ i18n.t('settings.quality') }}</span>
                   </label>
-                  <Select
-                    id="set-quality"
-                    v-model="quality"
-                    :options="qualitySelectOptions"
-                    :aria-label="i18n.t('settings.quality.label')"
-                  />
-                </div>
-                <div>
-                  <label class="label mb-2 inline-flex items-center gap-1.5" for="set-format">
-                    <Icon name="image" :size="12" />
-                    <span>{{ i18n.t('settings.format') }}</span>
+
+                  <label
+                    class="settings-switch-row"
+                    :class="{ 'is-disabled': !canStreamingWait }"
+                  >
+                    <input
+                      v-model="streamingWait"
+                      type="checkbox"
+                      :disabled="!canStreamingWait"
+                    />
+                    <span class="settings-switch-row__body">
+                      <span class="settings-switch-row__label">
+                        <Icon name="clock" :size="12" />
+                        <span>{{ settingsText.liveWait }}</span>
+                      </span>
+                      <span class="settings-switch-row__hint">{{ streamingWaitHint }}</span>
+                    </span>
                   </label>
-                  <Select
-                    id="set-format"
-                    v-model="outputFormat"
-                    :options="formatOptions"
-                    :aria-label="i18n.t('settings.format.label')"
-                  />
+
+                  <label
+                    class="settings-switch-row"
+                    :class="{ 'is-disabled': !canPartialPreview }"
+                  >
+                    <input
+                      v-model="partialPreview"
+                      type="checkbox"
+                      :disabled="!canPartialPreview"
+                    />
+                    <span class="settings-switch-row__body">
+                      <span class="settings-switch-row__label">
+                        <Icon name="pulse" :size="12" />
+                        <span>{{ settingsText.stagePreview }}</span>
+                      </span>
+                      <span class="settings-switch-row__hint">{{ partialPreviewHint }}</span>
+                    </span>
+                  </label>
                 </div>
               </section>
 
@@ -906,54 +712,147 @@ onBeforeUnmount(() => {
                 </p>
               </section>
 
-              <section>
-                <label class="label mb-2 inline-flex items-center gap-1.5" for="set-seed">
-                  <Icon name="dice" :size="12" />
-                  <span>Seed</span>
-                </label>
-                <div class="relative flex items-center gap-2">
-                  <input
-                    id="set-seed"
-                    v-model="seed"
-                    class="field-input pr-12"
-                    :placeholder="i18n.t('settings.seed.placeholder')"
-                    autocomplete="off"
-                    spellcheck="false"
-                    inputmode="numeric"
-                  />
-                  <button
-                    type="button"
-                    class="absolute right-1.5 top-1/2 inline-grid h-8 w-8 -translate-y-1/2 place-items-center rounded-lg text-muted transition hover:bg-paper-soft hover:text-ink"
-                    :aria-label="i18n.t('settings.seed.roll')"
-                    @click="rollSeed"
-                  >
-                    <Icon name="dice" :size="14" />
-                  </button>
-                </div>
-              </section>
-
-              <section>
-                <div class="mb-2 flex items-center justify-between">
-                  <span class="label inline-flex items-center gap-1.5">
-                    <Icon name="lightning" :size="12" />
-                    <span>{{ i18n.t('settings.creativity') }}</span>
+              <details class="settings-advanced surface-1 p-4">
+                <summary class="settings-advanced__summary">
+                  <span class="settings-advanced__summary-copy">
+                    <span class="display-eyebrow text-[10px]">{{ settingsText.advancedSummary }}</span>
+                    <span class="mt-1 text-[13px] font-medium text-ink">{{ settingsText.advancedTitle }}</span>
+                    <span class="mt-1 text-[11px] leading-[1.5] text-muted">{{ settingsText.advancedHint }}</span>
                   </span>
-                  <span class="font-mono text-[11px] tabular-nums text-ink">{{ creativity }} / 10</span>
+                  <Icon name="chevronDown" :size="14" class="settings-advanced__chevron" />
+                </summary>
+
+                <div class="settings-advanced__body">
+                  <section>
+                    <label class="label mb-2 inline-flex items-center gap-1.5" for="set-neg">
+                      <Icon name="eyeOff" :size="12" />
+                      <span>{{ i18n.t('settings.negative') }}</span>
+                    </label>
+                    <textarea
+                      id="set-neg"
+                      v-model="negativePrompt"
+                      rows="2"
+                      maxlength="400"
+                      class="field-textarea"
+                      :placeholder="i18n.t('settings.negative.placeholder')"
+                    ></textarea>
+                  </section>
+
+                  <section>
+                    <label class="label mb-2 inline-flex items-center gap-1.5" for="set-seed">
+                      <Icon name="dice" :size="12" />
+                      <span>Seed</span>
+                    </label>
+                    <div class="relative flex items-center gap-2">
+                      <input
+                        id="set-seed"
+                        v-model="seed"
+                        class="field-input pr-12"
+                        :placeholder="i18n.t('settings.seed.placeholder')"
+                        autocomplete="off"
+                        spellcheck="false"
+                        inputmode="numeric"
+                      />
+                      <button
+                        type="button"
+                        class="settings-seed-roll absolute right-1.5 top-1/2 inline-grid h-8 w-8 -translate-y-1/2 place-items-center rounded-lg text-muted transition hover:bg-paper-soft hover:text-ink"
+                        :aria-label="i18n.t('settings.seed.roll')"
+                        @click="rollSeed"
+                      >
+                        <Icon name="dice" :size="14" />
+                      </button>
+                    </div>
+                  </section>
+
+                  <section>
+                    <div class="mb-2 flex items-center justify-between gap-3">
+                      <span class="label inline-flex items-center gap-1.5">
+                        <Icon name="lightning" :size="12" />
+                        <span>{{ i18n.t('settings.creativity') }}</span>
+                      </span>
+                      <span class="font-mono text-[11px] tabular-nums text-ink">{{ creativity }} / 10</span>
+                    </div>
+                    <input
+                      v-model.number="creativity"
+                      type="range"
+                      min="1"
+                      max="10"
+                      step="1"
+                      class="settings-range w-full"
+                      :aria-label="i18n.t('settings.creativity')"
+                    />
+                    <div class="mt-1 flex justify-between font-mono text-[10px] uppercase tracking-[0.16em] text-muted">
+                      <span>{{ i18n.t('settings.creativity.low') }}</span>
+                      <span>{{ i18n.t('settings.creativity.high') }}</span>
+                    </div>
+                  </section>
+
+                  <section>
+                    <div class="mb-3 flex items-center justify-between gap-2">
+                      <div class="flex flex-col">
+                        <span class="display-eyebrow text-[10px]">{{ i18n.t('settings.resolution.eyebrow') }}</span>
+                        <span class="mt-1 text-[13px] font-medium text-ink">
+                          {{ resolutionSummary }}
+                        </span>
+                      </div>
+                    </div>
+
+                    <p class="mb-3 text-[11px] leading-[1.6] text-muted">
+                      {{ i18n.t('settings.resolution.body') }}
+                    </p>
+
+                    <div class="space-y-2">
+                      <div class="settings-resolution-row">
+                        <div class="flex min-w-0 items-center gap-2">
+                          <Icon name="check" :size="12" class="text-muted" />
+                          <span class="min-w-0 text-[12px] font-medium text-ink">{{ i18n.t('settings.resolution.twoK') }}</span>
+                        </div>
+                        <label class="res-toggle inline-flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            :checked="resolutionSupport.state.manual2k === 'on'"
+                            @change="(e) => resolutionSupport.setManual2k((e.target as HTMLInputElement).checked ? 'on' : 'auto')"
+                          />
+                          <span class="font-mono text-[10px] uppercase tracking-[0.16em]">
+                            {{ tierLabel('2k') }}
+                          </span>
+                        </label>
+                      </div>
+
+                      <div class="settings-resolution-row">
+                        <div class="flex min-w-0 items-center gap-2">
+                          <Icon name="star" :size="12" class="text-muted" />
+                          <span class="min-w-0 text-[12px] font-medium text-ink">{{ i18n.t('settings.resolution.fourK') }}</span>
+                        </div>
+                        <label class="res-toggle inline-flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            :checked="resolutionSupport.state.manual4k === 'on'"
+                            @change="(e) => resolutionSupport.setManual4k((e.target as HTMLInputElement).checked ? 'on' : 'auto')"
+                          />
+                          <span class="font-mono text-[10px] uppercase tracking-[0.16em]">
+                            {{ tierLabel('4k') }}
+                          </span>
+                        </label>
+                      </div>
+                    </div>
+
+                    <div v-if="capabilityBadges.length" class="mt-3 flex flex-wrap gap-1.5">
+                      <span
+                        v-for="badge in capabilityBadges"
+                        :key="badge"
+                        class="rounded-full border border-line/50 bg-ivory/60 px-2 py-0.5 font-mono text-[10px] tracking-[0.08em] text-muted"
+                      >
+                        {{ badge }}
+                      </span>
+                    </div>
+
+                    <p class="mt-2 text-[10px] leading-[1.5] text-muted">
+                      {{ i18n.t('settings.resolution.note') }}
+                    </p>
+                  </section>
                 </div>
-                <input
-                  v-model.number="creativity"
-                  type="range"
-                  min="1"
-                  max="10"
-                  step="1"
-                  class="settings-range w-full"
-                  :aria-label="i18n.t('settings.creativity')"
-                />
-                <div class="mt-1 flex justify-between font-mono text-[10px] uppercase tracking-[0.16em] text-muted">
-                  <span>{{ i18n.t('settings.creativity.low') }}</span>
-                  <span>{{ i18n.t('settings.creativity.high') }}</span>
-                </div>
-              </section>
+              </details>
             </div>
 
             <footer
@@ -1006,6 +905,233 @@ onBeforeUnmount(() => {
   scrollbar-gutter: stable;
 }
 
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.settings-field {
+  min-width: 0;
+}
+
+.settings-field--wide {
+  grid-column: 1 / -1;
+}
+
+.settings-field__hint {
+  margin-top: 0.35rem;
+  color: rgb(var(--color-muted));
+  font-size: 10px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.settings-stepper {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 44px;
+  align-items: stretch;
+  min-height: 44px;
+  overflow: hidden;
+  border-radius: var(--radius-field);
+  border: 1px solid rgb(var(--color-line) / 0.82);
+  background: rgb(var(--color-surface) / 0.98);
+  box-shadow: var(--shadow-inner-glass);
+}
+
+.settings-stepper__button {
+  display: inline-grid;
+  min-width: 44px;
+  min-height: 44px;
+  place-items: center;
+  color: rgb(var(--color-muted));
+  background: transparent;
+  transition: background-color 160ms var(--motion-soft), color 160ms var(--motion-soft);
+}
+
+.settings-stepper__button:hover:not(:disabled),
+.settings-stepper__button:focus-visible:not(:disabled) {
+  color: rgb(var(--color-ink));
+  background: rgb(var(--color-ivory) / 0.68);
+}
+
+.settings-stepper__button:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.settings-stepper__button:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.settings-stepper__value {
+  display: grid;
+  min-width: 0;
+  place-items: center;
+  border-inline: 1px solid rgb(var(--color-line) / 0.5);
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+  font-size: 12px;
+  font-weight: 700;
+  color: rgb(var(--color-ink));
+}
+
+.settings-switch-list {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: 1rem;
+}
+
+.settings-switch-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 52px;
+  padding: 0.62rem 0.7rem;
+  border-radius: var(--radius-panel);
+  border: 1px solid rgb(var(--color-line) / 0.55);
+  background: rgb(var(--color-ivory) / 0.42);
+  color: rgb(var(--color-ink));
+  cursor: pointer;
+  transition: border-color 160ms var(--motion-soft), background-color 160ms var(--motion-soft), opacity 160ms var(--motion-soft);
+}
+
+.settings-switch-row:hover:not(.is-disabled) {
+  border-color: rgb(var(--color-line-strong) / 0.72);
+  background: rgb(var(--color-ivory) / 0.58);
+}
+
+.settings-switch-row.is-disabled {
+  cursor: not-allowed;
+  opacity: 0.64;
+  background: rgb(var(--color-surface-muted) / 0.58);
+}
+
+.settings-switch-row input[type='checkbox'] {
+  appearance: none;
+  position: relative;
+  flex: 0 0 auto;
+  width: 38px;
+  height: 22px;
+  border-radius: 999px;
+  border: 1px solid rgb(var(--color-line));
+  background: rgb(var(--color-paper-soft));
+  cursor: pointer;
+  transition: background 160ms ease, border-color 160ms ease;
+}
+
+.settings-switch-row input[type='checkbox']::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: rgb(var(--color-ivory));
+  box-shadow: 0 1px 2px rgb(var(--color-ink) / 0.18);
+  transition: transform 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.settings-switch-row input[type='checkbox']:checked {
+  border-color: rgb(var(--color-forest));
+  background: rgb(var(--color-forest));
+}
+
+.settings-switch-row input[type='checkbox']:checked::after {
+  transform: translateX(16px);
+}
+
+.settings-switch-row input[type='checkbox']:disabled {
+  cursor: not-allowed;
+}
+
+.settings-switch-row__body {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.settings-switch-row__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+  color: rgb(var(--color-ink));
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.25;
+}
+
+.settings-switch-row__hint {
+  color: rgb(var(--color-muted));
+  font-size: 10.5px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.settings-advanced {
+  overflow: hidden;
+}
+
+.settings-advanced__summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-height: 44px;
+  cursor: pointer;
+}
+
+.settings-advanced__summary:focus-visible {
+  outline: none;
+  border-radius: var(--radius-field);
+  box-shadow: var(--focus-ring);
+}
+
+.settings-advanced__summary-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.settings-advanced__chevron {
+  flex: 0 0 auto;
+  color: rgb(var(--color-muted));
+  transition: transform 180ms var(--motion-soft);
+}
+
+.settings-advanced[open] .settings-advanced__chevron {
+  transform: rotate(180deg);
+}
+
+.settings-advanced__body {
+  display: grid;
+  gap: 1rem;
+  padding-top: 1rem;
+}
+
+.settings-resolution-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-height: 48px;
+  border-radius: var(--radius-panel);
+  border: 1px solid rgb(var(--color-line) / 0.4);
+  background: rgb(var(--color-ivory) / 0.4);
+  padding: 0.55rem 0.75rem;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.settings-seed-roll:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
 @media (max-width: 639px) {
   .mobile-sheet {
     padding-top: max(env(safe-area-inset-top, 0px), 0.5rem);
@@ -1040,17 +1166,40 @@ onBeforeUnmount(() => {
     justify-content: center;
   }
 
-  .rewrite-segmented {
+  .settings-grid {
     grid-template-columns: 1fr;
+    gap: 0.85rem;
   }
 
-  .rewrite-seg {
-    min-height: 52px;
+  .settings-field--wide {
+    grid-column: auto;
   }
 
-  .learned-row {
+  .settings-switch-row {
+    align-items: flex-start;
+    min-height: 56px;
+  }
+
+  .settings-switch-row input[type='checkbox'] {
+    margin-top: 0.15rem;
+    min-width: 44px;
+    min-height: 24px;
+  }
+
+  .settings-resolution-row {
+    display: grid;
     grid-template-columns: 1fr;
-    gap: 0.35rem;
+    gap: 0.55rem;
+  }
+
+  .settings-resolution-row .res-toggle {
+    min-height: 44px;
+    justify-content: space-between;
+  }
+
+  .settings-seed-roll {
+    width: 44px;
+    height: 44px;
   }
 
   .settings-range {
@@ -1075,86 +1224,6 @@ onBeforeUnmount(() => {
     width: 26px;
     height: 26px;
   }
-}
-
-.rewrite-segmented {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
-  padding: 4px;
-  border-radius: var(--radius-panel);
-  background: rgb(var(--color-surface-muted) / 0.92);
-  border: 1px solid rgb(var(--color-line) / 0.75);
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-  box-shadow: var(--shadow-inner-glass);
-}
-
-.rewrite-seg {
-  display: grid;
-  align-items: center;
-  gap: 2px;
-  padding: 8px 10px;
-  border: 0;
-  border-radius: 10px;
-  background: transparent;
-  color: rgb(var(--color-muted));
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  transition:
-    background-color 200ms var(--motion-soft),
-    color 200ms var(--motion-soft),
-    box-shadow 200ms var(--motion-soft),
-    transform 160ms var(--motion-press);
-}
-
-.rewrite-seg:hover {
-  color: rgb(var(--color-ink));
-}
-
-.rewrite-seg:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring);
-}
-
-.rewrite-seg:active {
-  transform: translateY(1px);
-}
-
-.rewrite-seg.is-active {
-  background: var(--gradient-primary);
-  color: #fff;
-  box-shadow:
-    var(--shadow-glass), var(--shadow-glow-accent),
-    inset 0 1px 0 rgb(255 255 255 / 0.18);
-}
-
-.rewrite-seg__label {
-  font-family: 'Fraunces', 'IBM Plex Sans', system-ui, serif;
-  font-size: 14px;
-  font-weight: 720;
-  letter-spacing: -0.005em;
-  line-height: 1;
-}
-
-.rewrite-seg__hint {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 6px;
-  font-size: 10px;
-  font-weight: 540;
-  letter-spacing: 0.02em;
-  line-height: 1.2;
-}
-
-.rewrite-seg__hint small {
-  font-family: 'JetBrains Mono', ui-monospace, monospace;
-  font-size: 9.5px;
-  opacity: 0.8;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .rewrite-seg { transition: none; }
 }
 
 .settings-range {
@@ -1196,7 +1265,6 @@ onBeforeUnmount(() => {
   box-shadow: var(--shadow-glass), var(--shadow-glow-accent);
 }
 
-.brand-toggle input[type='checkbox'],
 .res-toggle input[type='checkbox'] {
   appearance: none;
   width: 32px;
@@ -1209,7 +1277,6 @@ onBeforeUnmount(() => {
   transition: background 160ms ease, border-color 160ms ease;
 }
 
-.brand-toggle input[type='checkbox']::after,
 .res-toggle input[type='checkbox']::after {
   content: '';
   position: absolute;
@@ -1223,56 +1290,13 @@ onBeforeUnmount(() => {
   transition: transform 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
-.brand-toggle input[type='checkbox']:checked,
 .res-toggle input[type='checkbox']:checked {
   background: rgb(var(--color-forest));
   border-color: rgb(var(--color-forest));
 }
 
-.brand-toggle input[type='checkbox']:checked::after,
 .res-toggle input[type='checkbox']:checked::after {
   transform: translateX(13px);
-}
-
-.learned-row {
-  display: grid;
-  grid-template-columns: 56px minmax(0, 1fr);
-  align-items: start;
-  gap: 0.5rem;
-}
-
-.learned-row__label {
-  font-family: 'JetBrains Mono', ui-monospace, monospace;
-  font-size: 10px;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: rgb(var(--color-muted));
-  padding-top: 0.2rem;
-}
-
-.learned-row__chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.32rem;
-}
-
-.learned-row__chips span {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.32rem;
-  padding: 0.22rem 0.55rem;
-  border-radius: 999px;
-  background: rgb(var(--color-paper) / 0.78);
-  border: 1px solid rgb(var(--color-line) / 0.78);
-  font-size: 10px;
-  font-weight: 660;
-  color: rgb(var(--color-ink));
-}
-
-.learned-row__chips small {
-  font-family: 'JetBrains Mono', ui-monospace, monospace;
-  font-size: 9px;
-  color: rgb(var(--color-muted));
 }
 
 .dlg-fade-enter-from,

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import Icon from './Icon.vue'
 import { useFocusTrap } from '../composables/useFocusTrap'
 import { useBodyLock } from '../composables/useBodyLock'
@@ -10,10 +10,15 @@ import type { GenerationHistoryItem } from '../types'
 interface Props {
   open: boolean
   history: GenerationHistoryItem[]
+  canEditImages?: boolean
+  imageEditDisabledReason?: string
 }
 
-const props = defineProps<Props>()
-const { t } = useI18n()
+const props = withDefaults(defineProps<Props>(), {
+  canEditImages: true,
+  imageEditDisabledReason: '',
+})
+const { t, locale } = useI18n()
 const clearConfirming = ref(false)
 const dialogRef = ref<HTMLElement | null>(null)
 let clearConfirmTimer: number | undefined
@@ -23,7 +28,7 @@ const emit = defineEmits<{
   (e: 'preview', item: GenerationHistoryItem): void
   (e: 'copy-prompt', item: GenerationHistoryItem): void
   (e: 'reuse-params', item: GenerationHistoryItem): void
-  (e: 'remix', item: GenerationHistoryItem): void
+  (e: 'edit-image', item: GenerationHistoryItem): void
   (e: 'regenerate', item: GenerationHistoryItem): void
   (e: 'clear'): void
 }>()
@@ -40,7 +45,7 @@ function handleKey(event: KeyboardEvent) {
 }
 
 function formatDate(value: string) {
-  return new Intl.DateTimeFormat('zh-CN', {
+  return new Intl.DateTimeFormat(locale.value, {
     month: '2-digit',
     day: '2-digit',
     hour: '2-digit',
@@ -70,8 +75,17 @@ function reuseParams(item: GenerationHistoryItem) {
   emit('reuse-params', item)
 }
 
-function remixItem(item: GenerationHistoryItem) {
-  emit('remix', item)
+const imageEditUnavailableReason = computed(() => props.imageEditDisabledReason.trim())
+const imageEditAriaDisabled = computed(() => props.canEditImages ? undefined : 'true')
+const imageEditTitle = computed(() => props.canEditImages ? undefined : imageEditUnavailableReason.value || undefined)
+
+function imageEditAriaLabel(label: string) {
+  if (props.canEditImages || !imageEditUnavailableReason.value) return label
+  return `${label}. ${imageEditUnavailableReason.value}`
+}
+
+function editImageItem(item: GenerationHistoryItem) {
+  emit('edit-image', item)
   close()
 }
 
@@ -180,7 +194,7 @@ onBeforeUnmount(() => {
                     <button
                       type="button"
                       class="history-card__thumb-btn"
-                      :aria-label="hasPreviewableImage(item) ? '预览这张生成' : '复制提示词'"
+                      :aria-label="hasPreviewableImage(item) ? t('activity.previewLabel') : t('activity.copyPromptLabel')"
                       @click="previewItem(item)"
                     >
                       <div
@@ -234,8 +248,6 @@ onBeforeUnmount(() => {
                       <div
                         class="mt-auto flex flex-wrap items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted"
                       >
-                        <span>{{ item.style }}</span>
-                        <span class="text-line">·</span>
                         <span class="font-mono">{{ item.size }}</span>
                         <span v-if="item.referenceImageCount" class="text-line">·</span>
                         <span v-if="item.referenceImageCount">{{ t('history.refCount', { count: item.referenceImageCount }) }}</span>
@@ -244,43 +256,45 @@ onBeforeUnmount(() => {
                       </div>
                     </div>
                   </div>
-                  <div class="history-card__actions" role="group" aria-label="历史操作">
+                  <div class="history-card__actions" role="group" :aria-label="t('activity.actionsLabel')">
                     <button
                       type="button"
                       class="history-card__chip"
-                      aria-label="复制提示词到剪贴板"
+                      :aria-label="t('activity.copyPromptLabel')"
                       @click="copyPrompt(item)"
                     >
                       <Icon name="copy" :size="12" />
-                      <span>复制提示词</span>
+                      <span>{{ t('activity.copyPrompt') }}</span>
                     </button>
                     <button
                       type="button"
                       class="history-card__chip"
-                      aria-label="只套用参数（风格、尺寸、模型），不改提示词"
+                      :aria-label="t('activity.reuseParamsLabel')"
                       @click="reuseParams(item)"
                     >
                       <Icon name="settings" :size="12" />
-                      <span>套用参数</span>
+                      <span>{{ t('activity.reuseParams') }}</span>
                     </button>
                     <button
                       v-if="hasPreviewableImage(item)"
                       type="button"
                       class="history-card__chip"
-                      aria-label="基于这张图接着画"
-                      @click="remixItem(item)"
+                      :aria-disabled="imageEditAriaDisabled"
+                      :aria-label="imageEditAriaLabel(t('activity.editImageLabel'))"
+                      :title="imageEditTitle"
+                      @click="editImageItem(item)"
                     >
-                      <Icon name="sparkle" :size="12" />
-                      <span>接着画</span>
+                      <Icon name="brush" :size="12" />
+                      <span>{{ t('activity.editImage') }}</span>
                     </button>
                     <button
                       type="button"
                       class="history-card__chip history-card__chip--primary"
-                      aria-label="用这条历史的参数重新生成一次"
+                      :aria-label="t('activity.regenerateLabel')"
                       @click="regenerateItem(item)"
                     >
                       <Icon name="refresh" :size="12" />
-                      <span>重新生成</span>
+                      <span>{{ t('activity.regenerate') }}</span>
                     </button>
                   </div>
                 </li>
@@ -471,6 +485,20 @@ onBeforeUnmount(() => {
   box-shadow: var(--shadow-glass-sm);
 }
 
+.history-card__chip[aria-disabled='true'] {
+  color: rgb(var(--color-muted));
+  background: rgb(var(--color-paper-soft) / 0.7);
+  border-color: rgb(var(--color-line) / 0.5);
+  box-shadow: none;
+  cursor: help;
+}
+
+.history-card__chip[aria-disabled='true']:hover {
+  background: rgb(var(--color-paper-soft) / 0.8);
+  border-color: rgb(var(--color-line) / 0.65);
+  box-shadow: none;
+}
+
 .history-card__chip:focus-visible {
   outline: none;
   box-shadow: var(--focus-ring);
@@ -478,6 +506,10 @@ onBeforeUnmount(() => {
 
 .history-card__chip:active {
   transform: scale(0.96);
+}
+
+.history-card__chip[aria-disabled='true']:active {
+  transform: none;
 }
 
 .history-card__chip--primary {

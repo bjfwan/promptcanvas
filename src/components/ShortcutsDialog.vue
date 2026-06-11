@@ -32,8 +32,6 @@ const groups = computed<ShortcutGroup[]>(() => [
   {
     title: t('shortcuts.group.global'),
     items: [
-      { keys: ['⌘', 'K'], label: t('shortcuts.global.cmdk') },
-      { keys: ['/'], label: t('shortcuts.global.slash') },
       { keys: ['?'], label: t('shortcuts.global.question') },
       { keys: ['Esc'], label: t('shortcuts.global.esc') },
     ],
@@ -103,7 +101,7 @@ useBodyLock(() => props.open)
         class="mobile-sheet fixed inset-0 z-sheet flex items-end justify-center px-0 py-0 sm:items-center sm:px-4 sm:py-6"
         role="dialog"
         aria-modal="true"
-        aria-label="键盘快捷键"
+        :aria-label="t('shortcuts.title')"
         @click.self="close"
       >
         <div class="scrim" aria-hidden="true" @click="close"></div>

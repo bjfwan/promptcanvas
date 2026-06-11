@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, nextTick, onMounted, ref, shallowRef, watch } from 'vue'
 import { resolveImageSource } from './api'
-import { customModelSentinel, qualityOptions, sizeOptions, sizeTierById, styleOptions, stylePresetById } from './presets'
+import { autoModelSentinel, customModelSentinel, qualityOptions, sizeOptions, sizeTierById } from './presets'
 import { clearDraft, clearHistory, hydrateHistoryImages, loadDraft, loadHistory } from './storage'
 import type {
   ChatMessage,
+  ChatProgressOverride,
   ChatUserMessage,
   ContinuationContext,
   GeneratedImage,
@@ -20,6 +21,7 @@ import { payloadToMeta } from './lib/chatMessage'
 import AppHeader from './components/AppHeader.vue'
 import Icon from './components/Icon.vue'
 import Toaster from './components/Toaster.vue'
+import Select, { type SelectOption } from './components/Select.vue'
 import { useToast } from './composables/useToast'
 import { useTheme } from './composables/useTheme'
 import { useLightbox } from './composables/useLightbox'
@@ -35,27 +37,22 @@ import { useMobileViewport } from './composables/useMobileViewport'
 import { useHealthCheck } from './composables/useHealthCheck'
 import { useGenerationFlow } from './composables/useGenerationFlow'
 import { useMediaQuery } from './composables/useMediaQuery'
-import { useCommandPalette } from './composables/useCommandPalette'
 import { useShortcutsDialog } from './composables/useShortcutsDialog'
-import { usePromptContext } from './composables/usePromptContext'
 import { usePromptTree } from './composables/usePromptTree'
-import { maxReferenceImages } from './lib/imagesApi'
-import { reverseParseRevisedPrompt, docToPlainPrompt } from './lib/revisedParser'
 import { useOnboarding } from './composables/useOnboarding'
 import { useServiceWorker } from './composables/useServiceWorker'
-import { useInstallPrompt } from './composables/useInstallPrompt'
 import { useI18n } from './lib/i18n'
-import type { EnhanceResult } from './lib/magicEnhance'
+import { lookupModelCapability } from './lib/modelCapabilities'
+
+type OutputFormat = NonNullable<GenerateImageRequest['outputFormat']>
 
 const loadPromptComposer = () => import('./components/PromptComposer.vue')
 const loadCanvasStage = () => import('./components/CanvasStage.vue')
 const loadChatStream = () => import('./components/ChatStream.vue')
 const loadChatDock = () => import('./components/ChatDock.vue')
-const loadStyleSheet = () => import('./components/StyleSheet.vue')
 const loadSettingsDialog = () => import('./components/SettingsDialog.vue')
 const loadHistoryDialog = () => import('./components/HistoryDialog.vue')
 const loadLightbox = () => import('./components/Lightbox.vue')
-const loadCommandPalette = () => import('./components/CommandPalette.vue')
 const loadActivitySidebar = () => import('./components/ActivitySidebar.vue')
 const loadShortcutsDialog = () => import('./components/ShortcutsDialog.vue')
 const loadOnboardingTour = () => import('./components/OnboardingTour.vue')
@@ -64,34 +61,44 @@ const PromptComposer = defineAsyncComponent(loadPromptComposer)
 const CanvasStage = defineAsyncComponent(loadCanvasStage)
 const ChatStream = defineAsyncComponent(loadChatStream)
 const ChatDock = defineAsyncComponent(loadChatDock)
-const StyleSheet = defineAsyncComponent(loadStyleSheet)
 const SettingsDialog = defineAsyncComponent(loadSettingsDialog)
 const HistoryDialog = defineAsyncComponent(loadHistoryDialog)
 const Lightbox = defineAsyncComponent(loadLightbox)
-const CommandPalette = defineAsyncComponent(loadCommandPalette)
 const ActivitySidebar = defineAsyncComponent(loadActivitySidebar)
 const ShortcutsDialog = defineAsyncComponent(loadShortcutsDialog)
 const OnboardingTour = defineAsyncComponent(loadOnboardingTour)
 
-const defaultPrompt = '一只穿着复古宇航服的橘猫，站在月球摄影棚里，像 1970 年代科幻电影海报'
-const defaultNegativePrompt = '低清晰度、模糊、水印、错误文字、畸形手指、画面杂乱'
+const defaultPromptByLocale = {
+  'zh-CN': '一只穿着复古宇航服的橘猫，站在月球摄影棚里，像 1970 年代科幻电影海报',
+  en: 'An orange cat in a retro spacesuit, standing in a moon studio, like a 1970s sci-fi movie poster',
+} as const
+const defaultNegativePromptByLocale = {
+  'zh-CN': '低清晰度、模糊、水印、错误文字、畸形手指、画面杂乱',
+  en: 'low resolution, blur, watermark, incorrect text, malformed fingers, cluttered composition',
+} as const
+const legacyDefaultPrompt = defaultPromptByLocale['zh-CN']
+const legacyDefaultNegativePrompt = defaultNegativePromptByLocale['zh-CN']
 
-const prompt = ref(defaultPrompt)
-const negativePrompt = ref(defaultNegativePrompt)
-const style = ref<ImageStyle>('poster')
+const prompt = ref<string>(legacyDefaultPrompt)
+const negativePrompt = ref<string>(legacyDefaultNegativePrompt)
+const style = ref<ImageStyle>('raw')
 const size = ref<ImageSize>('1024x1024')
 const count = ref(1)
 const outputFormat = ref<GenerateImageRequest['outputFormat']>('png')
 const quality = ref<ImageQuality>('auto')
 const creativity = ref(7)
 const seed = ref('')
-const modelChoice = ref<string>('')
+const modelChoice = ref<string>(autoModelSentinel)
 const customModel = ref<string>('')
+const transparentBackground = ref(false)
+const streamingWait = ref(true)
+const partialPreview = ref(true)
 const images = shallowRef<GeneratedImage[]>([])
 const activeImageIndex = ref(0)
 const isGenerating = ref(false)
 const errorMessage = ref('')
 const lastRequestId = ref('')
+const generationProgressOverride = ref<ChatProgressOverride | undefined>(undefined)
 const elapsedSeconds = ref(0)
 const history = shallowRef<GenerationHistoryItem[]>(loadHistory())
 
@@ -112,23 +119,19 @@ watch(
 const { vibrate } = useVibration()
 const settingsOpen = ref(false)
 const historyOpen = ref(false)
-const styleSheetOpen = ref(false)
-const commandPalette = useCommandPalette()
 const shortcutsDialog = useShortcutsDialog()
 const onboarding = useOnboarding()
 const sw = useServiceWorker()
-const installPrompt = useInstallPrompt()
-const { t } = useI18n()
+const { t, locale } = useI18n()
+const localizedDefaultPrompt = computed(() => t('defaults.prompt'))
+const localizedDefaultNegativePrompt = computed(() => t('defaults.negativePrompt'))
 const composerRef = ref<{ focusPrompt?: () => void } | null>(null)
 const chatDockRef = ref<{ focusInput?: () => void } | null>(null)
 const chatStreamRef = ref<{ scrollToMessage?: (id: string) => void; scrollToBottom?: (smooth?: boolean) => void } | null>(null)
-const desktopReferenceInputRef = ref<HTMLInputElement | null>(null)
 const messages = shallowRef<ChatMessage[]>([])
 const pendingContinuation = ref<ContinuationContext | null>(null)
 const mobileDockHeight = ref(180)
 
-const promptContextManager = usePromptContext({ history, messages, pendingContinuation })
-const promptContext = promptContextManager.context
 const promptTree = usePromptTree()
 let suppressTreeAutoCommit = false
 
@@ -167,21 +170,14 @@ const mobileChatBottomPadding = computed(() => {
 const mobileJumpButtonBottom = computed(() => {
   return Math.max(18, mobileDockHeight.value + mobileKeyboardInset.value + 14)
 })
-const templateAnchorPrompt = ref<string>(defaultPrompt)
-let skipNextStyleSync = false
-
-const lastEnhanceResult = ref<EnhanceResult | null>(null)
-
 
 const restoredDraft = loadDraft()
 
 if (restoredDraft) {
   if (typeof restoredDraft.prompt === 'string') {
     prompt.value = restoredDraft.prompt
-    templateAnchorPrompt.value = restoredDraft.prompt
   }
   if (typeof restoredDraft.negativePrompt === 'string') negativePrompt.value = restoredDraft.negativePrompt
-  if (styleOptions.some((option) => option.value === restoredDraft.style)) style.value = restoredDraft.style as ImageStyle
   if (
     sizeOptions.some((option) => option.value === restoredDraft.size) &&
     resolutionSupport.isTierUnlocked(sizeTierById.get(restoredDraft.size as ImageSize) ?? '1k')
@@ -193,29 +189,90 @@ if (restoredDraft) {
   if (qualityOptions.some((option) => option.value === restoredDraft.quality)) quality.value = restoredDraft.quality as ImageQuality
   if (typeof restoredDraft.creativity === 'number' && restoredDraft.creativity >= 1 && restoredDraft.creativity <= 10) creativity.value = restoredDraft.creativity
   if (typeof restoredDraft.seed === 'string') seed.value = restoredDraft.seed
-  if (typeof restoredDraft.modelChoice === 'string' && (restoredDraft.modelChoice === '' || discoveredModels.mergedModelOptions.value.some((option) => option.value === restoredDraft.modelChoice))) {
+  if (typeof restoredDraft.modelChoice === 'string' && (restoredDraft.modelChoice === autoModelSentinel || discoveredModels.mergedModelOptions.value.some((option) => option.value === restoredDraft.modelChoice))) {
     modelChoice.value = restoredDraft.modelChoice
   }
   if (typeof restoredDraft.customModel === 'string') customModel.value = restoredDraft.customModel
+  if (typeof restoredDraft.transparentBackground === 'boolean') transparentBackground.value = restoredDraft.transparentBackground
+  if (typeof restoredDraft.streamingWait === 'boolean') streamingWait.value = restoredDraft.streamingWait
+  if (typeof restoredDraft.partialPreview === 'boolean') partialPreview.value = restoredDraft.partialPreview
+} else {
+  prompt.value = localizedDefaultPrompt.value
+  negativePrompt.value = localizedDefaultNegativePrompt.value
 }
 
 useDraftAutoSave({
-  prompt, negativePrompt, style, size, count, outputFormat, quality, creativity, seed, modelChoice, customModel,
+  prompt, negativePrompt, style, size, count, outputFormat, quality, creativity, seed, modelChoice, customModel, transparentBackground, partialPreview, streamingWait,
 })
 
-const selectedStyle = computed(() => styleOptions.find((item) => item.value === style.value))
-const selectedStyleLabel = computed(() => selectedStyle.value?.label ?? style.value)
-const selectedQualityLabel = computed(() => qualityOptions.find((item) => item.value === quality.value)?.label ?? quality.value)
-const canAddReferenceImages = computed(() => referenceImages.value.length < maxReferenceImages)
+const selectedQualityLabel = computed(() => t(`settings.quality.${quality.value}`))
 const selectedModelLabel = computed(() => {
   if (modelChoice.value === customModelSentinel) {
     const trimmed = customModel.value.trim()
     return trimmed ? trimmed : ''
   }
-  const value = modelChoice.value.trim()
-  if (!value) return ''
-  const match = discoveredModels.mergedModelOptions.value.find((option) => option.value === value)
-  return match?.label || value
+  const match = discoveredModels.mergedModelOptions.value.find((option) => option.value === modelChoice.value)
+  if (match) return match.label
+  return modelChoice.value.trim()
+})
+const canEditImages = computed(() =>
+  provider.isConfigured.value
+  && (
+    provider.state.imageGeneration.imageEdit === 'supported'
+    || resolutionSupport.state.supportsEdits
+  ),
+)
+const editDisabledReason = computed(() =>
+  provider.isConfigured.value
+    ? t('capability.editUnsupported')
+    : t('capability.configureFirst'),
+)
+const canUseStreamingWait = computed(() =>
+  provider.isConfigured.value
+  && provider.state.imageGeneration.sseStream === 'supported',
+)
+const canUsePartialPreview = computed(() =>
+  canUseStreamingWait.value
+  && provider.state.imageGeneration.partialPreview === 'supported',
+)
+const canUseTransparentBackground = computed(() =>
+  provider.isConfigured.value
+  && provider.state.imageGeneration.transparentBackground === 'supported'
+  && outputFormat.value === 'png',
+)
+const transparentBackgroundDisabledReason = computed(() =>
+  outputFormat.value !== 'png'
+    ? t('capability.transparentPngOnly')
+    : t('capability.transparentUnsupported'),
+)
+const partialPreviewDisabledReason = computed(() =>
+  canUseStreamingWait.value
+    ? t('capability.previewUnsupported')
+    : t('capability.streamingUnsupported'),
+)
+const selectedExplicitModel = computed(() => {
+  if (modelChoice.value === customModelSentinel) return customModel.value.trim()
+  if (modelChoice.value === autoModelSentinel || modelChoice.value === '') return ''
+  return modelChoice.value.trim()
+})
+const selectedModelWarning = computed(() => {
+  const model = selectedExplicitModel.value
+  if (!model) return ''
+
+  const capability = lookupModelCapability(model)
+  if (!capability) return t('model.warningUnknown')
+
+  if (referenceImages.value.length > 0 && !capability.supportsEdits) {
+    return t('model.warningEdit')
+  }
+
+  const selectedTier = sizeTierById.get(size.value) ?? '1k'
+  const tierRank = { '1k': 0, '2k': 1, '4k': 2 } as const
+  if (tierRank[selectedTier] > tierRank[capability.maxTier]) {
+    return t('model.warningSize', { tier: capability.maxTier.toUpperCase() })
+  }
+
+  return ''
 })
 const trimmedPrompt = computed(() => prompt.value.trim())
 const canGenerate = computed(
@@ -225,12 +282,266 @@ const canGenerate = computed(
 )
 const promptPreview = computed(() => trimmedPrompt.value.split('\n')[0]?.slice(0, 64) ?? '')
 
-function buildPayload(): GenerateImageRequest {
-  const resolvedModel =
-    modelChoice.value === customModelSentinel
-      ? customModel.value.trim()
-      : modelChoice.value.trim()
+watch(
+  [outputFormat, canUseTransparentBackground],
+  () => {
+    if (outputFormat.value !== 'png' || !canUseTransparentBackground.value) {
+      transparentBackground.value = false
+    }
+  },
+)
 
+watch(canUsePartialPreview, (supported) => {
+  if (!supported) partialPreview.value = false
+})
+
+watch(canUseStreamingWait, (supported) => {
+  if (!supported) streamingWait.value = false
+})
+
+const healthStatusLabel = computed(() => {
+  if (healthStatus.value === 'online') return t('header.healthOnline')
+  if (healthStatus.value === 'offline') return t('header.healthOffline')
+  return t('header.healthChecking')
+})
+const displayHealthMessage = computed(() => {
+  const message = healthMessage.value
+  if (!message) {
+    return provider.isConfigured.value ? healthStatusLabel.value : t('desktop.status.unconfigured')
+  }
+  if (message.startsWith('health.')) return t(message)
+  if (message.startsWith('providerTest.')) {
+    const [key, first, second] = message.split('|')
+    if (second !== undefined) return t(key, { count: first, ms: second })
+    if (first !== undefined) return t(key, { ms: first })
+  }
+  return message
+})
+
+type DesktopCapabilityState = 'supported' | 'unsupported' | 'partial' | 'pending'
+
+interface DesktopCapabilityItem {
+  key: string
+  label: string
+  detail: string
+  state: DesktopCapabilityState
+  stateLabel: string
+}
+
+const desktopResolutionSupportLabel = computed(() => {
+  if (!provider.isConfigured.value) return t('desktop.capabilities.pendingDetail')
+  if (resolutionSupport.unlocked4k.value) return t('settings.resolution.unlocked4k')
+  if (resolutionSupport.unlocked2k.value) return t('settings.resolution.unlocked2k')
+  return t('settings.resolution.only1k')
+})
+const desktopFormatSupportLabel = computed(() => {
+  if (!provider.isConfigured.value) return t('desktop.capabilities.pendingDetail')
+  const formats = resolutionSupport.state.outputFormats.length
+    ? resolutionSupport.state.outputFormats
+    : ['png']
+  return formats.map((format) => format.toUpperCase()).join(' / ')
+})
+const desktopGenerationModeLabel = computed(() => {
+  if (!provider.isConfigured.value) return t('desktop.capabilities.pendingDetail')
+  switch (provider.state.imageGeneration.generationMode) {
+    case 'images_generations':
+      return t('desktop.capabilities.modeImages')
+    case 'responses_tool':
+      return t('desktop.capabilities.modeResponses')
+    case 'responses_text_data_url':
+      return t('desktop.capabilities.modeResponsesData')
+    default:
+      return t('desktop.capabilities.modeAuto')
+  }
+})
+const desktopCurrentFormatLabel = computed(() => outputFormat.value.toUpperCase())
+const desktopSizeOptions = computed<SelectOption<ImageSize>[]>(() =>
+  sizeOptions.map((option) => ({
+    value: option.value,
+    label: t(`size.${option.value}.label`),
+    hint: `${option.value} · ${t(`size.${option.value}.hint`)}`,
+  })),
+)
+const desktopQualityOptions = computed<SelectOption<ImageQuality>[]>(() =>
+  qualityOptions.map((option) => ({
+    value: option.value,
+    label: t(`settings.quality.${option.value}`),
+  })),
+)
+const desktopFormatOptions = computed<SelectOption<OutputFormat>[]>(() => [
+  { value: 'png', label: 'PNG', hint: t('settings.format.pngHint') },
+  { value: 'jpeg', label: 'JPEG', hint: t('settings.format.jpegHint') },
+  { value: 'webp', label: 'WEBP', hint: t('settings.format.webpHint') },
+])
+const generationSettingsSummary = computed(() =>
+  [
+    size.value,
+    desktopCurrentFormatLabel.value,
+    selectedQualityLabel.value,
+    `${count.value}x`,
+  ].join(' / '),
+)
+const desktopCapabilitySummary = computed(() => {
+  if (!provider.isConfigured.value) return t('desktop.capabilities.pending')
+  const bits = [
+    canEditImages.value ? t('desktop.capabilities.imageEdit') : '',
+    desktopResolutionSupportLabel.value,
+    desktopFormatSupportLabel.value,
+  ].filter(Boolean)
+  return bits.join(' · ')
+})
+const desktopTransparentDetail = computed(() => {
+  if (!provider.isConfigured.value) return t('desktop.capabilities.pendingDetail')
+  if (provider.state.imageGeneration.transparentBackground !== 'supported') {
+    return t('desktop.capabilities.requiresProvider')
+  }
+  return outputFormat.value === 'png'
+    ? t('desktop.capabilities.currentFormat', { value: desktopCurrentFormatLabel.value })
+    : t('desktop.capabilities.requiresPng')
+})
+
+function desktopCapabilityStateLabel(state: DesktopCapabilityState): string {
+  if (state === 'supported') return t('desktop.capabilities.supported')
+  if (state === 'partial') return t('desktop.capabilities.limited')
+  if (state === 'pending') return t('desktop.capabilities.pending')
+  return t('desktop.capabilities.unsupported')
+}
+
+function configuredCapabilityState(supported: boolean): DesktopCapabilityState {
+  if (!provider.isConfigured.value) return 'pending'
+  return supported ? 'supported' : 'unsupported'
+}
+
+const desktopCapabilityItems = computed<DesktopCapabilityItem[]>(() => {
+  const generationState = configuredCapabilityState(provider.state.imageGeneration.textToImage === 'supported')
+  const editState = configuredCapabilityState(canEditImages.value)
+  const streamingState = configuredCapabilityState(canUseStreamingWait.value)
+  const previewState = configuredCapabilityState(canUsePartialPreview.value)
+  const qualityState = configuredCapabilityState(resolutionSupport.state.supportsQuality)
+  const detailFor = (state: DesktopCapabilityState, supportedDetail: string) => {
+    if (state === 'pending') return t('desktop.capabilities.pendingDetail')
+    if (state === 'supported' || state === 'partial') return supportedDetail
+    return t('desktop.capabilities.requiresProvider')
+  }
+  const transparentState: DesktopCapabilityState = !provider.isConfigured.value
+    ? 'pending'
+    : provider.state.imageGeneration.transparentBackground !== 'supported'
+      ? 'unsupported'
+      : outputFormat.value === 'png'
+        ? 'supported'
+        : 'partial'
+  const supportState: DesktopCapabilityState = provider.isConfigured.value ? 'supported' : 'pending'
+
+  return [
+    {
+      key: 'generation',
+      label: t('desktop.capabilities.imageGeneration'),
+      detail: detailFor(generationState, desktopGenerationModeLabel.value),
+      state: generationState,
+      stateLabel: desktopCapabilityStateLabel(generationState),
+    },
+    {
+      key: 'edit',
+      label: t('desktop.capabilities.imageEdit'),
+      detail: detailFor(
+        editState,
+        resolutionSupport.state.supportsMask
+          ? t('desktop.capabilities.withMask')
+          : t('desktop.capabilities.referenceEdit'),
+      ),
+      state: editState,
+      stateLabel: desktopCapabilityStateLabel(editState),
+    },
+    {
+      key: 'streaming',
+      label: t('desktop.capabilities.streaming'),
+      detail: detailFor(streamingState, t('desktop.capabilities.streamingDetail')),
+      state: streamingState,
+      stateLabel: desktopCapabilityStateLabel(streamingState),
+    },
+    {
+      key: 'preview',
+      label: t('desktop.capabilities.preview'),
+      detail: detailFor(previewState, t('desktop.capabilities.previewDetail')),
+      state: previewState,
+      stateLabel: desktopCapabilityStateLabel(previewState),
+    },
+    {
+      key: 'transparent',
+      label: t('desktop.capabilities.transparent'),
+      detail: desktopTransparentDetail.value,
+      state: transparentState,
+      stateLabel: desktopCapabilityStateLabel(transparentState),
+    },
+    {
+      key: 'resolution',
+      label: t('desktop.capabilities.resolution'),
+      detail: desktopResolutionSupportLabel.value,
+      state: supportState,
+      stateLabel: desktopCapabilityStateLabel(supportState),
+    },
+    {
+      key: 'format',
+      label: t('desktop.capabilities.formats'),
+      detail: desktopFormatSupportLabel.value,
+      state: supportState,
+      stateLabel: desktopCapabilityStateLabel(supportState),
+    },
+    {
+      key: 'quality',
+      label: t('desktop.capabilities.quality'),
+      detail: detailFor(qualityState, t('desktop.capabilities.currentQuality', { value: selectedQualityLabel.value })),
+      state: qualityState,
+      stateLabel: desktopCapabilityStateLabel(qualityState),
+    },
+  ]
+})
+
+const desktopTransparentHint = computed(() =>
+  canUseTransparentBackground.value
+    ? t('settings.transparentBackground.hint')
+    : transparentBackgroundDisabledReason.value,
+)
+const desktopStreamingHint = computed(() =>
+  canUseStreamingWait.value
+    ? t('settings.streamingWait.hint')
+    : t('capability.streamingUnsupported'),
+)
+const desktopPartialPreviewHint = computed(() =>
+  canUsePartialPreview.value
+    ? t('settings.stagePreview.hint')
+    : partialPreviewDisabledReason.value,
+)
+
+function adjustGenerationCount(delta: number) {
+  count.value = Math.min(4, Math.max(1, count.value + delta))
+}
+
+function rollSeed() {
+  const next = Math.floor(Math.random() * 1_000_000)
+  seed.value = String(next).padStart(6, '0')
+}
+
+function selectedModelRequestFields(): Pick<GenerateImageRequest, 'model' | 'modelSelection'> {
+  if (modelChoice.value === autoModelSentinel) {
+    return { modelSelection: 'auto' }
+  }
+
+  if (modelChoice.value === '') {
+    return { modelSelection: 'none' }
+  }
+
+  const model = modelChoice.value === customModelSentinel
+    ? customModel.value.trim()
+    : modelChoice.value.trim()
+
+  return {
+    modelSelection: 'explicit',
+    model: model || undefined,
+  }
+}
+
+function buildPayload(): GenerateImageRequest {
   return {
     prompt: trimmedPrompt.value,
     style: style.value,
@@ -241,30 +552,40 @@ function buildPayload(): GenerateImageRequest {
     quality: quality.value,
     creativity: creativity.value,
     seed: seed.value.trim() || undefined,
-    model: resolvedModel || undefined,
+    ...selectedModelRequestFields(),
+    transparentBackground: transparentBackground.value && canUseTransparentBackground.value,
+    streamingWait: streamingWait.value && canUseStreamingWait.value,
+    stream: streamingWait.value && canUseStreamingWait.value,
+    partialPreview: partialPreview.value && canUsePartialPreview.value,
+    partialImages: partialPreview.value && canUsePartialPreview.value ? 2 : 0,
     referenceImages: referenceImages.value.length ? referenceImages.value.slice() : undefined,
   }
 }
 
-function openDesktopReferencePicker() {
-  desktopReferenceInputRef.value?.click()
-}
-
-function handleDesktopReferenceInputChange(event: Event) {
-  const input = event.target as HTMLInputElement | null
-  const files = input?.files ? Array.from(input.files) : []
-  if (files.length) addReferenceImages(files)
-  if (input) input.value = ''
-}
-
 const generation = useGenerationFlow({
-  messages, images, activeImageIndex, elapsedSeconds, errorMessage, lastRequestId,
-  isGenerating, history, settingsOpen, styleSheetOpen, toast, vibrate, primeGeneratedImages,
+  messages, images, activeImageIndex, elapsedSeconds, errorMessage, lastRequestId, generationProgressOverride,
+  isGenerating, history, settingsOpen, toast, vibrate, primeGeneratedImages,
 })
 const { runGeneration } = generation
 
 function handleAbortGeneration() {
   generation.abortGeneration()
+}
+
+function notifyImageEditUnavailable(reason = editDisabledReason.value) {
+  toast.info(t('capability.editUnavailableTitle'), reason)
+}
+
+function openImageEditor(targetImages: GeneratedImage[], index: number) {
+  if (!canEditImages.value) {
+    notifyImageEditUnavailable()
+    return
+  }
+  lightbox.openForEdit(targetImages, index)
+}
+
+function openActiveImageEditor(index: number) {
+  openImageEditor(images.value, index)
 }
 
 async function fetchContinuationBlob(source: string): Promise<Blob> {
@@ -275,7 +596,7 @@ async function fetchContinuationBlob(source: string): Promise<Blob> {
 
   const proxyUrl = (provider.snapshot().proxyUrl || '').trim().replace(/\/+$/, '')
   if (!proxyUrl || /^(data|blob):/i.test(source)) {
-    throw new Error('图片读取失败')
+    throw new Error('Image read failed')
   }
 
   const url = new URL(source)
@@ -285,74 +606,10 @@ async function fetchContinuationBlob(source: string): Promise<Blob> {
   })
 
   if (!response.ok) {
-    throw new Error('代理读取失败')
+    throw new Error('Proxy read failed')
   }
 
   return await response.blob()
-}
-
-async function handleRemix(
-  image: GeneratedImage,
-  content: string,
-  fromMessageId: string,
-  fromImageIndex: number,
-) {
-  vibrate('tap')
-
-  const source = resolveImageSource(image)
-  if (!source) {
-    toast.error('找不到这张图片的源数据', '可能未保存或链接已失效')
-    return
-  }
-
-  // Snapshot before mutating, so we can roll back when blob fetching fails.
-  const previousPrompt = prompt.value
-  const previousAnchor = templateAnchorPrompt.value
-  const promptShouldChange = !!content && content !== previousPrompt
-  if (promptShouldChange) prompt.value = content
-
-  try {
-    const preparingId = toast.info('正在准备「接着画」', '把这张图加入参考')
-    const blob = await fetchContinuationBlob(source)
-    toast.dismiss(preparingId)
-
-    const mimeType = (blob.type || image.mimeType || 'image/png').split(';')[0] || 'image/png'
-    const ext = mimeType.split('/')[1] || 'png'
-
-    const file = new File([blob], `continue-${Date.now()}.${ext}`, { type: mimeType })
-
-    clearComposerReferenceImages()
-    addReferenceImages([file])
-
-    pendingContinuation.value = {
-      fromMessageId,
-      fromImageId: image.id,
-      fromImageIndex,
-      thumbnailUrl: source,
-      promptPreview: (content || '').split('\n')[0]?.slice(0, 60) ?? '',
-    }
-
-    focusPrompt()
-    toast.success('已接上这张图', '修改提示词后发送即可继续创作')
-  } catch (err) {
-    console.error('Continue from image failed:', err)
-    if (promptShouldChange) {
-      prompt.value = previousPrompt
-      templateAnchorPrompt.value = previousAnchor
-    }
-    // Surface a path forward instead of just "failed".
-    toast.error('图片读取失败', '图源跨域受限，建议先下载再上传', {
-      label: '下载这张图',
-      ariaLabel: '下载这张图，再手动上传作为参考',
-      handler: () => {
-        downloadImage(image, fromImageIndex)
-      },
-    })
-  }
-}
-
-function handlePickSuggestion(value: ImageStyle) {
-  pickStyleFromChat(value)
 }
 
 function handleScrollToMessage(id: string) {
@@ -364,7 +621,7 @@ function handleCancelContinuation() {
   vibrate('tap')
   pendingContinuation.value = null
   clearComposerReferenceImages()
-  toast.info('已取消接着画', '回到自由创作模式')
+  toast.info(t('toast.continueCancelled'), t('toast.continueCancelledHint'))
 }
 
 // Inpaint: user painted a mask in the lightbox and described what the selected
@@ -378,24 +635,29 @@ async function handleInpaintSubmit(payload: {
   imageSrc: string
   imageIndex: number
 }) {
+  if (!canEditImages.value) {
+    notifyImageEditUnavailable()
+    return
+  }
+
   const trimmed = payload.prompt.trim()
   if (!trimmed) {
-    toast.error('描述为空', '先描述选中区域要变成什么')
+    toast.error(t('toast.inpaintPromptEmpty'), t('toast.inpaintPromptEmptyHint'))
     return
   }
 
   if (healthStatus.value === 'offline') {
-    toast.error('API 未配置', '请先在「设置」中填写 baseUrl 与 Key')
+    toast.error(t('toast.apiUnconfigured'), t('toast.apiUnconfiguredHint'))
     return
   }
 
   if (isGenerating.value) {
-    toast.info('正在生成中，请稍候')
+    toast.info(t('toast.generatingWait'))
     return
   }
 
   vibrate('tap')
-  const preparingId = toast.info('正在准备局部重绘', '读取原图与蒙版')
+  const preparingId = toast.info(t('toast.inpaintPreparing'), t('toast.inpaintPreparingHint'))
 
   let sourceFile: File
   try {
@@ -406,7 +668,7 @@ async function handleInpaintSubmit(payload: {
   } catch (err) {
     toast.dismiss(preparingId)
     console.error('Inpaint source fetch failed:', err)
-    toast.error('原图读取失败', '图源跨域受限，建议先下载再上传后重绘')
+    toast.error(t('toast.inpaintSourceFailed'), t('toast.inpaintSourceFailedHint'))
     return
   }
 
@@ -422,11 +684,6 @@ async function handleInpaintSubmit(payload: {
     file: sourceFile,
   }
 
-  const resolvedModel =
-    modelChoice.value === customModelSentinel
-      ? customModel.value.trim()
-      : modelChoice.value.trim()
-
   const inpaintPayload: GenerateImageRequest = {
     prompt: trimmed,
     style: style.value,
@@ -437,7 +694,12 @@ async function handleInpaintSubmit(payload: {
     quality: quality.value,
     creativity: creativity.value,
     seed: seed.value.trim() || undefined,
-    model: resolvedModel || undefined,
+    ...selectedModelRequestFields(),
+    transparentBackground: transparentBackground.value && canUseTransparentBackground.value,
+    streamingWait: streamingWait.value && canUseStreamingWait.value,
+    stream: streamingWait.value && canUseStreamingWait.value,
+    partialPreview: partialPreview.value && canUsePartialPreview.value,
+    partialImages: partialPreview.value && canUsePartialPreview.value ? 2 : 0,
     referenceImages: [referenceImage],
     inpaintMask: payload.mask,
   }
@@ -462,62 +724,28 @@ async function handleInpaintSubmit(payload: {
   }
 }
 
-function handleMagicEnhance(result: EnhanceResult) {
-  if (!result.enhanced || result.enhanced === result.original) {
-    toast.info('提示词已很完整，无需增强')
-    return
-  }
-
-  lastEnhanceResult.value = result
-  suppressTreeAutoCommit = true
-  prompt.value = result.enhanced
-  promptTree.commit({
-    prompt: result.enhanced,
-    action: 'enhance',
-    label: result.summary || '智能优化',
-  })
-  vibrate('success')
-
-  const dimLabels = result.dimensionLabels.join('、')
-  toast.success('魔法已施展', dimLabels ? `补充了「${dimLabels}」` : '已追加修饰词')
-}
-
-function handleUndoEnhance() {
-  if (!lastEnhanceResult.value) return
-  suppressTreeAutoCommit = true
-  prompt.value = lastEnhanceResult.value.original
-  promptTree.commit({
-    prompt: lastEnhanceResult.value.original,
-    action: 'undo',
-    label: '撤销魔法',
-  })
-  lastEnhanceResult.value = null
-  vibrate('tap')
-  toast.info('已撤销魔法增强')
-}
-
 function handleTreeUndo() {
   const node = promptTree.undo()
   if (!node) {
-    toast.info('没有更早的版本')
+    toast.info(t('toast.treeNoEarlier'))
     return
   }
   suppressTreeAutoCommit = true
   prompt.value = node.prompt
   vibrate('tap')
-  toast.info('已回到上一个版本', node.label)
+  toast.info(t('toast.treeUndo'), node.label)
 }
 
 function handleTreeRedo() {
   const node = promptTree.redo()
   if (!node) {
-    toast.info('没有更新的版本')
+    toast.info(t('toast.treeNoLater'))
     return
   }
   suppressTreeAutoCommit = true
   prompt.value = node.prompt
   vibrate('tap')
-  toast.info('已恢复版本', node.label)
+  toast.info(t('toast.treeRedo'), node.label)
 }
 
 function handleTreeJump(id: string) {
@@ -526,7 +754,7 @@ function handleTreeJump(id: string) {
   suppressTreeAutoCommit = true
   prompt.value = node.prompt
   vibrate('tap')
-  toast.info('已跳转到该版本', node.label)
+  toast.info(t('toast.treeJump'), node.label)
 }
 
 function handleTreeBranch(id: string) {
@@ -535,95 +763,24 @@ function handleTreeBranch(id: string) {
   suppressTreeAutoCommit = true
   prompt.value = node.prompt
   vibrate('tap')
-  toast.info('从该节点分支', '继续修改会形成新分支')
+  toast.info(t('toast.treeBranch'), t('toast.treeBranchHint'))
 }
 
 function handleTreeClear() {
   promptTree.clear()
-  toast.info('已清空 Prompt 树')
-}
-
-async function handleMagicAbTest(original: string, optimized: EnhanceResult) {
-  if (!optimized.enhanced || optimized.enhanced === original) {
-    toast.info('优化版本与原始一致，无需 A/B')
-    return
-  }
-  if (isGenerating.value) {
-    toast.info('正在生成中，请稍候')
-    return
-  }
-  if (!provider.isConfigured.value) {
-    toast.error('请先配置 API 服务', '右上角「设置」→ 服务商')
-    settingsOpen.value = true
-    return
-  }
-  if (healthStatus.value === 'offline') {
-    toast.error('API 未配置', '请先在「设置」中填写 baseUrl 与 Key')
-    return
-  }
-
-  prompt.value = optimized.enhanced
-  lastEnhanceResult.value = optimized
-
-  const userIdA = createId()
-  const userIdB = createId()
-  const basePayload = buildPayload()
-  const payloadOriginal: GenerateImageRequest = { ...basePayload, prompt: original }
-  const payloadOptimized: GenerateImageRequest = { ...basePayload, prompt: optimized.enhanced }
-
-  messages.value = [
-    ...messages.value,
-    {
-      id: userIdA,
-      role: 'user',
-      content: `[A · 原始] ${original}`,
-      createdAt: new Date().toISOString(),
-      meta: payloadToMeta(payloadOriginal),
-    },
-  ]
-  await runGeneration({ payload: payloadOriginal, userMessageId: userIdA })
-
-  messages.value = [
-    ...messages.value,
-    {
-      id: userIdB,
-      role: 'user',
-      content: `[B · 优化] ${optimized.enhanced}`,
-      createdAt: new Date().toISOString(),
-      meta: payloadToMeta(payloadOptimized),
-    },
-  ]
-  await runGeneration({ payload: payloadOptimized, userMessageId: userIdB })
-
-  toast.success('A/B 双轨完成', '上下两组可对比效果')
+  toast.info(t('toast.treeCleared'))
 }
 
 function handleImportPrompt(text: string) {
   const trimmed = text.trim()
   if (!trimmed) {
-    toast.error('没有可导入的提示词内容')
+    toast.error(t('toast.importPromptEmpty'))
     return
   }
-  const looksStructured = /^(?:Subject|Lighting|Camera|Composition|主体|光位|镜头|构图)[:：]/m.test(trimmed)
-  let nextValue: string
-  let slotCount = 0
-  if (looksStructured) {
-    const doc = reverseParseRevisedPrompt({
-      revisedPrompt: trimmed,
-      style: style.value,
-      size: size.value,
-      hasReferenceImages: referenceImages.value.length > 0,
-      modelName: modelChoice.value,
-    })
-    const plain = docToPlainPrompt(doc) || trimmed
-    nextValue = plain
-    slotCount = Object.keys(doc.slots).filter((key) => doc.slots[key as keyof typeof doc.slots]?.value).length
-  } else {
-    nextValue = trimmed
-  }
+  const nextValue = trimmed
 
   if (nextValue === prompt.value) {
-    toast.info('当前已是这条提示词')
+    toast.info(t('toast.importPromptSame'))
     focusPrompt()
     return
   }
@@ -631,53 +788,50 @@ function handleImportPrompt(text: string) {
   vibrate('tap')
   replacePromptWithUndo(nextValue, {
     treeAction: 'import',
-    treeLabel: looksStructured ? `反向导入 · ${slotCount} 槽位` : '反向导入',
-    successTitle: looksStructured ? '已导入并解析槽位' : '已导入到 Composer',
-    successHint: looksStructured
-      ? `识别 ${slotCount} 个槽位，已规整为可读 prompt`
-      : '原文不含结构化标记，按原样写入',
+    treeLabel: t('toast.importPromptLabel'),
+    successTitle: t('toast.importPromptSuccess'),
+    successHint: t('toast.importPromptHint'),
   })
   focusPrompt()
 }
 
 
 async function handleGenerate(options?: { clearAfter?: boolean }) {
-  lastEnhanceResult.value = null
   if (!canGenerate.value || !provider.isConfigured.value || healthStatus.value === 'offline') {
     if (!provider.isConfigured.value) {
-      toast.error('请先配置 API 服务', '右上角「设置」→ 服务商', {
-        label: '打开设置',
-        ariaLabel: '打开设置弹窗配置服务商',
+      toast.error(t('toast.configureApi'), t('toast.configureApiHint'), {
+        label: t('toast.openSettings'),
+        ariaLabel: t('toast.openSettingsAria'),
         handler: () => { settingsOpen.value = true },
       })
       settingsOpen.value = true
       return
     }
     if (healthStatus.value === 'offline') {
-      toast.error('上游连接异常', '检查 baseUrl / Key 或刷新连接', {
-        label: '重新探活',
-        ariaLabel: '重新探测上游连接状态',
+      toast.error(t('toast.upstreamError'), t('toast.upstreamErrorHint'), {
+        label: t('toast.recheckHealth'),
+        ariaLabel: t('toast.recheckHealthAria'),
         handler: () => { void refreshHealth() },
       })
       return
     }
     if (!trimmedPrompt.value) {
-      toast.error('提示词为空', '至少 4 个字才能开始生成', {
-        label: '聚焦输入框',
+      toast.error(t('toast.promptEmpty'), t('toast.promptEmptyHint'), {
+        label: t('toast.focusPrompt'),
         handler: () => focusPrompt(),
       })
       return
     }
     if (trimmedPrompt.value.length < 4) {
       toast.error(
-        `提示词太短（当前 ${trimmedPrompt.value.length} 字）`,
-        '至少 4 个字，描述主体 / 氛围 / 风格',
-        { label: '继续编辑', handler: () => focusPrompt() },
+        t('toast.promptTooShort', { count: trimmedPrompt.value.length }),
+        t('toast.promptTooShortHint'),
+        { label: t('toast.keepEditing'), handler: () => focusPrompt() },
       )
       return
     }
     if (isGenerating.value) {
-      toast.info('正在生成中，请稍候')
+      toast.info(t('toast.generatingWait'))
     }
     return
   }
@@ -714,7 +868,7 @@ async function handleGenerate(options?: { clearAfter?: boolean }) {
 
 async function regenerateFromMessage(userMessageId: string) {
   if (isGenerating.value) {
-    toast.info('正在生成中，请稍候')
+    toast.info(t('toast.generatingWait'))
     return
   }
 
@@ -724,12 +878,12 @@ async function regenerateFromMessage(userMessageId: string) {
   )
 
   if (!target) {
-    toast.error('找不到对应的用户消息')
+    toast.error(t('toast.userMessageMissing'))
     return
   }
 
   if (healthStatus.value === 'offline') {
-    toast.error('API 未配置', '请先在「设置」中填写 baseUrl 与 Key')
+    toast.error(t('toast.apiUnconfigured'), t('toast.apiUnconfiguredHint'))
     return
   }
 
@@ -745,6 +899,12 @@ async function regenerateFromMessage(userMessageId: string) {
     creativity: target.meta.creativity,
     seed: target.meta.seed,
     model: resolvedModel,
+    modelSelection: target.meta.modelSelection ?? (resolvedModel ? 'explicit' : 'auto'),
+    transparentBackground: target.meta.transparentBackground,
+    streamingWait: target.meta.streamingWait,
+    stream: target.meta.streamingWait,
+    partialPreview: target.meta.partialPreview,
+    partialImages: target.meta.partialPreview ? 2 : 0,
     referenceImages: target.referenceImages?.length ? target.referenceImages.slice() : undefined,
   }
 
@@ -756,69 +916,6 @@ function sendFromChat() {
   void handleGenerate({ clearAfter: true })
 }
 
-function pickStyleFromChat(value: ImageStyle) {
-  const preset = stylePresetById.get(value)
-  if (!preset) return
-  const styleChanged = style.value !== value
-  if (styleChanged) {
-    skipNextStyleSync = true
-    style.value = value
-  }
-  if (preset.examplePrompt && preset.examplePrompt !== prompt.value) {
-    replacePromptWithUndo(preset.examplePrompt, {
-      treeAction: 'manual',
-      treeLabel: `风格示例 · ${preset.label}`,
-      successTitle: '已套用示例提示词',
-      successHint: preset.label,
-      applyExtras: () => {
-        if (preset.defaultSize) size.value = preset.defaultSize
-      },
-    })
-  } else if (styleChanged) {
-    toast.info('已切换画面气质', preset.label)
-  }
-  nextTick(() => chatDockRef.value?.focusInput?.())
-}
-
-function handleStyleSheetSelect(payload: { style: ImageStyle; mode: 'apply' | 'switch' }) {
-  const preset = stylePresetById.get(payload.style)
-  if (!preset) return
-  const styleChanged = style.value !== payload.style
-
-  if (payload.mode === 'apply') {
-    skipNextStyleSync = true
-    style.value = payload.style
-    if (preset.examplePrompt) {
-      vibrate('success')
-      replacePromptWithUndo(preset.examplePrompt, {
-        treeAction: 'manual',
-        treeLabel: `模板 · ${preset.label}`,
-        successTitle: '已套用模板',
-        successHint: preset.label,
-        applyExtras: () => {
-          if (preset.defaultSize) size.value = preset.defaultSize
-        },
-      })
-    } else {
-      vibrate('tap')
-      toast.info('已切换为「不套模板」', '直接发送你的原始提示词，不附加风格指引')
-    }
-    nextTick(() => chatDockRef.value?.focusInput?.())
-    return
-  }
-
-  if (styleChanged) {
-    skipNextStyleSync = true
-    style.value = payload.style
-  }
-  vibrate('tap')
-  if (payload.style === 'raw') {
-    toast.info('已切换为「不套模板」', '原始提示词将被原样发送')
-  } else {
-    toast.info('已切换画面气质', `${preset.label} · 保留你已写的提示词`)
-  }
-}
-
 function historyMessages(item: GenerationHistoryItem): ChatMessage[] {
   const userId = `history_user_${item.id}`
   const meta = {
@@ -828,6 +925,10 @@ function historyMessages(item: GenerationHistoryItem): ChatMessage[] {
     outputFormat: item.outputFormat,
     generationMode: item.referenceImageCount ? 'reference' as const : 'text' as const,
     model: item.model,
+    modelSelection: item.modelSelection,
+    transparentBackground: item.transparentBackground,
+    streamingWait: item.streamingWait,
+    partialPreview: item.partialPreview,
     quality: item.quality,
     creativity: item.creativity,
     seed: item.seed,
@@ -862,14 +963,35 @@ function historyMessages(item: GenerationHistoryItem): ChatMessage[] {
   ]
 }
 
+function restoreModelChoiceFromHistory(item: Pick<GenerationHistoryItem, 'model' | 'modelSelection'>) {
+  const restoredModel = (item.model || '').trim()
+
+  if (item.modelSelection === 'none') {
+    modelChoice.value = autoModelSentinel
+    customModel.value = ''
+    return
+  }
+
+  if (item.modelSelection === 'auto' || !restoredModel) {
+    modelChoice.value = autoModelSentinel
+    customModel.value = ''
+    return
+  }
+
+  if (discoveredModels.mergedModelOptions.value.some((option) => option.value === restoredModel)) {
+    modelChoice.value = restoredModel
+    customModel.value = ''
+    return
+  }
+
+  modelChoice.value = customModelSentinel
+  customModel.value = restoredModel
+}
+
 async function restoreHistory(item: GenerationHistoryItem) {
   item = (await hydrateHistoryImages([item]))[0] || item
   prompt.value = item.prompt
-  templateAnchorPrompt.value = item.prompt
-  if (style.value !== item.style) {
-    skipNextStyleSync = true
-  }
-  style.value = item.style
+  style.value = 'raw'
   size.value = item.size
   count.value = item.count
   outputFormat.value = item.outputFormat
@@ -878,17 +1000,10 @@ async function restoreHistory(item: GenerationHistoryItem) {
   quality.value = item.quality || 'auto'
   creativity.value = item.creativity ?? 7
   seed.value = item.seed || ''
-  const restoredModel = (item.model || '').trim()
-  if (!restoredModel) {
-    modelChoice.value = ''
-    customModel.value = ''
-  } else if (discoveredModels.mergedModelOptions.value.some((option) => option.value === restoredModel)) {
-    modelChoice.value = restoredModel
-    customModel.value = ''
-  } else {
-    modelChoice.value = customModelSentinel
-    customModel.value = restoredModel
-  }
+  transparentBackground.value = Boolean(item.transparentBackground && canUseTransparentBackground.value)
+  streamingWait.value = item.streamingWait ?? streamingWait.value
+  partialPreview.value = item.partialPreview ?? partialPreview.value
+  restoreModelChoiceFromHistory(item)
   errorMessage.value = ''
   historyOpen.value = false
   messages.value = historyMessages(item)
@@ -898,10 +1013,10 @@ async function restoreHistory(item: GenerationHistoryItem) {
     activeImageIndex.value = 0
     lastRequestId.value = item.requestId || ''
     toast.info(
-      '已恢复历史生成',
+      t('toast.historyRestored'),
       item.referenceImageCount
-        ? `${item.images.length} 张图片已加载到画布 · 参考图需重新上传`
-        : `${item.images.length} 张图片已加载到画布`,
+        ? t('toast.historyImagesLoadedRefs', { count: item.images.length })
+        : t('toast.historyImagesLoaded', { count: item.images.length }),
     )
   } else {
     images.value = []
@@ -909,24 +1024,23 @@ async function restoreHistory(item: GenerationHistoryItem) {
     lastRequestId.value = item.requestId || ''
     const hadImages = item.imageCount > 0
     toast.info(
-      hadImages ? '图片缓存已失效' : '已恢复历史参数',
+      hadImages ? t('toast.historyCacheExpired') : t('toast.historyParamsRestored'),
       hadImages
-        ? '已恢复提示词和参数，可重新生成'
+        ? t('toast.historyCanRegenerate')
         : item.referenceImageCount
-        ? '该历史的参考图不会保存在本地，请重新上传后再生成'
-        : '该历史未保存图片，重新生成可再得一次',
+        ? t('toast.historyRefsNotSaved')
+        : t('toast.historyNoImages'),
     )
   }
 
   nextTick(() => chatStreamRef.value?.scrollToBottom?.(false))
 }
 
-// Apply only the *parameters* of a history item (style, size, model, etc.)
+// Apply only the reusable generation parameters of a history item.
 // without overwriting the user's current prompt or chat. Useful for "make
 // what I'm typing now look like that earlier render".
 function applyHistoryParams(item: GenerationHistoryItem) {
-  if (style.value !== item.style) skipNextStyleSync = true
-  style.value = item.style
+  style.value = 'raw'
   size.value = item.size
   count.value = item.count
   outputFormat.value = item.outputFormat
@@ -934,28 +1048,21 @@ function applyHistoryParams(item: GenerationHistoryItem) {
   creativity.value = item.creativity ?? 7
   seed.value = item.seed || ''
   negativePrompt.value = item.negativePrompt || ''
+  transparentBackground.value = Boolean(item.transparentBackground && canUseTransparentBackground.value)
+  streamingWait.value = item.streamingWait ?? streamingWait.value
+  partialPreview.value = item.partialPreview ?? partialPreview.value
 
-  const restoredModel = (item.model || '').trim()
-  if (!restoredModel) {
-    modelChoice.value = ''
-    customModel.value = ''
-  } else if (discoveredModels.mergedModelOptions.value.some((option) => option.value === restoredModel)) {
-    modelChoice.value = restoredModel
-    customModel.value = ''
-  } else {
-    modelChoice.value = customModelSentinel
-    customModel.value = restoredModel
-  }
+  restoreModelChoiceFromHistory(item)
 
   vibrate('tap')
-  toast.success('已套用参数', '提示词和对话保持原样')
+  toast.success(t('toast.paramsApplied'), t('toast.paramsAppliedHint'))
 }
 
 // Open the lightbox on a history item without touching any state.
 async function previewHistory(item: GenerationHistoryItem) {
   const hydrated = (await hydrateHistoryImages([item]))[0] || item
   if (!hydrated.images || !hydrated.images.length) {
-    toast.info('这条历史没有可预览的图片')
+    toast.info(t('toast.historyNoPreview'))
     return
   }
   vibrate('tap')
@@ -966,17 +1073,19 @@ async function copyHistoryPrompt(item: GenerationHistoryItem) {
   await copyToClipboard(item.prompt, t('toast.copyPrompt'))
 }
 
-// "接着画" from history: load the first image as a reference and let the
-// user keep their current prompt. Mirrors handleRemix but sourced from a
-// stored history item.
-async function remixFromHistory(item: GenerationHistoryItem) {
-  const hydrated = (await hydrateHistoryImages([item]))[0] || item
-  const firstImage = hydrated.images?.[0]
-  if (!firstImage) {
-    toast.error('这条历史没有可继续编辑的图片')
+async function editImageFromHistory(item: GenerationHistoryItem) {
+  if (!canEditImages.value) {
+    notifyImageEditUnavailable()
     return
   }
-  await handleRemix(firstImage, prompt.value || hydrated.prompt, `history_${hydrated.id}`, 0)
+
+  const hydrated = (await hydrateHistoryImages([item]))[0] || item
+  if (!hydrated.images?.length) {
+    toast.error(t('toast.historyNoEdit'))
+    return
+  }
+  vibrate('tap')
+  openImageEditor(hydrated.images, 0)
 }
 
 // Regenerate using a history item's full payload without writing anything
@@ -984,16 +1093,16 @@ async function remixFromHistory(item: GenerationHistoryItem) {
 // is preserved.
 async function regenerateFromHistory(item: GenerationHistoryItem) {
   if (isGenerating.value) {
-    toast.info('正在生成中，请稍候')
+    toast.info(t('toast.generatingWait'))
     return
   }
   if (!provider.isConfigured.value) {
-    toast.error('请先配置 API 服务', '右上角「设置」→ 服务商')
+    toast.error(t('toast.configureApi'), t('toast.configureApiHint'))
     settingsOpen.value = true
     return
   }
   if (healthStatus.value === 'offline') {
-    toast.error('API 未配置', '请先在「设置」中填写 baseUrl 与 Key')
+    toast.error(t('toast.apiUnconfigured'), t('toast.apiUnconfiguredHint'))
     return
   }
 
@@ -1009,6 +1118,12 @@ async function regenerateFromHistory(item: GenerationHistoryItem) {
     creativity: item.creativity,
     seed: item.seed,
     model: resolvedModel,
+    modelSelection: item.modelSelection ?? (resolvedModel ? 'explicit' : 'auto'),
+    transparentBackground: item.transparentBackground,
+    streamingWait: item.streamingWait,
+    stream: item.streamingWait,
+    partialPreview: item.partialPreview,
+    partialImages: item.partialPreview ? 2 : 0,
   }
 
   const userId = createId()
@@ -1023,7 +1138,7 @@ async function regenerateFromHistory(item: GenerationHistoryItem) {
     },
   ]
   vibrate('tap')
-  toast.info('从历史发起生成', '原草稿已保留')
+  toast.info(t('toast.historyGenerate'), t('toast.historyGenerateHint'))
   await runGeneration({ payload, userMessageId: userId })
 }
 
@@ -1034,28 +1149,26 @@ let resetConfirmingId: number | null = null
 
 function performResetDraft() {
   clearDraft()
-  prompt.value = defaultPrompt
-  templateAnchorPrompt.value = defaultPrompt
-  negativePrompt.value = defaultNegativePrompt
+  prompt.value = localizedDefaultPrompt.value
+  negativePrompt.value = localizedDefaultNegativePrompt.value
   clearComposerReferenceImages()
-  if (style.value !== 'poster') {
-    skipNextStyleSync = true
-  }
-  style.value = 'poster'
+  style.value = 'raw'
   size.value = '1024x1024'
   count.value = 1
   outputFormat.value = 'png'
   quality.value = 'auto'
   creativity.value = 7
   seed.value = ''
-  modelChoice.value = ''
+  modelChoice.value = autoModelSentinel
   customModel.value = ''
+  transparentBackground.value = false
+  streamingWait.value = canUseStreamingWait.value
+  partialPreview.value = canUsePartialPreview.value
   errorMessage.value = ''
   images.value = []
   activeImageIndex.value = 0
   messages.value = []
   pendingContinuation.value = null
-  lastEnhanceResult.value = null
   lastRequestId.value = ''
   elapsedSeconds.value = 0
   toast.info(t('toast.draftReset'))
@@ -1084,14 +1197,14 @@ function resetDraft() {
 
   vibrate('tap')
   const reasons: string[] = []
-  if (hasMessages) reasons.push(`${messages.value.length} 条对话`)
-  if (hasImages) reasons.push(`${images.value.length} 张画布`)
-  if (hasReferences) reasons.push(`${referenceImages.value.length} 张参考图`)
-  if (hasUnsavedPrompt && !reasons.length) reasons.push('当前提示词')
+  if (hasMessages) reasons.push(t('reset.reason.messages', { count: messages.value.length }))
+  if (hasImages) reasons.push(t('reset.reason.images', { count: images.value.length }))
+  if (hasReferences) reasons.push(t('reset.reason.references', { count: referenceImages.value.length }))
+  if (hasUnsavedPrompt && !reasons.length) reasons.push(t('reset.reason.prompt'))
 
-  resetConfirmingId = toast.error('再点一次「重置」会清空当前会话', reasons.join(' · '), {
-    label: '确认清空',
-    ariaLabel: '确认重置：清空对话、参考图与画布',
+  resetConfirmingId = toast.error(t('reset.confirm.title'), reasons.join(' · '), {
+    label: t('reset.confirm.label'),
+    ariaLabel: t('reset.confirm.aria'),
     handler: () => {
       resetConfirmingId = null
       performResetDraft()
@@ -1114,7 +1227,7 @@ function openImage(image: GeneratedImage) {
   const source = resolveImageSource(image)
 
   if (!source) {
-    toast.error('这张图片没有可打开地址')
+    toast.error(t('toast.imageNoUrl'))
     return
   }
 
@@ -1156,11 +1269,11 @@ async function copyToClipboard(text: string, message: string) {
   }
 
   // Final fallback: show the text in a toast so the user can manually copy.
-  toast.error(t('toast.copyFailed'), '点击「显示文本」后长按选择', {
-    label: '显示文本',
-    ariaLabel: '显示要复制的内容',
+  toast.error(t('toast.copyFailed'), t('toast.copyFallbackHint'), {
+    label: t('toast.showText'),
+    ariaLabel: t('toast.showTextAria'),
     handler: () => {
-      window.prompt('请手动复制以下内容：', text)
+      window.prompt(t('toast.copyPromptManual'), text)
     },
   })
 }
@@ -1178,6 +1291,10 @@ function exportCurrentConfig() {
     creativity: payload.creativity,
     seed: payload.seed,
     model: payload.model,
+    modelSelection: payload.modelSelection,
+    transparentBackground: payload.transparentBackground,
+    streamingWait: payload.streamingWait,
+    partialPreview: payload.partialPreview,
     referenceImageCount: payload.referenceImages?.length || undefined,
   }
   const blob = new Blob([JSON.stringify(exportPayload, null, 2)], {
@@ -1192,69 +1309,69 @@ function exportCurrentConfig() {
   anchor.click()
   anchor.remove()
   URL.revokeObjectURL(objectUrl)
-  toast.success('参数已导出', 'JSON')
+  toast.success(t('toast.configExported'), 'JSON')
 }
 
 // ---------------------------------------------------------------------------
 // Prompt replacement helpers
 //
-// Several flows used to silently overwrite the user's prompt: picking a quick
-// suggestion, applying a style template, importing from history, etc.
+// Some flows intentionally overwrite the user's prompt, such as importing a
+// prompt from history.
 // `replacePromptWithUndo` makes that gentler — if the user had real work in
 // the textarea, the previous value is captured and surfaced as an "Undo" toast
 // for ~6 seconds. The default scaffolding text is treated as throwaway so we
 // don't nag with toasts on first-run swaps.
 // ---------------------------------------------------------------------------
 
+function isKnownDefaultPrompt(value: string): boolean {
+  const trimmed = value.trim()
+  return Object.values(defaultPromptByLocale).some((defaultValue) => defaultValue.trim() === trimmed)
+}
+
+function isKnownDefaultNegativePrompt(value: string): boolean {
+  const trimmed = value.trim()
+  return Object.values(defaultNegativePromptByLocale).some((defaultValue) => defaultValue.trim() === trimmed)
+}
+
 function isPromptWorthProtecting(value: string): boolean {
   const trimmed = value.trim()
   if (trimmed.length < 8) return false
-  if (trimmed === defaultPrompt.trim()) return false
-  if (trimmed === templateAnchorPrompt.value.trim()) return false
+  if (isKnownDefaultPrompt(trimmed)) return false
   return true
 }
 
 interface ReplaceOptions {
-  treeAction: 'manual' | 'enhance' | 'import' | 'undo'
+  treeAction: 'manual' | 'import' | 'undo'
   treeLabel: string
   successTitle: string
   successHint?: string
-  /** Optional updates to other parameters that should travel with the prompt. */
-  applyExtras?: () => void
-  /** Reset the template anchor to the new prompt so the next change is detected. */
-  anchorTo?: 'next' | 'preserve'
 }
 
 function replacePromptWithUndo(nextPrompt: string, options: ReplaceOptions) {
   const previousPrompt = prompt.value
-  const previousAnchor = templateAnchorPrompt.value
   const hadRealWork = isPromptWorthProtecting(previousPrompt)
 
   suppressTreeAutoCommit = true
   prompt.value = nextPrompt
-  if (options.applyExtras) options.applyExtras()
-  if (options.anchorTo !== 'preserve') templateAnchorPrompt.value = nextPrompt
   promptTree.commit({
     prompt: nextPrompt,
     action: options.treeAction,
     label: options.treeLabel,
   })
-  lastEnhanceResult.value = null
 
   if (hadRealWork) {
     toast.success(options.successTitle, options.successHint, {
-      label: '撤销',
-      ariaLabel: '撤销刚才的提示词替换',
+      label: t('toast.undo'),
+      ariaLabel: t('toast.undoPromptReplaceAria'),
       handler: () => {
         suppressTreeAutoCommit = true
         prompt.value = previousPrompt
-        templateAnchorPrompt.value = previousAnchor
         promptTree.commit({
           prompt: previousPrompt,
           action: 'undo',
-          label: '撤销替换',
+          label: t('toast.undoReplaceLabel'),
         })
-        toast.info('已恢复之前的提示词')
+        toast.info(t('toast.promptRestored'))
         focusPrompt()
       },
     })
@@ -1279,11 +1396,9 @@ function handleChatDockLayoutChange(height: number) {
 function warmLazyComponents() {
   const run = () => {
     void Promise.all([
-      loadStyleSheet(),
       loadSettingsDialog(),
       loadHistoryDialog(),
       loadLightbox(),
-      loadCommandPalette(),
       loadActivitySidebar(),
       loadShortcutsDialog(),
       loadOnboardingTour(),
@@ -1300,9 +1415,6 @@ function warmLazyComponents() {
 let manualCommitTimer: number | undefined
 
 watch(prompt, (value) => {
-  if (lastEnhanceResult.value && value !== lastEnhanceResult.value.enhanced) {
-    lastEnhanceResult.value = null
-  }
   if (suppressTreeAutoCommit) {
     suppressTreeAutoCommit = false
     return
@@ -1320,41 +1432,23 @@ watch(prompt, (value) => {
     promptTree.commit({
       prompt: value,
       action: 'manual',
-      label: '手动编辑',
+      label: t('promptTree.manual'),
     })
   }, 1200)
 })
 
-watch(style, (newValue, oldValue) => {
-  if (newValue === oldValue) return
-  if (skipNextStyleSync) {
-    skipNextStyleSync = false
-    return
+watch(locale, () => {
+  if (isKnownDefaultPrompt(prompt.value)) {
+    suppressTreeAutoCommit = true
+    prompt.value = localizedDefaultPrompt.value
   }
-  const preset = stylePresetById.get(newValue)
-  if (!preset) return
-  const canReplacePrompt = !prompt.value.trim() || prompt.value === templateAnchorPrompt.value
-  if (newValue === 'raw') {
-    toast.info('已切换为「不套模板」', '直接发送你的原始提示词，不附加风格指引')
-    return
-  }
-  if (!preset.examplePrompt) {
-    toast.info('已切换提示词模板', `${preset.label} · ${preset.accent}`)
-    return
-  }
-  if (canReplacePrompt) {
-    prompt.value = preset.examplePrompt
-    templateAnchorPrompt.value = preset.examplePrompt
-    if (preset.defaultSize) size.value = preset.defaultSize
-    toast.info('已切换提示词模板', `${preset.label} · 输入框已更新`)
-  } else {
-    toast.info('已切换画面气质', `${preset.label} · 保留你已写的提示词`)
+  if (isKnownDefaultNegativePrompt(negativePrompt.value)) {
+    negativePrompt.value = localizedDefaultNegativePrompt.value
   }
 })
 
 watch(isDesktop, (desktop) => {
   if (desktop) {
-    styleSheetOpen.value = false
     mobileDockHeight.value = 0
   }
 })
@@ -1370,7 +1464,7 @@ onMounted(() => {
     promptTree.commit({
       prompt: prompt.value,
       action: 'manual',
-      label: '初始',
+      label: t('promptTree.initial'),
     })
   }
 })
@@ -1396,13 +1490,12 @@ watch(sw.updateAvailable, (available) => {
 
     <AppHeader
       :health-status="healthStatus"
-      :health-message="healthMessage"
+      :health-message="displayHealthMessage"
       :theme="theme"
       @refresh-health="refreshHealth"
       @toggle-theme="toggleTheme"
       @open-history="historyOpen = true"
       @open-settings="settingsOpen = true"
-      @open-command-palette="commandPalette.open.value = true"
       @reset="resetDraft"
     />
 
@@ -1414,108 +1507,206 @@ watch(sw.updateAvailable, (available) => {
         : 'grid-cols-[minmax(240px,280px)_minmax(0,1fr)]'
       "
     >
-      <aside class="desktop-function-rail reveal" style="--reveal-delay: 40ms;" aria-label="桌面功能区">
-        <input
-          ref="desktopReferenceInputRef"
-          type="file"
-          class="sr-only"
-          accept="image/png,image/jpeg,image/webp,image/gif"
-          multiple
-          @change="handleDesktopReferenceInputChange"
-        />
-
-        <section class="tool-section">
-          <p class="tool-section__label">Workspace</p>
-          <h2 class="tool-section__title">功能区</h2>
-          <p class="tool-section__note">
-            参数、参考图和状态放在侧边，画面描述留在中间底部。
-          </p>
-        </section>
-
-        <section class="tool-section">
+      <aside class="desktop-function-rail reveal" style="--reveal-delay: 40ms;" :aria-label="t('desktop.workspace.aria')">
+        <section class="tool-section tool-section--settings">
           <div class="tool-section__head">
-            <p class="tool-section__label">Render</p>
-            <button type="button" class="tool-section__link" @click="styleSheetOpen = true">
-              风格
+            <div>
+              <p class="tool-section__label">{{ t('desktop.workspace.eyebrow') }}</p>
+              <h2 class="tool-section__title">{{ t('desktop.workspace.title') }}</h2>
+            </div>
+            <button
+              type="button"
+              class="rail-icon-button"
+              :aria-label="t('desktop.render.settings')"
+              @click="settingsOpen = true"
+            >
+              <Icon name="sliders" :size="13" />
             </button>
           </div>
-          <dl class="tool-meta-list">
-            <div>
-              <dt>风格</dt>
-              <dd>{{ selectedStyleLabel }}</dd>
+
+          <div v-if="!provider.isConfigured.value" class="rail-notice">
+            <span>{{ t('desktop.capabilities.configureHint') }}</span>
+            <button type="button" @click="settingsOpen = true">{{ t('desktop.capabilities.configureAction') }}</button>
+          </div>
+
+          <div class="rail-control-stack">
+            <div class="rail-field">
+              <span class="rail-field__label">
+                <Icon name="ratio" :size="12" />
+                <span>{{ t('desktop.render.size') }}</span>
+              </span>
+              <Select
+                id="rail-size"
+                v-model="size"
+                :options="desktopSizeOptions"
+                :aria-label="t('desktop.render.size')"
+                size="sm"
+                :show-hints="false"
+              />
             </div>
-            <div>
-              <dt>尺寸</dt>
-              <dd>{{ size }}</dd>
+
+            <div class="rail-field">
+              <span class="rail-field__label">
+                <Icon name="image" :size="12" />
+                <span>{{ t('desktop.render.format') }}</span>
+              </span>
+              <Select
+                id="rail-format"
+                v-model="outputFormat"
+                :options="desktopFormatOptions"
+                :aria-label="t('settings.format.label')"
+                size="sm"
+                :show-hints="false"
+              />
             </div>
-            <div>
-              <dt>质量</dt>
-              <dd>{{ selectedQualityLabel }}</dd>
+
+            <div class="rail-field">
+              <span class="rail-field__label">
+                <Icon name="star" :size="12" />
+                <span>{{ t('desktop.render.quality') }}</span>
+              </span>
+              <Select
+                id="rail-quality"
+                v-model="quality"
+                :options="desktopQualityOptions"
+                :aria-label="t('settings.quality.label')"
+                size="sm"
+                :show-hints="false"
+              />
             </div>
-            <div>
-              <dt>数量</dt>
-              <dd>
-                <button type="button" class="tool-stepper" :disabled="count <= 1 || isGenerating" @click="count = Math.max(1, count - 1)">
+
+            <div class="rail-field">
+              <span class="rail-field__label">
+                <Icon name="layers" :size="12" />
+                <span>{{ t('desktop.render.count') }}</span>
+              </span>
+              <div class="rail-stepper" role="group" :aria-label="t('desktop.render.count')">
+                <button type="button" :disabled="count <= 1 || isGenerating" @click="adjustGenerationCount(-1)">
                   <Icon name="minus" :size="12" />
                 </button>
-                <span>{{ count }}</span>
-                <button type="button" class="tool-stepper" :disabled="count >= 4 || isGenerating" @click="count = Math.min(4, count + 1)">
+                <span aria-live="polite">{{ count }}</span>
+                <button type="button" :disabled="count >= 4 || isGenerating" @click="adjustGenerationCount(1)">
                   <Icon name="plus" :size="12" />
                 </button>
-              </dd>
+              </div>
             </div>
-          </dl>
-          <button type="button" class="tool-button" @click="settingsOpen = true">
-            <Icon name="sliders" :size="14" />
-            <span>生成设置</span>
-          </button>
-        </section>
+          </div>
 
-        <section class="tool-section">
-          <div class="tool-section__head">
-            <p class="tool-section__label">References</p>
-            <span class="tool-count">{{ referenceImages.length }} / {{ maxReferenceImages }}</span>
+          <div class="rail-switch-list">
+            <label class="rail-switch-row" :class="{ 'is-disabled': !canUseTransparentBackground }">
+              <input v-model="transparentBackground" type="checkbox" :disabled="!canUseTransparentBackground" />
+              <span class="rail-switch-row__copy">
+                <span>{{ t('settings.transparentBackground') }}</span>
+                <small>{{ desktopTransparentHint }}</small>
+              </span>
+            </label>
+            <label class="rail-switch-row" :class="{ 'is-disabled': !canUseStreamingWait }">
+              <input v-model="streamingWait" type="checkbox" :disabled="!canUseStreamingWait" />
+              <span class="rail-switch-row__copy">
+                <span>{{ t('settings.streamingWait') }}</span>
+                <small>{{ desktopStreamingHint }}</small>
+              </span>
+            </label>
+            <label class="rail-switch-row" :class="{ 'is-disabled': !canUsePartialPreview }">
+              <input v-model="partialPreview" type="checkbox" :disabled="!canUsePartialPreview" />
+              <span class="rail-switch-row__copy">
+                <span>{{ t('settings.stagePreview') }}</span>
+                <small>{{ desktopPartialPreviewHint }}</small>
+              </span>
+            </label>
           </div>
-          <div v-if="referenceImages.length" class="reference-strip">
-            <figure
-              v-for="image in referenceImages"
-              :key="image.id"
-              class="reference-strip__item"
-            >
-              <img :src="image.previewUrl" :alt="image.name" loading="lazy" decoding="async" />
-              <button
-                type="button"
-                aria-label="移除参考图"
-                @click="removeReferenceImage(image.id)"
+
+          <details class="rail-details">
+            <summary>
+              <span>{{ t('settings.advanced.title') }}</span>
+              <Icon name="chevronDown" :size="13" />
+            </summary>
+            <div class="rail-details__body">
+              <label class="rail-field" for="rail-negative">
+                <span class="rail-field__label">
+                  <Icon name="eyeOff" :size="12" />
+                  <span>{{ t('settings.negative') }}</span>
+                </span>
+                <textarea
+                  id="rail-negative"
+                  v-model="negativePrompt"
+                  rows="2"
+                  maxlength="400"
+                  class="rail-textarea"
+                  :placeholder="t('settings.negative.placeholder')"
+                ></textarea>
+              </label>
+
+              <label class="rail-field" for="rail-seed">
+                <span class="rail-field__label">
+                  <Icon name="dice" :size="12" />
+                  <span>{{ t('settings.seed') }}</span>
+                </span>
+                <span class="rail-input-action">
+                  <input
+                    id="rail-seed"
+                    v-model="seed"
+                    class="rail-input"
+                    :placeholder="t('settings.seed.placeholder')"
+                    autocomplete="off"
+                    spellcheck="false"
+                    inputmode="numeric"
+                  />
+                  <button type="button" :aria-label="t('settings.seed.roll')" @click="rollSeed">
+                    <Icon name="dice" :size="13" />
+                  </button>
+                </span>
+              </label>
+
+              <label class="rail-field" for="rail-creativity">
+                <span class="rail-field__label rail-field__label--split">
+                  <span>
+                    <Icon name="lightning" :size="12" />
+                    <span>{{ t('settings.creativity') }}</span>
+                  </span>
+                  <span>{{ creativity }} / 10</span>
+                </span>
+                <input
+                  id="rail-creativity"
+                  v-model.number="creativity"
+                  type="range"
+                  min="1"
+                  max="10"
+                  step="1"
+                  class="rail-range"
+                  :aria-label="t('settings.creativity')"
+                />
+              </label>
+            </div>
+          </details>
+
+          <details class="rail-details rail-details--capability">
+            <summary>
+              <span>{{ t('desktop.capabilities.eyebrow') }}</span>
+              <strong>{{ desktopCapabilitySummary }}</strong>
+              <Icon name="chevronDown" :size="13" />
+            </summary>
+            <ul class="capability-mini-list">
+              <li
+                v-for="item in desktopCapabilityItems"
+                :key="item.key"
+                class="capability-mini-row"
+                :data-state="item.state"
               >
-                <Icon name="close" :size="10" />
-              </button>
-            </figure>
-          </div>
-          <p v-else class="tool-section__note">
-            参考图不再占据主入口，需要时从这里补充。
-          </p>
-          <button
-            type="button"
-            class="tool-button tool-button--quiet"
-            :disabled="!canAddReferenceImages"
-            @click="openDesktopReferencePicker"
-          >
-            <Icon name="image" :size="14" />
-            <span>{{ canAddReferenceImages ? '添加参考图' : '参考图已满' }}</span>
-          </button>
+                <span>{{ item.label }}</span>
+                <span>{{ item.detail }}</span>
+                <strong>{{ item.stateLabel }}</strong>
+              </li>
+            </ul>
+          </details>
         </section>
 
         <section class="tool-section tool-section--status">
           <div class="tool-section__head">
-            <p class="tool-section__label">Status</p>
+            <p class="tool-section__label">{{ t('desktop.status.eyebrow') }}</p>
             <span class="tool-status-dot" :data-status="healthStatus"></span>
           </div>
-          <p class="tool-status-text">{{ healthMessage || (provider.isConfigured.value ? healthStatus : '未配置 API') }}</p>
-          <button type="button" class="tool-button tool-button--quiet" @click="commandPalette.open.value = true">
-            <Icon name="command" :size="14" />
-            <span>命令面板</span>
-          </button>
+          <p class="tool-status-text">{{ displayHealthMessage }}</p>
         </section>
       </aside>
 
@@ -1528,25 +1719,27 @@ watch(sw.updateAvailable, (available) => {
             :elapsed-seconds="elapsedSeconds"
             :error-message="errorMessage"
             :last-request-id="lastRequestId"
+            :progress-override="generationProgressOverride"
             :size="size"
-            :style-label="selectedStyleLabel"
             :model-label="selectedModelLabel"
-            :model-name="modelChoice === customModelSentinel ? customModel : modelChoice"
+            :model-name="selectedExplicitModel"
             :quality="quality"
             :count="count"
             :history="history"
             :prompt-preview="promptPreview"
             :has-prompt="trimmedPrompt.length >= 4"
             :provider-configured="provider.isConfigured.value"
+            :can-edit-images="canEditImages"
+            :image-edit-disabled-reason="editDisabledReason"
             @select="(index) => (activeImageIndex = index)"
             @open-lightbox="(index) => lightbox.open(images, index)"
-            @open-inpaint="(index) => lightbox.openForEdit(images, index)"
+            @open-inpaint="openActiveImageEditor"
+            @image-edit-unavailable="notifyImageEditUnavailable"
             @download="downloadImage"
             @open="openImage"
             @copy="copyToClipboard"
             @export="exportCurrentConfig"
             @go-compose="focusPrompt"
-            @remix="(image, index) => handleRemix(image, prompt, lastRequestId || 'canvas', index)"
             @generate="handleGenerate"
             @abort="handleAbortGeneration"
             @open-settings="settingsOpen = true"
@@ -1554,14 +1747,7 @@ watch(sw.updateAvailable, (available) => {
           />
         </section>
 
-        <section class="desktop-draft-panel reveal" style="--reveal-delay: 140ms;" aria-label="构图草案">
-          <div class="desktop-draft-panel__head">
-            <div>
-              <p class="tool-section__label">Draft</p>
-              <h2 class="desktop-draft-panel__title">构图草案</h2>
-            </div>
-            <span class="desktop-draft-panel__hint">中间底部</span>
-          </div>
+        <section class="desktop-draft-panel reveal" style="--reveal-delay: 140ms;" :aria-label="t('composer.prompt')">
           <PromptComposer
             ref="composerRef"
             v-model:prompt="prompt"
@@ -1577,10 +1763,8 @@ watch(sw.updateAvailable, (available) => {
             :elapsed-seconds="elapsedSeconds"
             :can-generate="canGenerate"
             :health-offline="healthStatus === 'offline'"
+            :model-warning="selectedModelWarning"
             :continuation="pendingContinuation"
-            :can-undo-enhance="!!lastEnhanceResult"
-            :model-name="selectedModelLabel"
-            :prompt-context="promptContext"
             :tree-nodes="promptTree.nodes.value"
             :tree-current-id="promptTree.currentNode.value?.id ?? null"
             :tree-can-undo="promptTree.canUndo.value"
@@ -1591,16 +1775,12 @@ watch(sw.updateAvailable, (available) => {
             @open-settings="settingsOpen = true"
             @select-reference-images="addReferenceImages"
             @remove-reference-image="removeReferenceImage"
-            @magic-enhance="handleMagicEnhance"
-            @magic-ab-test="handleMagicAbTest"
             @toast-info="(title: string, message?: string) => toast.info(title, message)"
-            @undo-enhance="handleUndoEnhance"
             @tree-undo="handleTreeUndo"
             @tree-redo="handleTreeRedo"
             @tree-jump="handleTreeJump"
             @tree-branch="handleTreeBranch"
             @tree-clear="handleTreeClear"
-            @clear="lastEnhanceResult = null"
             @cancel-continuation="handleCancelContinuation"
           />
         </section>
@@ -1613,13 +1793,15 @@ watch(sw.updateAvailable, (available) => {
         :elapsed-seconds="elapsedSeconds"
         :prompt-preview="promptPreview"
         :selected-request-id="lastRequestId"
+        :can-edit-images="canEditImages"
+        :image-edit-disabled-reason="editDisabledReason"
         @restore="restoreHistory"
         @open-history="historyOpen = true"
         @copy="copyToClipboard"
         @preview="previewHistory"
         @copy-prompt="copyHistoryPrompt"
         @reuse-params="applyHistoryParams"
-        @remix="remixFromHistory"
+        @edit-image="editImageFromHistory"
         @regenerate="regenerateFromHistory"
       />
     </main>
@@ -1630,7 +1812,7 @@ watch(sw.updateAvailable, (available) => {
       <span class="inline-flex items-center justify-center gap-2">
         <span>crafted local · {{ new Date().getFullYear() }}</span>
         <span class="text-line">/</span>
-        <span>所有数据仅在你的浏览器与服务商之间流动</span>
+        <span>{{ t('desktop.footer.privacy') }}</span>
       </span>
     </footer>
 
@@ -1642,13 +1824,15 @@ watch(sw.updateAvailable, (available) => {
         :jump-bottom="mobileJumpButtonBottom"
         :provider-configured="provider.isConfigured.value"
         :history="history"
+        :can-edit-images="canEditImages"
+        :image-edit-disabled-reason="editDisabledReason"
         @retry="regenerateFromMessage"
         @open-image="lightbox.open"
+        @edit-image="openImageEditor"
+        @image-edit-unavailable="notifyImageEditUnavailable"
         @download="downloadImage"
         @copy="copyToClipboard"
-        @remix="handleRemix"
         @import-prompt="handleImportPrompt"
-        @pick-suggestion="handlePickSuggestion"
         @scroll-to-message="handleScrollToMessage"
         @abort="handleAbortGeneration"
         @open-settings="settingsOpen = true"
@@ -1665,48 +1849,38 @@ watch(sw.updateAvailable, (available) => {
       :can-generate="canGenerate"
       :elapsed-seconds="elapsedSeconds"
       :health-offline="healthStatus === 'offline'"
-      :current-style="style"
       :reference-images="referenceImages"
       :keyboard-inset="mobileDockKeyboardInset"
       :viewport-height="mobileViewportHeight ?? undefined"
+      :model-warning="selectedModelWarning"
       :continuation="pendingContinuation"
-      :can-undo-enhance="!!lastEnhanceResult"
-      :size="size"
-      :quality="quality"
-      :model-name="selectedModelLabel"
-      :prompt-context="promptContext"
       @send="sendFromChat"
       @abort="handleAbortGeneration"
-      @open-style-sheet="styleSheetOpen = true"
       @layout-change="handleChatDockLayoutChange"
       @select-reference-images="addReferenceImages"
       @remove-reference-image="removeReferenceImage"
-      @magic-enhance="handleMagicEnhance"
-      @magic-ab-test="handleMagicAbTest"
-      @undo-enhance="handleUndoEnhance"
       @cancel-continuation="handleCancelContinuation"
       @jump-to-continuation="handleScrollToMessage"
-    />
-
-    <StyleSheet
-      v-if="styleSheetOpen"
-      v-model:open="styleSheetOpen"
-      :current="style"
-      :prompt-value="prompt"
-      :template-anchor="templateAnchorPrompt"
-      @select="handleStyleSheetSelect"
     />
 
     <SettingsDialog
       v-if="settingsOpen"
       v-model:open="settingsOpen"
       v-model:negativePrompt="negativePrompt"
+      v-model:size="size"
+      v-model:count="count"
       v-model:outputFormat="outputFormat"
       v-model:quality="quality"
+      v-model:transparentBackground="transparentBackground"
+      v-model:streamingWait="streamingWait"
+      v-model:partialPreview="partialPreview"
       v-model:creativity="creativity"
       v-model:seed="seed"
-      v-model:modelChoice="modelChoice"
-      v-model:customModel="customModel"
+      :can-transparent-background="canUseTransparentBackground"
+      :transparent-background-disabled-reason="transparentBackgroundDisabledReason"
+      :can-streaming-wait="canUseStreamingWait"
+      :can-partial-preview="canUsePartialPreview"
+      :partial-preview-disabled-reason="partialPreviewDisabledReason"
       @export="exportCurrentConfig"
       @reset="resetDraft"
       @reset-provider="toast.info(t('toast.providerCleared'), t('toast.providerClearedHint'))"
@@ -1717,30 +1891,14 @@ watch(sw.updateAvailable, (available) => {
       v-if="historyOpen"
       v-model:open="historyOpen"
       :history="history"
+      :can-edit-images="canEditImages"
+      :image-edit-disabled-reason="editDisabledReason"
       @preview="previewHistory"
       @copy-prompt="copyHistoryPrompt"
       @reuse-params="applyHistoryParams"
-      @remix="remixFromHistory"
+      @edit-image="editImageFromHistory"
       @regenerate="regenerateFromHistory"
       @clear="clearLocalHistory"
-    />
-
-    <CommandPalette
-      v-if="commandPalette.open.value"
-      v-model:open="commandPalette.open.value"
-      :install-available="installPrompt.available.value"
-      @pick-style="(value) => (style = value)"
-      @pick-size="(value) => (size = value)"
-      @open-history="historyOpen = true"
-      @open-settings="settingsOpen = true"
-      @open-style-sheet="styleSheetOpen = true"
-      @open-shortcuts="shortcutsDialog.open.value = true"
-      @open-onboarding="onboarding.start()"
-      @install-app="() => { void installPrompt.prompt() }"
-      @toggle-theme="toggleTheme"
-      @reset="resetDraft"
-      @generate="handleGenerate"
-      @focus-prompt="focusPrompt"
     />
 
     <ShortcutsDialog
@@ -1755,7 +1913,13 @@ watch(sw.updateAvailable, (available) => {
       @dismiss="onboarding.dismiss"
     />
 
-    <Lightbox v-if="lightbox.state.open" @inpaint-submit="handleInpaintSubmit" />
+    <Lightbox
+      v-if="lightbox.state.open"
+      :can-edit-images="canEditImages"
+      :image-edit-disabled-reason="editDisabledReason"
+      @image-edit-unavailable="notifyImageEditUnavailable"
+      @inpaint-submit="handleInpaintSubmit"
+    />
 
     <Toaster />
   </div>
@@ -1799,6 +1963,10 @@ watch(sw.updateAvailable, (available) => {
   border-bottom: 1px solid rgb(var(--color-line) / 0.68);
 }
 
+.tool-section--settings {
+  gap: 0.7rem;
+}
+
 .tool-section:last-child {
   border-bottom: 0;
 }
@@ -1828,6 +1996,10 @@ watch(sw.updateAvailable, (available) => {
   letter-spacing: 0;
 }
 
+.desktop-function-rail .tool-section__title {
+  font-size: 14px;
+}
+
 .tool-section__note {
   margin: 0;
   color: rgb(var(--color-muted));
@@ -1835,8 +2007,6 @@ watch(sw.updateAvailable, (available) => {
   line-height: 1.6;
 }
 
-.tool-section__link,
-.tool-count,
 .desktop-draft-panel__hint {
   color: rgb(var(--color-muted));
   font-family: 'JetBrains Mono', ui-monospace, monospace;
@@ -1845,135 +2015,320 @@ watch(sw.updateAvailable, (available) => {
   letter-spacing: 0;
 }
 
-.tool-section__link {
-  border-radius: 6px;
-  padding: 0.2rem 0.35rem;
-  transition: background-color 140ms var(--motion-soft), color 140ms var(--motion-soft);
+.tool-section--status {
+  margin-top: auto;
 }
 
-.tool-section__link:hover {
-  background: rgb(var(--color-line) / 0.18);
+.rail-icon-button {
+  display: inline-grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 1px solid rgb(var(--color-line) / 0.8);
+  border-radius: 8px;
+  background: rgb(var(--color-surface-raised) / 0.9);
   color: rgb(var(--color-ink));
+  transition: border-color 140ms var(--motion-soft), background-color 140ms var(--motion-soft), transform 120ms var(--motion-press);
 }
 
-.tool-meta-list {
-  display: grid;
-  gap: 0.55rem;
-  margin: 0;
+.rail-icon-button:hover {
+  border-color: rgb(var(--color-line-strong) / 0.7);
+  background: rgb(var(--color-surface-raised));
+  transform: translateY(-1px);
 }
 
-.tool-meta-list > div {
+.rail-notice {
   display: flex;
-  min-height: 34px;
   align-items: center;
   justify-content: space-between;
-  gap: 0.75rem;
+  gap: 0.5rem;
   border-radius: 8px;
-  background: rgb(var(--color-surface-muted) / 0.66);
+  background: rgb(var(--color-ochre) / 0.1);
+  color: rgb(var(--color-ink));
   padding: 0.45rem 0.55rem;
+  font-size: 11px;
+  line-height: 1.35;
 }
 
-.tool-meta-list dt {
+.rail-notice button {
+  flex: 0 0 auto;
+  border-radius: 7px;
+  background: rgb(var(--color-surface-raised) / 0.9);
+  color: rgb(var(--color-action));
+  padding: 0.25rem 0.45rem;
+  font-size: 11px;
+  font-weight: 760;
+}
+
+.rail-control-stack,
+.rail-details__body {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.rail-field {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.rail-field__label {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
   color: rgb(var(--color-muted));
   font-size: 11px;
-  font-weight: 640;
+  font-weight: 740;
+  line-height: 1.2;
 }
 
-.tool-meta-list dd {
+.rail-field__label--split {
+  justify-content: space-between;
+}
+
+.rail-field__label--split > span {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
-  margin: 0;
-  color: rgb(var(--color-ink));
-  font-size: 12px;
-  font-weight: 720;
-  text-align: right;
 }
 
-.tool-button {
-  display: inline-flex;
-  min-height: 36px;
+.rail-stepper {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) 34px;
   align-items: center;
-  justify-content: center;
+  overflow: hidden;
+  border: 1px solid rgb(var(--color-line) / 0.8);
+  border-radius: 8px;
+  background: rgb(var(--color-surface-raised) / 0.94);
+}
+
+.rail-stepper button {
+  display: grid;
+  height: 34px;
+  place-items: center;
+  color: rgb(var(--color-muted));
+  transition: background-color 140ms var(--motion-soft), color 140ms var(--motion-soft);
+}
+
+.rail-stepper button:hover:not(:disabled) {
+  background: rgb(var(--color-surface-muted));
+  color: rgb(var(--color-ink));
+}
+
+.rail-stepper button:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.rail-stepper span {
+  color: rgb(var(--color-ink));
+  font-size: 12px;
+  font-weight: 760;
+  text-align: center;
+}
+
+.rail-switch-list {
+  display: grid;
   gap: 0.45rem;
-  border: 1px solid rgb(var(--color-line) / 0.82);
+}
+
+.rail-switch-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  border-radius: 8px;
+  background: rgb(var(--color-surface-muted) / 0.58);
+  padding: 0.5rem 0.55rem;
+}
+
+.rail-switch-row input {
+  margin-top: 0.15rem;
+  accent-color: rgb(var(--color-action));
+}
+
+.rail-switch-row.is-disabled {
+  opacity: 0.62;
+}
+
+.rail-switch-row__copy {
+  display: grid;
+  min-width: 0;
+  gap: 0.1rem;
+}
+
+.rail-switch-row__copy span {
+  color: rgb(var(--color-ink));
+  font-size: 11.5px;
+  font-weight: 730;
+}
+
+.rail-switch-row__copy small {
+  overflow: hidden;
+  color: rgb(var(--color-muted));
+  font-size: 10.5px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rail-details {
+  border: 1px solid rgb(var(--color-line) / 0.62);
+  border-radius: 8px;
+  background: rgb(var(--color-surface-muted) / 0.48);
+}
+
+.rail-details summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  list-style: none;
+  padding: 0.55rem 0.6rem;
+  color: rgb(var(--color-ink));
+  font-size: 11.5px;
+  font-weight: 760;
+}
+
+.rail-details--capability summary {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.rail-details summary::-webkit-details-marker {
+  display: none;
+}
+
+.rail-details summary strong {
+  overflow: hidden;
+  color: rgb(var(--color-muted));
+  font-size: 10.5px;
+  font-weight: 680;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rail-details summary svg {
+  transition: transform 140ms var(--motion-soft);
+}
+
+.rail-details[open] summary svg {
+  transform: rotate(180deg);
+}
+
+.rail-details__body {
+  border-top: 1px solid rgb(var(--color-line) / 0.54);
+  padding: 0.6rem;
+}
+
+.rail-input,
+.rail-textarea {
+  width: 100%;
+  border: 1px solid rgb(var(--color-line) / 0.85);
   border-radius: 8px;
   background: rgb(var(--color-surface-raised) / 0.96);
   color: rgb(var(--color-ink));
   font-size: 12px;
-  font-weight: 720;
-  transition: transform 140ms var(--motion-press), border-color 140ms var(--motion-soft), background-color 140ms var(--motion-soft);
+  outline: none;
 }
 
-.tool-button:hover:not(:disabled) {
-  transform: translateY(-1px);
-  border-color: rgb(var(--color-line-strong) / 0.72);
-  background: rgb(var(--color-surface-raised));
+.rail-input {
+  min-height: 34px;
+  padding: 0.45rem 2.25rem 0.45rem 0.55rem;
 }
 
-.tool-button:disabled,
-.tool-stepper:disabled {
-  cursor: not-allowed;
-  opacity: 0.45;
+.rail-textarea {
+  min-height: 54px;
+  resize: vertical;
+  padding: 0.5rem 0.55rem;
+  line-height: 1.45;
 }
 
-.tool-button--quiet {
-  background: rgb(var(--color-surface-muted) / 0.72);
+.rail-input:focus,
+.rail-textarea:focus,
+.rail-stepper:focus-within,
+.rail-icon-button:focus-visible,
+.rail-notice button:focus-visible,
+.rail-input-action button:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 
-.tool-stepper {
-  display: inline-grid;
-  width: 24px;
-  height: 24px;
-  place-items: center;
-  border: 1px solid rgb(var(--color-line) / 0.72);
-  border-radius: 7px;
-  background: rgb(var(--color-surface-raised) / 0.94);
-  color: rgb(var(--color-ink));
-  transition: background-color 140ms var(--motion-soft), transform 120ms var(--motion-press);
-}
-
-.tool-stepper:hover:not(:disabled) {
-  background: rgb(var(--color-surface-raised));
-  transform: translateY(-1px);
-}
-
-.reference-strip {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.45rem;
-}
-
-.reference-strip__item {
+.rail-input-action {
   position: relative;
-  aspect-ratio: 1;
-  overflow: hidden;
-  border: 1px solid rgb(var(--color-line) / 0.72);
-  border-radius: 8px;
-  background: rgb(var(--color-surface-muted) / 0.75);
+  display: block;
 }
 
-.reference-strip__item img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.reference-strip__item button {
+.rail-input-action button {
   position: absolute;
-  top: 4px;
+  top: 50%;
   right: 4px;
   display: grid;
-  width: 22px;
-  height: 22px;
+  width: 28px;
+  height: 28px;
+  transform: translateY(-50%);
   place-items: center;
-  border-radius: 6px;
-  background: rgb(var(--color-ink) / 0.68);
-  color: rgb(var(--color-paper));
+  border-radius: 7px;
+  color: rgb(var(--color-muted));
 }
 
-.tool-section--status {
-  margin-top: auto;
+.rail-input-action button:hover {
+  background: rgb(var(--color-surface-muted));
+  color: rgb(var(--color-ink));
+}
+
+.rail-range {
+  width: 100%;
+  accent-color: rgb(var(--color-action));
+}
+
+.capability-mini-list {
+  display: grid;
+  gap: 0.1rem;
+  margin: 0;
+  border-top: 1px solid rgb(var(--color-line) / 0.54);
+  padding: 0.35rem 0.6rem 0.55rem;
+  list-style: none;
+}
+
+.capability-mini-row {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 24px;
+  color: rgb(var(--color-muted));
+  font-size: 10.5px;
+}
+
+.capability-mini-row > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.capability-mini-row > span:first-child {
+  color: rgb(var(--color-ink));
+  font-weight: 700;
+}
+
+.capability-mini-row strong {
+  justify-self: end;
+  color: rgb(var(--color-muted));
+  font-size: 10px;
+  font-weight: 760;
+}
+
+.capability-mini-row[data-state='supported'] strong {
+  color: rgb(var(--color-forest));
+}
+
+.capability-mini-row[data-state='unsupported'] strong {
+  color: rgb(var(--color-clay));
+}
+
+.capability-mini-row[data-state='partial'] strong {
+  color: rgb(var(--color-ochre));
 }
 
 .tool-status-dot {
@@ -2003,13 +2358,13 @@ watch(sw.updateAvailable, (available) => {
   min-width: 0;
   min-height: 0;
   grid-template-rows: minmax(0, 1fr) auto;
-  gap: 0.85rem;
+  gap: 0.75rem;
 }
 
 .desktop-canvas-area {
   min-height: 0;
   overflow-y: auto;
-  padding: 0.15rem 0.1rem 0.25rem;
+  padding: 0.1rem 0.1rem 0.2rem;
 }
 
 .desktop-canvas-area::-webkit-scrollbar {
@@ -2024,10 +2379,12 @@ watch(sw.updateAvailable, (available) => {
 .desktop-draft-panel {
   display: grid;
   gap: 0.6rem;
-  border: 1px solid rgb(var(--color-line) / 0.82);
+  border: 1px solid rgb(var(--color-line) / 0.76);
   border-radius: var(--radius-panel);
-  background: rgb(var(--color-surface) / 0.98);
-  box-shadow: var(--shadow-inner-glass);
+  background: rgb(var(--color-surface-raised) / 0.98);
+  box-shadow:
+    var(--shadow-glass),
+    var(--shadow-inner-glass);
   padding: 0.75rem;
 }
 
@@ -2045,9 +2402,9 @@ watch(sw.updateAvailable, (available) => {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .tool-section__link,
-  .tool-button,
-  .tool-stepper {
+  .rail-icon-button,
+  .rail-stepper button,
+  .rail-details summary svg {
     transition: none;
   }
 }

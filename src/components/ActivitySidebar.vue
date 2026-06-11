@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import Icon from './Icon.vue'
 import { resolveImageSource } from '../api'
+import { useI18n } from '../lib/i18n'
 import type { GenerationHistoryItem } from '../types'
 
 interface Props {
@@ -10,6 +11,8 @@ interface Props {
   elapsedSeconds?: number
   promptPreview?: string
   selectedRequestId?: string
+  canEditImages?: boolean
+  imageEditDisabledReason?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -17,6 +20,8 @@ const props = withDefaults(defineProps<Props>(), {
   elapsedSeconds: 0,
   promptPreview: '',
   selectedRequestId: '',
+  canEditImages: true,
+  imageEditDisabledReason: '',
 })
 
 const emit = defineEmits<{
@@ -27,11 +32,20 @@ const emit = defineEmits<{
   (e: 'preview', item: GenerationHistoryItem): void
   (e: 'copy-prompt', item: GenerationHistoryItem): void
   (e: 'reuse-params', item: GenerationHistoryItem): void
-  (e: 'remix', item: GenerationHistoryItem): void
+  (e: 'edit-image', item: GenerationHistoryItem): void
   (e: 'regenerate', item: GenerationHistoryItem): void
 }>()
 
 const recent = computed(() => props.history.slice(0, 6))
+const { t, locale } = useI18n()
+const imageEditUnavailableReason = computed(() => props.imageEditDisabledReason.trim())
+const imageEditAriaDisabled = computed(() => props.canEditImages ? undefined : 'true')
+const imageEditTitle = computed(() => props.canEditImages ? undefined : imageEditUnavailableReason.value || undefined)
+
+function imageEditAriaLabel(label: string) {
+  if (props.canEditImages || !imageEditUnavailableReason.value) return label
+  return `${label}. ${imageEditUnavailableReason.value}`
+}
 
 // 单击卡片展开详情，不再直接覆写当前工作。
 const expandedId = ref<string>('')
@@ -54,7 +68,7 @@ watch(
 
 function formatTime(value: string) {
   try {
-    return new Intl.DateTimeFormat('zh-CN', {
+    return new Intl.DateTimeFormat(locale.value, {
       hour: '2-digit',
       minute: '2-digit',
     }).format(new Date(value))
@@ -73,17 +87,17 @@ function previewSrc(item: GenerationHistoryItem): string {
   <aside class="activity-sidebar reveal" style="--reveal-delay: 200ms;">
     <header class="activity-sidebar__head">
       <div>
-        <p class="activity-sidebar__label">Activity</p>
-        <h2 class="font-display text-[22px] tracking-tightish">时间线</h2>
+        <p class="activity-sidebar__label">{{ t('activity.eyebrow') }}</p>
+        <h2 class="font-display text-[22px] tracking-tightish">{{ t('activity.title') }}</h2>
       </div>
       <button
         v-if="history.length"
         type="button"
         class="btn-quiet text-[11px]"
-        aria-label="查看完整历史"
+        :aria-label="t('activity.openLabel')"
         @click="emit('open-history')"
       >
-        全部
+        {{ t('activity.viewAll') }}
         <Icon name="arrowRight" :size="11" />
       </button>
     </header>
@@ -92,8 +106,8 @@ function previewSrc(item: GenerationHistoryItem): string {
       <li v-if="isGenerating" class="activity-sidebar__live">
         <span class="activity-sidebar__live-dot" aria-hidden="true"></span>
         <div class="min-w-0 flex-1">
-          <p class="text-[12px] font-semibold text-ink">正在生成 · {{ elapsedSeconds }}s</p>
-          <p class="mt-0.5 truncate text-[11px] text-muted">{{ promptPreview || '工作中…' }}</p>
+          <p class="text-[12px] font-semibold text-ink">{{ t('activity.live.title', { n: elapsedSeconds }) }}</p>
+          <p class="mt-0.5 truncate text-[11px] text-muted">{{ promptPreview || t('activity.live.idle') }}</p>
         </div>
       </li>
 
@@ -115,7 +129,7 @@ function previewSrc(item: GenerationHistoryItem): string {
             <button
               type="button"
               class="activity-sidebar__card"
-              :aria-label="`查看历史详情：${item.prompt.slice(0, 40)}`"
+              :aria-label="t('activity.restoreLabel', { prompt: item.prompt.slice(0, 40) })"
               :aria-expanded="expandedId === item.id"
               @click="toggleExpand(item)"
             >
@@ -138,7 +152,7 @@ function previewSrc(item: GenerationHistoryItem): string {
                   <span class="text-line">·</span>
                   <span>{{ item.size }}</span>
                   <span v-if="item.referenceImageCount" class="text-line">·</span>
-                  <span v-if="item.referenceImageCount" class="text-forest">参考</span>
+                  <span v-if="item.referenceImageCount" class="text-forest">{{ t('activity.refTag') }}</span>
                   <Icon
                     name="chevronDown"
                     :size="11"
@@ -154,63 +168,65 @@ function previewSrc(item: GenerationHistoryItem): string {
               v-if="expandedId === item.id"
               class="activity-sidebar__actions"
               role="group"
-              aria-label="历史操作"
+              :aria-label="t('activity.actionsLabel')"
             >
               <button
                 v-if="hasPreviewableImage(item)"
                 type="button"
                 class="activity-sidebar__chip"
-                aria-label="预览这张生成"
+                :aria-label="t('activity.previewLabel')"
                 @click.stop="emit('preview', item)"
               >
                 <Icon name="search" :size="11" />
-                <span>预览</span>
+                <span>{{ t('activity.preview') }}</span>
               </button>
               <button
                 type="button"
                 class="activity-sidebar__chip"
-                aria-label="复制提示词到剪贴板"
+                :aria-label="t('activity.copyPromptLabel')"
                 @click.stop="emit('copy-prompt', item)"
               >
                 <Icon name="copy" :size="11" />
-                <span>复制提示词</span>
+                <span>{{ t('activity.copyPrompt') }}</span>
               </button>
               <button
                 type="button"
                 class="activity-sidebar__chip"
-                aria-label="只套用参数（风格、尺寸、模型），不改提示词"
+                :aria-label="t('activity.reuseParamsLabel')"
                 @click.stop="emit('reuse-params', item)"
               >
                 <Icon name="settings" :size="11" />
-                <span>套用参数</span>
+                <span>{{ t('activity.reuseParams') }}</span>
               </button>
               <button
                 v-if="hasPreviewableImage(item)"
                 type="button"
                 class="activity-sidebar__chip"
-                aria-label="基于这张图接着画"
-                @click.stop="emit('remix', item)"
+                :aria-disabled="imageEditAriaDisabled"
+                :aria-label="imageEditAriaLabel(t('activity.editImageLabel'))"
+                :title="imageEditTitle"
+                @click.stop="emit('edit-image', item)"
               >
-                <Icon name="sparkle" :size="11" />
-                <span>接着画</span>
+                <Icon name="brush" :size="11" />
+                <span>{{ t('activity.editImage') }}</span>
               </button>
               <button
                 type="button"
                 class="activity-sidebar__chip"
-                aria-label="恢复这条历史的全部参数与画布"
+                :aria-label="t('activity.restoreCanvasLabel')"
                 @click.stop="emit('restore', item)"
               >
                 <Icon name="refresh" :size="11" />
-                <span>恢复到画布</span>
+                <span>{{ t('activity.restoreCanvas') }}</span>
               </button>
               <button
                 type="button"
                 class="activity-sidebar__chip activity-sidebar__chip--primary"
-                aria-label="用这条历史的参数重新生成一次"
+                :aria-label="t('activity.regenerateLabel')"
                 @click.stop="emit('regenerate', item)"
               >
                 <Icon name="sparkle" :size="11" />
-                <span>重新生成</span>
+                <span>{{ t('activity.regenerate') }}</span>
               </button>
             </div>
           </div>
@@ -220,7 +236,7 @@ function previewSrc(item: GenerationHistoryItem): string {
       <li v-else-if="!isGenerating" class="activity-sidebar__empty">
         <Icon name="clock" :size="16" class="text-muted" />
         <p class="text-[11px] leading-snug text-muted">
-          完成生成后，最近 12 条会出现在这里，单击展开可预览、复制或重新生成。
+          {{ t('activity.emptyDetailed') }}
         </p>
       </li>
     </ol>
@@ -232,7 +248,7 @@ function previewSrc(item: GenerationHistoryItem): string {
         @click="emit('open-history')"
       >
         <Icon name="history" :size="13" />
-        查看全部 {{ history.length }} 条
+        {{ t('activity.viewAllCount', { count: history.length }) }}
       </button>
     </footer>
   </aside>
@@ -535,8 +551,26 @@ function previewSrc(item: GenerationHistoryItem): string {
   box-shadow: var(--shadow-glass-sm);
 }
 
+.activity-sidebar__chip[aria-disabled='true'] {
+  color: rgb(var(--color-muted));
+  background: rgb(var(--color-paper-soft) / 0.68);
+  border-color: rgb(var(--color-line) / 0.42);
+  box-shadow: none;
+  cursor: help;
+}
+
+.activity-sidebar__chip[aria-disabled='true']:hover {
+  background: rgb(var(--color-paper-soft) / 0.78);
+  border-color: rgb(var(--color-line) / 0.6);
+  box-shadow: none;
+}
+
 .activity-sidebar__chip:active {
   transform: scale(0.96);
+}
+
+.activity-sidebar__chip[aria-disabled='true']:active {
+  transform: none;
 }
 
 .activity-sidebar__chip--primary {

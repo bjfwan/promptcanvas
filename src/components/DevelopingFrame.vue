@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import FlipDigits from './FlipDigits.vue'
+import { useI18n } from '../lib/i18n'
 
 interface Props {
-  /** 0~100 progress estimate (drives the arc sweep). */
+  /** 0~100 progress estimate (drives the progress rail). */
   progress: number
   /** Elapsed seconds; rendered through FlipDigits. */
   elapsedSeconds: number
@@ -15,6 +16,8 @@ interface Props {
   metaLabel?: string
   /** Second line of meta footer (prompt preview, truncated). */
   promptPreview?: string
+  /** Optional partial image preview from streaming Responses events. */
+  previewUrl?: string
   /** Retained for call-site compatibility. */
   ringSize?: number
   /** Compact variant for chat bubbles. */
@@ -25,89 +28,61 @@ const props = withDefaults(defineProps<Props>(), {
   remainingLabel: '',
   metaLabel: '',
   promptPreview: '',
+  previewUrl: '',
   ringSize: 200,
   compact: false,
 })
+const { t } = useI18n()
 
 defineEmits<{
   (e: 'cancel'): void
 }>()
 
 const fillPct = computed(() => Math.max(0, Math.min(100, props.progress)))
-
-/** SVG arc path for progress ring. */
-const arcPath = computed(() => {
-  const r = 46
-  const cx = 50
-  const cy = 50
-  const angle = (fillPct.value / 100) * 360
-  if (angle === 0) return ''
-  if (angle >= 359.9) return `M ${cx} ${cy - r} A ${r} ${r} 0 1 1 ${cx - 0.01} ${cy - r}`
-  const rad = ((angle - 90) * Math.PI) / 180
-  const x = cx + r * Math.cos(rad)
-  const y = cy + r * Math.sin(rad)
-  const large = angle > 180 ? 1 : 0
-  return `M ${cx} ${cy - r} A ${r} ${r} 0 ${large} 1 ${x} ${y}`
-})
+const epulseStyle = computed<Record<string, string>>(() => ({
+  '--epulse-progress': `${fillPct.value}%`,
+}))
 </script>
 
 <template>
-  <div class="epulse" :class="{ 'epulse--compact': compact }">
-    <!-- Ambient background glow -->
+  <div
+    class="epulse"
+    :class="{ 'epulse--compact': compact }"
+    :style="epulseStyle"
+  >
     <div class="epulse__ambient" aria-hidden="true"></div>
-
-    <!-- Floating particles -->
-    <div class="epulse__particles" aria-hidden="true">
-      <span v-for="i in 8" :key="i" :style="{ '--p': i }"></span>
+    <div v-if="previewUrl" class="epulse__preview" aria-hidden="true">
+      <img :src="previewUrl" alt="" />
+      <span></span>
     </div>
 
-    <!-- Central orb composition -->
     <div class="epulse__center">
-      <!-- Progress ring (SVG) -->
-      <svg class="epulse__ring" viewBox="0 0 100 100" aria-hidden="true">
-        <!-- Track -->
-        <circle cx="50" cy="50" r="46" class="epulse__ring-track" />
-        <!-- Fill arc -->
-        <path v-if="arcPath" :d="arcPath" class="epulse__ring-fill" />
-        <!-- Rotating accent dash -->
-        <circle cx="50" cy="50" r="40" class="epulse__ring-orbit" />
-      </svg>
-
-      <!-- Morphing inner glow -->
-      <div class="epulse__orb" aria-hidden="true">
-        <div class="epulse__orb-core"></div>
-        <div class="epulse__orb-halo"></div>
-      </div>
-
-      <!-- Elapsed time -->
+      <div class="epulse__gradient-orb" aria-hidden="true"></div>
       <div class="epulse__time">
         <FlipDigits :value="elapsedSeconds" suffix="s" :pad="2" haptic />
       </div>
     </div>
 
-    <!-- Stage label below orb -->
     <div class="epulse__stage">{{ stage }}</div>
 
-    <!-- Top strip: tag + cancel -->
     <div class="epulse__top">
       <span class="epulse__tag">
         <span class="epulse__tag-dot" aria-hidden="true"></span>
-        <span>生成中</span>
+        <span>{{ t('generation.status') }}</span>
       </span>
       <button
         type="button"
         class="epulse__cancel"
-        aria-label="取消这次生成"
+        :aria-label="t('canvas.pending.cancel')"
         @click="$emit('cancel')"
       >
         <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
           <path d="M1 1l8 8M9 1l-8 8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
         </svg>
-        <span>取消</span>
+        <span>{{ t('canvas.pending.cancelLabel') }}</span>
       </button>
     </div>
 
-    <!-- Bottom info -->
     <div class="epulse__bottom">
       <div class="epulse__meta-row">
         <p v-if="promptPreview" class="epulse__prompt">{{ promptPreview }}</p>
@@ -115,6 +90,9 @@ const arcPath = computed(() => {
       </div>
       <div class="epulse__progress-row">
         <span v-if="metaLabel" class="epulse__meta">{{ metaLabel }}</span>
+        <span class="epulse__progress-track" aria-hidden="true">
+          <span></span>
+        </span>
         <span class="epulse__pct">{{ Math.round(fillPct) }}%</span>
       </div>
     </div>
@@ -133,171 +111,129 @@ const arcPath = computed(() => {
   align-items: center;
   justify-content: center;
   font-family: 'IBM Plex Sans', system-ui, sans-serif;
+  --epulse-mint: rgb(var(--color-accent) / 0.18);
+  --epulse-blush: rgb(var(--color-clay) / 0.09);
   background:
-    radial-gradient(ellipse 80% 60% at 50% 45%, rgb(var(--color-accent) / 0.06), transparent 70%),
-    linear-gradient(160deg, rgb(var(--color-ivory) / 0.6) 0%, rgb(var(--color-vellum) / 0.5) 100%);
+    radial-gradient(90% 70% at 18% 74%, var(--epulse-mint), transparent 62%),
+    radial-gradient(74% 58% at 84% 12%, var(--epulse-blush), transparent 64%),
+    linear-gradient(128deg, rgb(var(--color-surface-raised) / 0.96), rgb(var(--color-vellum) / 0.72) 46%, rgb(var(--color-surface-raised) / 0.94));
+  background-size: 170% 170%;
+  animation: epulse-gradient 8.5s ease-in-out infinite;
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
 }
 
-/* ------------------------------------------------------------------
- * Ambient background glow — slow color breathing.
- * ------------------------------------------------------------------ */
 .epulse__ambient {
   position: absolute;
-  inset: -20%;
-  border-radius: 50%;
-  background: conic-gradient(
-    from 180deg at 50% 50%,
-    rgb(var(--color-accent) / 0.1) 0deg,
-    rgb(var(--color-blueprint) / 0.08) 120deg,
-    rgb(var(--color-clay) / 0.06) 240deg,
-    rgb(var(--color-accent) / 0.1) 360deg
-  );
-  filter: blur(20px);
-  animation: epulse-ambient 8s ease-in-out infinite;
+  inset: -18%;
+  z-index: 0;
+  background:
+    radial-gradient(circle at 34% 42%, rgb(var(--color-accent) / 0.12), transparent 34%),
+    radial-gradient(circle at 68% 54%, rgb(var(--color-clay) / 0.07), transparent 38%);
+  filter: blur(32px);
+  opacity: 0.86;
+  transform: translate3d(0, 0, 0);
+  animation: epulse-ambient 10s var(--motion-soft) infinite;
   pointer-events: none;
 }
 
-/* ------------------------------------------------------------------
- * Floating particles.
- * ------------------------------------------------------------------ */
-.epulse__particles {
+.epulse__preview {
   position: absolute;
   inset: 0;
+  z-index: 1;
+  overflow: hidden;
   pointer-events: none;
 }
 
-.epulse__particles > span {
+.epulse__preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: blur(14px) saturate(1.14);
+  opacity: 0.46;
+  transform: scale(1.08);
+}
+
+.epulse__preview span {
   position: absolute;
-  width: 3px;
-  height: 3px;
-  border-radius: 50%;
-  background: rgb(var(--color-accent) / 0.4);
-  box-shadow: 0 0 6px rgb(var(--color-accent) / 0.4);
-  top: 50%;
-  left: 50%;
-  animation: epulse-particle 6s ease-in-out infinite;
-  animation-delay: calc(var(--p) * -0.75s);
+  inset: 0;
+  background:
+    linear-gradient(180deg, rgb(var(--color-surface-raised) / 0.3), rgb(var(--color-surface-raised) / 0.82)),
+    radial-gradient(circle at 50% 45%, transparent, rgb(var(--color-vellum) / 0.58) 68%);
 }
 
-.epulse__particles > span:nth-child(odd) {
-  width: 2px;
-  height: 2px;
-  background: rgb(var(--color-blueprint) / 0.35);
-  box-shadow: 0 0 5px rgb(var(--color-blueprint) / 0.35);
+.epulse__center,
+.epulse__stage,
+.epulse__top,
+.epulse__bottom {
+  z-index: 2;
 }
 
-/* ------------------------------------------------------------------
- * Center orb area.
- * ------------------------------------------------------------------ */
 .epulse__center {
   position: relative;
-  width: 140px;
-  height: 140px;
+  width: min(38%, 210px);
+  min-width: 128px;
+  height: min(38%, 210px);
+  min-height: 128px;
   display: grid;
   place-items: center;
   flex-shrink: 0;
 }
 
 .epulse--compact .epulse__center {
-  width: 110px;
-  height: 110px;
+  width: 116px;
+  min-width: 116px;
+  height: 116px;
+  min-height: 116px;
 }
 
-/* Progress ring SVG */
-.epulse__ring {
+.epulse__gradient-orb {
   position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-}
-
-.epulse__ring-track {
-  fill: none;
-  stroke: rgb(var(--color-line) / 0.3);
-  stroke-width: 1;
-}
-
-.epulse__ring-fill {
-  fill: none;
-  stroke: rgb(var(--color-accent));
-  stroke-width: 2;
-  stroke-linecap: round;
-  filter: drop-shadow(0 0 5px rgb(var(--color-accent) / 0.5));
-  transition: d 0.6s var(--motion-snap);
-}
-
-.epulse__ring-orbit {
-  fill: none;
-  stroke: rgb(var(--color-blueprint) / 0.22);
-  stroke-width: 0.5;
-  stroke-dasharray: 3 12;
-  animation: epulse-orbit 12s linear infinite;
-  transform-origin: center;
-}
-
-/* Morphing inner orb */
-.epulse__orb {
-  position: absolute;
-  width: 56px;
-  height: 56px;
-  display: grid;
-  place-items: center;
-}
-
-.epulse--compact .epulse__orb {
-  width: 44px;
-  height: 44px;
-}
-
-.epulse__orb-core {
-  position: absolute;
-  inset: 12%;
+  width: 108px;
+  height: 108px;
   border-radius: 50%;
   background:
-    radial-gradient(circle at 35% 35%, rgb(var(--color-accent) / 0.92), rgb(var(--color-blueprint) / 0.55) 60%, transparent 82%);
-  animation: epulse-morph 4s ease-in-out infinite;
-  filter: blur(1px);
+    radial-gradient(circle at 34% 30%, rgb(255 255 255 / 0.82), transparent 22%),
+    radial-gradient(circle at 50% 54%, rgb(var(--color-accent) / 0.44), transparent 48%),
+    radial-gradient(circle at 68% 66%, rgb(var(--color-blueprint) / 0.22), transparent 68%),
+    radial-gradient(circle, rgb(var(--color-clay) / 0.1), transparent 78%);
+  filter: blur(18px) saturate(1.22);
+  opacity: 0.92;
+  transform: translate3d(-22px, 10px, 0) scale(1);
+  animation:
+    epulse-orb-drift 5.4s var(--motion-soft) infinite,
+    epulse-orb-gradient 7.2s ease-in-out infinite;
+  mix-blend-mode: multiply;
+  will-change: transform, filter, opacity;
 }
 
-.epulse__orb-halo {
-  position: absolute;
-  inset: 0;
-  border-radius: 50%;
-  background: rgb(var(--color-accent) / 0.08);
-  border: 1px solid rgb(var(--color-accent) / 0.14);
-  animation: epulse-breathe 3s ease-in-out infinite;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+.epulse--compact .epulse__gradient-orb {
+  width: 82px;
+  height: 82px;
+  filter: blur(15px) saturate(1.18);
 }
 
-/* Elapsed time positioned below orb */
 .epulse__time {
-  position: absolute;
-  bottom: 8px;
+  position: relative;
+  z-index: 1;
   font-size: 13px;
-  font-weight: 400;
-  color: rgb(var(--color-ink) / 0.85);
+  font-weight: 700;
+  color: rgb(var(--color-accent));
   font-feature-settings: 'tnum';
   letter-spacing: 0.02em;
+  text-shadow: 0 1px 12px rgb(var(--color-surface-raised) / 0.86);
 }
 
 .epulse--compact .epulse__time {
-  font-size: 11px;
-  bottom: 4px;
+  font-size: 12px;
 }
 
-/* ------------------------------------------------------------------
- * Stage label.
- * ------------------------------------------------------------------ */
 .epulse__stage {
-  margin-top: 0.75rem;
+  margin-top: 0.45rem;
   font-size: 11px;
   font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.28em;
-  color: rgb(var(--color-accent) / 0.85);
+  letter-spacing: 0.22em;
+  color: rgb(var(--color-accent) / 0.82);
   animation: epulse-fade-stage 2.4s ease-in-out infinite;
 }
 
@@ -441,13 +377,41 @@ const arcPath = computed(() => {
 }
 
 .epulse__meta {
+  flex: 0 1 auto;
   font-size: 9px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: rgb(var(--color-muted) / 0.6);
 }
 
+.epulse__progress-track {
+  position: relative;
+  flex: 1 1 80px;
+  min-width: 44px;
+  height: 3px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgb(var(--color-ink) / 0.08);
+}
+
+.epulse__progress-track span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--epulse-progress);
+  border-radius: inherit;
+  background: linear-gradient(
+    90deg,
+    rgb(var(--color-accent)),
+    rgb(var(--color-blueprint) / 0.92),
+    rgb(var(--color-clay) / 0.58)
+  );
+  background-size: 180% 100%;
+  animation: epulse-progress-gradient 2.4s ease-in-out infinite;
+  transition: width 640ms var(--motion-snap);
+}
+
 .epulse__pct {
+  flex-shrink: 0;
   font-size: 10px;
   font-weight: 600;
   font-feature-settings: 'tnum';
@@ -458,74 +422,59 @@ const arcPath = computed(() => {
 /* ------------------------------------------------------------------
  * Keyframes.
  * ------------------------------------------------------------------ */
+@keyframes epulse-gradient {
+  0%, 100% {
+    background-position: 0% 54%;
+  }
+  50% {
+    background-position: 100% 46%;
+  }
+}
+
 @keyframes epulse-ambient {
   0%, 100% {
-    transform: scale(1) rotate(0deg);
-    opacity: 0.7;
+    transform: translate3d(-1%, 1%, 0) scale(1);
+    opacity: 0.72;
   }
-  33% {
-    transform: scale(1.05) rotate(2deg);
-    opacity: 1;
+  45% {
+    transform: translate3d(2%, -1.5%, 0) scale(1.05);
+    opacity: 0.96;
   }
-  66% {
-    transform: scale(0.95) rotate(-1deg);
-    opacity: 0.8;
-  }
-}
-
-@keyframes epulse-particle {
-  0% {
-    transform: translate(0, 0) scale(0);
-    opacity: 0;
-  }
-  10% {
-    opacity: 1;
-    transform: translate(0, 0) scale(1);
-  }
-  100% {
-    transform:
-      translate(
-        calc(cos(calc(var(--p) * 45deg)) * 80px),
-        calc(sin(calc(var(--p) * 45deg)) * 80px)
-      )
-      scale(0);
-    opacity: 0;
+  72% {
+    transform: translate3d(-2%, -0.5%, 0) scale(0.98);
+    opacity: 0.84;
   }
 }
 
-@keyframes epulse-orbit {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@keyframes epulse-morph {
+@keyframes epulse-orb-drift {
   0%, 100% {
-    border-radius: 50%;
-    transform: scale(0.9) rotate(0deg);
+    transform: translate3d(-24px, 12px, 0) scale(0.96);
   }
-  25% {
-    border-radius: 42% 58% 62% 38% / 45% 55% 45% 55%;
-    transform: scale(1) rotate(5deg);
+  36% {
+    transform: translate3d(18px, -18px, 0) scale(1.1);
+  }
+  68% {
+    transform: translate3d(28px, 16px, 0) scale(1.02);
+  }
+}
+
+@keyframes epulse-orb-gradient {
+  0%, 100% {
+    filter: blur(18px) saturate(1.12);
+    opacity: 0.84;
   }
   50% {
-    border-radius: 55% 45% 38% 62% / 58% 42% 58% 42%;
-    transform: scale(0.95) rotate(-3deg);
-  }
-  75% {
-    border-radius: 48% 52% 55% 45% / 40% 60% 40% 60%;
-    transform: scale(1.02) rotate(2deg);
+    filter: blur(21px) saturate(1.38);
+    opacity: 0.96;
   }
 }
 
-@keyframes epulse-breathe {
+@keyframes epulse-progress-gradient {
   0%, 100% {
-    transform: scale(1);
-    opacity: 0.8;
+    background-position: 0% 50%;
   }
   50% {
-    transform: scale(1.08);
-    opacity: 1;
+    background-position: 100% 50%;
   }
 }
 
@@ -555,16 +504,16 @@ const arcPath = computed(() => {
  * Reduced motion: keep things calm.
  * ------------------------------------------------------------------ */
 @media (prefers-reduced-motion: reduce) {
+  .epulse,
   .epulse__ambient,
-  .epulse__orb-core,
-  .epulse__orb-halo,
-  .epulse__ring-orbit,
-  .epulse__tag-dot {
+  .epulse__gradient-orb,
+  .epulse__tag-dot,
+  .epulse__progress-track span {
     animation: none;
   }
 
-  .epulse__particles {
-    display: none;
+  .epulse__gradient-orb {
+    transform: translate3d(0, 0, 0);
   }
 
   .epulse__stage {
@@ -572,7 +521,7 @@ const arcPath = computed(() => {
     opacity: 0.85;
   }
 
-  .epulse__ring-fill {
+  .epulse__progress-track span {
     transition: none;
   }
 }

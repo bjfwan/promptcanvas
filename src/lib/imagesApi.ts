@@ -1,10 +1,5 @@
-import type { GeneratedImage, GenerateImageRequest, ReferenceImageAttachment } from '../types'
-import { buildSessionProfileWithLongTerm } from './sessionProfile'
-import { compose } from './promptCompose'
-import { parsePrompt } from './promptParser'
-import { inferEnhanceIntent } from './magicEnhance'
-import type { BrandKit, PromptContext } from './promptDoc'
-import type { GenerationHistoryItem } from '../types'
+import type { GeneratedImage, GenerateImageRequest, ModelSelectionMode, ReferenceImageAttachment } from '../types'
+import { t } from './i18n.js'
 
 export const allowedSizes: ReadonlySet<string> = new Set([
   '1024x1024',
@@ -43,65 +38,6 @@ export const mimeTypes: Record<string, string> = {
   webp: 'image/webp',
 }
 
-export const stylePrompts: Record<string, string> = {
-  natural:
-    'Photorealistic documentary photography captured with a 35mm lens at f/2, featuring natural daylight with side-back lighting that creates directional shadows. The composition uses shallow depth of field with sharp focus on the subject while the background naturally blurs into bokeh. Colors are authentic with subtle tonal depth, preserving honest textures like skin pores, fabric weave, and material imperfections. The atmosphere feels candid and unposed, as if captured by a street photographer. Avoid: plastic skin, HDR effects, over-saturation, posterized colors, artificial lighting, studio polish',
-  poster:
-    'Editorial poster design with a strong focal point occupying the visual center, framed by 30-40% negative space reserved for title typography. The color palette is controlled with 2-3 hues where one serves as an accent, creating asymmetric balance with clear visual hierarchy. Contrast and tonal depth meet print-quality standards. Typography uses geometric sans-serif or elegant serif fonts with generous letter spacing. The overall aesthetic feels contemporary and intentional, suitable for advertising or editorial use. Avoid: cluttered layout, decorative noise, weak focal hierarchy, poor color harmony, inconsistent typography',
-  product:
-    'Premium commercial product photography shot with a 100mm macro lens at f/8 for maximum sharpness. Lighting uses a large softbox as the main light source with a reflector for fill and a subtle rim light to define edges. The surface is seamless paper or acrylic, showcasing authentic material reflections and highlight details. The product occupies 60% of the frame with a tight crop, sitting on a soft elliptical shadow below. Every material texture is rendered with precision—glass reflections, metal sheen, fabric weave. The result feels like a high-end magazine advertisement. Avoid: rainbow reflections, plastic glare, busy background, harsh shadows, unrealistic materials',
-  portrait:
-    'Magazine-quality portrait shot with an 85mm lens at f/1.8 in head-and-shoulders composition. Window light from 30-45° serves as the main light, supplemented by a soft reflector fill. Focus is razor-sharp on the near eye while the background melts into creamy bokeh. Skin texture is preserved with visible pores, freckles, and micro-expressions—no airbrushing or over-smoothing. Color grading is restrained and natural. The subject wears a relaxed, authentic expression with natural posture. The overall quality rivals professional editorial photography. Avoid: airbrushed plastic skin, over-smoothing, doll-like eyes, unnatural skin texture, over-processed look',
-  anime:
-    'Modern Japanese cel-shaded anime illustration featuring clean consistent line weight throughout. Each color area uses 3-4 flat color blocks with clear light-shadow separation and restrained highlight accents. Character anatomy is accurate with lively expressive faces. The style references contemporary anime aesthetics without derivative tropes. Backgrounds use simplified geometric shapes with atmospheric depth. Line art is crisp with no artifacts. Color palette is vibrant but harmonious, avoiding muddy tones. The result feels like professional animation key art or character design sheets. Avoid: muddy colors, messy linework, photorealistic blending, derivative anime tropes, inconsistent line quality',
-  cinematic:
-    'Cinematic still frame captured with a 2.39:1 widescreen aspect ratio, featuring the optical quality of a 40mm anamorphic lens with horizontal lens flare and elliptical bokeh. Directional key light creates deep shadows with strong contrast. Color grading uses teal-and-amber or muted pastel palettes depending on mood, with subtle 35mm film grain and atmospheric perspective. Composition follows A24-style aesthetics with restrained negative space and intentional framing. The image feels extracted from a high-budget film, with dramatic tension and visual storytelling. Avoid: flat lighting, forced symmetry, over-detailed clutter, digital look, video quality',
-  logo:
-    'Minimalist brand logo design using pure flat vector aesthetics. The mark sits on a solid color background with a single foreground color or restrained two-color pairing. No gradients, shadows, or glow effects—clean geometric shapes only. Line weight is consistent throughout, ensuring the logo remains recognizable when scaled down to 16×16 pixels. The design emphasizes strong silhouette and balanced negative space. No text, letters, or typographic elements are rendered. The aesthetic is contemporary, scalable, and suitable for both digital and print applications. Avoid: gradients, drop shadows, glow effects, photorealistic textures, complex details, decorative elements',
-  interior:
-    'Architectural interior photography shot with a 24mm wide-angle lens with corrected vertical lines. Natural window light serves as the primary source with soft ambient fill to balance shadows. All materials are rendered authentically—wood grain, fabric weave, matte stone, brushed metal. Camera height is at waist level to create a human-centered perspective. The composition includes intentional negative space and lived-in details like a folded blanket, half-read book, or steaming coffee cup. The atmosphere feels inviting and genuinely inhabited, not staged. Avoid: CG plastic surfaces, impossible perspective, fish-eye distortion, artificial materials, sterile emptiness',
-  raw: '',
-}
-
-type SubjectType = 'person' | 'animal' | 'landscape' | 'object' | 'abstract' | 'architecture' | 'food' | 'general'
-
-const subjectKeywords: Record<SubjectType, string[]> = {
-  person: ['person', 'man', 'woman', 'girl', 'boy', 'child', 'people', 'face', 'portrait', 'human', 'character', '人', '男人', '女人', '女孩', '男孩', '孩子', '人物', '脸', '肖像'],
-  animal: ['cat', 'dog', 'animal', 'pet', 'bird', 'horse', 'fox', 'rabbit', '猫', '狗', '动物', '宠物', '鸟', '马', '狐狸', '兔子'],
-  landscape: ['landscape', 'mountain', 'ocean', 'sea', 'sky', 'forest', 'river', 'lake', 'beach', 'sunset', 'sunrise', 'nature', 'scenery', 'view', '风景', '山脉', '高山', '大海', '海洋', '海边', '天空', '森林', '河流', '湖泊', '海滩', '日落', '日出', '自然风光'],
-  object: ['product', 'bottle', 'cup', 'chair', 'table', 'car', 'phone', 'computer', 'watch', 'shoe', 'bag', '物品', '产品', '瓶子', '杯子', '椅子', '桌子', '车', '手机', '电脑', '手表', '鞋', '包'],
-  abstract: ['abstract', 'pattern', 'texture', 'geometric', 'shapes', 'design', 'artistic', 'conceptual', '抽象', '图案', '纹理', '几何', '形状', '设计', '艺术', '概念'],
-  architecture: ['building', 'house', 'architecture', 'interior', 'room', 'city', 'street', 'bridge', 'tower', '建筑', '房子', '室内', '房间', '城市', '街道', '桥', '塔'],
-  food: ['food', 'meal', 'dish', 'restaurant', 'cooking', 'fruit', 'vegetable', 'bread', 'cake', 'coffee', '食物', '餐', '菜', '餐厅', '烹饪', '水果', '蔬菜', '面包', '蛋糕', '咖啡'],
-  general: [],
-}
-
-export function detectSubjectType(prompt: string): SubjectType {
-  const lowerPrompt = prompt.toLowerCase()
-  
-  for (const [type, keywords] of Object.entries(subjectKeywords)) {
-    if (type === 'general') continue
-    for (const keyword of keywords) {
-      if (lowerPrompt.includes(keyword)) {
-        return type as SubjectType
-      }
-    }
-  }
-  
-  return 'general'
-}
-
-const adaptiveEnhancements: Record<SubjectType, string> = {
-  person: 'Natural skin texture and realistic proportions preferred',
-  animal: 'Natural fur or feather texture, believable anatomy, expressive eyes',
-  landscape: 'Natural atmospheric depth and environmental details',
-  object: 'Authentic material textures and lighting',
-  abstract: 'Cohesive composition and color harmony',
-  architecture: 'Correct perspective and authentic materials',
-  food: 'Natural textures and appetizing appearance',
-  general: '',
-}
-
 export interface ValidatedPayload {
   prompt: string
   style: string
@@ -113,6 +49,15 @@ export interface ValidatedPayload {
   creativity: number | null
   seed: string
   model: string
+  modelSelection: ModelSelectionMode
+  mode: GenerateImageRequest['mode']
+  responseModel: string
+  imageToolModel: string
+  stream: boolean | undefined
+  streamingWait: boolean | undefined
+  transparentBackground: boolean
+  partialPreview: boolean
+  partialImages: number | undefined
   referenceImages: ReferenceImageAttachment[]
   /** PNG mask for inpainting. Black = keep, white = edit. */
   inpaintMask?: Blob | string
@@ -144,7 +89,20 @@ export function validatePayload(body: unknown): ValidationResult {
   const creativity = raw.creativity === undefined ? null : (raw.creativity as number | null)
   const seed = typeof raw.seed === 'string' ? raw.seed.trim() : ''
   const model = typeof raw.model === 'string' ? raw.model.trim() : ''
+  const modelSelection = typeof raw.modelSelection === 'string' ? raw.modelSelection.trim() : (model ? 'explicit' : 'auto')
+  const mode = typeof raw.mode === 'string' ? raw.mode.trim() : undefined
+  const responseModel = typeof raw.responseModel === 'string' ? raw.responseModel.trim() : ''
+  const imageToolModel = typeof raw.imageToolModel === 'string' ? raw.imageToolModel.trim() : ''
+  const stream = raw.stream === undefined ? undefined : raw.stream
+  const streamingWait = raw.streamingWait === undefined ? undefined : raw.streamingWait
+  const transparentBackground = raw.transparentBackground === undefined ? false : raw.transparentBackground
+  const partialPreview = raw.partialPreview === undefined ? true : raw.partialPreview
+  const partialImages = raw.partialImages === undefined ? undefined : raw.partialImages
+  const partialImagesValue = typeof partialImages === 'number' ? partialImages : undefined
   const allowResponsesImageInputs = isResponsesImageModel(model)
+    || mode === 'responses_tool'
+    || mode === 'responses_text_data_url'
+    || isResponsesImageModel(responseModel)
   const referenceImages = raw.referenceImages === undefined
     ? []
     : (Array.isArray(raw.referenceImages) ? raw.referenceImages : null)
@@ -193,12 +151,67 @@ export function validatePayload(body: unknown): ValidationResult {
     return { error: 'model 必须是字符串' }
   }
 
-  if (model.length > 64) {
-    return { error: 'model 不能超过 64 个字符' }
+  if (model.length > 200) {
+    return { error: 'model 不能超过 200 个字符' }
   }
 
   if (model && !/^[A-Za-z0-9._\-/]+$/.test(model)) {
     return { error: 'model 只允许字母、数字、点、下划线、横线、斜杠' }
+  }
+
+  if (
+    modelSelection !== 'auto'
+    && modelSelection !== 'none'
+    && modelSelection !== 'explicit'
+  ) {
+    return { error: 'modelSelection 只支持 auto、none 或 explicit' }
+  }
+
+  if (
+    mode !== undefined
+    && mode !== 'images_generations'
+    && mode !== 'responses_tool'
+    && mode !== 'responses_text_data_url'
+  ) {
+    return { error: 'mode 只支持 images_generations、responses_tool 或 responses_text_data_url' }
+  }
+
+  for (const [field, value] of [
+    ['responseModel', responseModel],
+    ['imageToolModel', imageToolModel],
+  ] as const) {
+    if (raw[field] !== undefined && typeof raw[field] !== 'string') {
+      return { error: `${field} 必须是字符串` }
+    }
+    if (value.length > 200) {
+      return { error: `${field} 不能超过 200 个字符` }
+    }
+    if (value && !/^[A-Za-z0-9._\-/]+$/.test(value)) {
+      return { error: `${field} 只允许字母、数字、点、下划线、横线、斜杠` }
+    }
+  }
+
+  if (stream !== undefined && typeof stream !== 'boolean') {
+    return { error: 'stream 必须是布尔值' }
+  }
+
+  if (streamingWait !== undefined && typeof streamingWait !== 'boolean') {
+    return { error: 'streamingWait 必须是布尔值' }
+  }
+
+  if (typeof transparentBackground !== 'boolean') {
+    return { error: 'transparentBackground 必须是布尔值' }
+  }
+
+  if (typeof partialPreview !== 'boolean') {
+    return { error: 'partialPreview 必须是布尔值' }
+  }
+
+  if (
+    partialImages !== undefined
+    && (partialImagesValue === undefined || !Number.isInteger(partialImagesValue) || partialImagesValue < 0 || partialImagesValue > 3)
+  ) {
+    return { error: 'partialImages 必须是 0 到 3 的整数' }
   }
 
   if (referenceImages.length > maxReferenceImages) {
@@ -307,6 +320,15 @@ export function validatePayload(body: unknown): ValidationResult {
       creativity,
       seed,
       model,
+      modelSelection: modelSelection as ModelSelectionMode,
+      mode,
+      responseModel,
+      imageToolModel,
+      stream,
+      streamingWait: streamingWait as boolean | undefined,
+      transparentBackground,
+      partialPreview,
+      partialImages: partialImagesValue,
       referenceImages: normalizedReferenceImages,
       inpaintMask,
     },
@@ -359,8 +381,68 @@ export async function ensurePngBlob(file: File): Promise<Blob> {
   })
 }
 
+export async function buildImagesEditsFormData(payload: {
+  prompt: string
+  size: string
+  count: number
+  outputFormat: string
+  quality: string
+  model: string
+  referenceImages: ReferenceImageAttachment[]
+  /**
+   * Optional inpainting mask (PNG). Black pixels = keep, white pixels = edit.
+   * When supplied, only one referenceImage is used (the first) as the source.
+   */
+  mask?: Blob
+}, requestId: string): Promise<FormData> {
+  const formData = new FormData()
+
+  formData.set('prompt', payload.prompt)
+  formData.set('size', payload.size)
+  formData.set('n', String(payload.count))
+  formData.set('user', requestId)
+  formData.set('output_format', payload.outputFormat)
+  formData.set('quality', payload.quality)
+  // OpenAI-compatible relays vary here. normalizeImages accepts either url or
+  // b64_json, so this remains a soft preference rather than a parser contract.
+  formData.set('response_format', 'url')
+
+  if (payload.model) {
+    formData.set('model', payload.model)
+  }
+
+  if (payload.referenceImages.length > 0) {
+    const firstImage = payload.referenceImages[0]
+    if (firstImage.file) {
+      const pngBlob = await ensurePngBlob(firstImage.file)
+      formData.append('image', pngBlob, 'image.png')
+    }
+
+    if (!payload.mask && payload.referenceImages.length > 1) {
+      for (const image of payload.referenceImages.slice(1)) {
+        if (image.file) {
+          const pngBlob = await ensurePngBlob(image.file)
+          formData.append('image[]', pngBlob, 'image.png')
+        }
+      }
+    }
+  }
+
+  if (payload.mask) {
+    formData.append('mask', payload.mask, 'mask.png')
+  }
+
+  return formData
+}
+
 export function isResponsesImageModel(model?: string | null): boolean {
   return String(model || '').toLowerCase().includes('gpt-image-2-chat')
+}
+
+export function imageGenerationsModelFor(model?: string | null): string {
+  const raw = String(model || '').trim()
+  if (!raw) return ''
+  return raw.replace(/gpt-image-2-chat/ig, 'gpt-image-2')
 }
 
 function firstString(...values: unknown[]): string {
@@ -501,8 +583,13 @@ export interface BuildResponsesImageRequestPayload {
   outputFormat: string
   quality: string
   model: string
+  responseModel?: string
+  imageToolModel?: string
   referenceImages: ReferenceImageAttachment[]
   mask?: Blob | string
+  stream?: boolean
+  transparentBackground?: boolean
+  partialPreview?: boolean
   partialImages?: number
 }
 
@@ -542,30 +629,100 @@ export async function buildResponsesImageRequest(
     })
   }
 
-  return {
-    model: payload.model,
+  const responseModel = payload.responseModel?.trim() || payload.model
+  const imageToolModel = payload.imageToolModel?.trim() || imageGenerationsModelFor(responseModel)
+  const stream = payload.stream ?? false
+  const tool: Record<string, unknown> = {
+    type: 'image_generation',
+    output_format: payload.outputFormat,
+    quality: payload.quality,
+    size: payload.size,
+    partial_images: stream && payload.partialPreview ? (payload.partialImages ?? 2) : 0,
+  }
+
+  if (imageToolModel) tool.model = imageToolModel
+  if (payload.transparentBackground && payload.outputFormat === 'png') {
+    tool.background = 'transparent'
+  }
+
+  const request: Record<string, unknown> = {
     input: [{ role: 'user', content }],
-    tools: [{
-      type: 'image_generation',
-      model: 'gpt-image-2',
-      output_format: payload.outputFormat,
-      quality: payload.quality,
-      size: payload.size,
-      partial_images: payload.partialImages ?? 2,
-    }],
-    instructions: 'You are a helpful assistant. Always call image_generation when the user asks for an image.',
+    tools: [tool],
+    instructions: 'You are a helpful assistant. Always call image_generation when the user asks for an image. Do not answer with only text.',
     tool_choice: { type: 'image_generation' },
-    stream: false,
+    stream,
     store: false,
   }
+
+  if (responseModel) request.model = responseModel
+
+  return request
 }
 
-export interface BuildPromptOptions {
-  brandKit?: BrandKit | null
-  history?: GenerationHistoryItem[] | null
-  modelName?: string
-  hasReferenceImages?: boolean
-  count?: number
+export interface BuildResponsesTextDataUrlRequestPayload {
+  prompt: string
+  size: string
+  count: number
+  outputFormat: string
+  quality: string
+  model: string
+  responseModel?: string
+  referenceImages: ReferenceImageAttachment[]
+  mask?: Blob | string
+  stream?: boolean
+  transparentBackground?: boolean
+}
+
+export async function buildResponsesTextDataUrlRequest(
+  payload: BuildResponsesTextDataUrlRequestPayload,
+): Promise<Record<string, unknown>> {
+  const imageCount = Math.max(1, payload.count)
+  const content: Array<Record<string, string>> = []
+  const instructionLines = [
+    `Generate exactly ${imageCount} ${imageCount === 1 ? 'image' : 'images'} from the prompt.`,
+    `Target size: ${payload.size}.`,
+    `Output format: ${payload.outputFormat}.`,
+    `Quality: ${payload.quality}.`,
+    'If this relay returns images through text, return the image as an HTML <img> tag whose src is a data:image/*;base64 URL.',
+  ]
+
+  if (payload.prompt) {
+    instructionLines.push(`Prompt:\n${payload.prompt}`)
+  }
+  if (payload.referenceImages.length > 0) {
+    instructionLines.push('Use the attached input images as visual references for the generation or edit.')
+  }
+  if (payload.mask) {
+    instructionLines.push('The final attached input image is an inpainting mask: black pixels keep the source image, white pixels mark the area to edit.')
+  }
+
+  content.push({ type: 'input_text', text: instructionLines.join('\n') })
+
+  for (const image of payload.referenceImages) {
+    content.push({
+      type: 'input_image',
+      image_url: await referenceImageToResponsesImageUrl(image),
+    })
+  }
+
+  if (payload.mask) {
+    content.push({
+      type: 'input_image',
+      image_url: await resolveResponsesImageUrl(payload.mask, 'image/png'),
+    })
+  }
+
+  const responseModel = payload.responseModel?.trim() || payload.model
+
+  const request: Record<string, unknown> = {
+    input: [{ role: 'user', content }],
+    stream: payload.stream ?? false,
+    store: false,
+  }
+
+  if (responseModel) request.model = responseModel
+
+  return request
 }
 
 export function buildPrompt(payload: {
@@ -579,80 +736,9 @@ export function buildPrompt(payload: {
   quality?: string
   model?: string
   referenceImages?: Array<unknown>
-}, options: BuildPromptOptions = {}): string {
+}): string {
   const trimmedPrompt = payload.prompt.trim()
-  if (!trimmedPrompt) return ''
-
-  const allowedStyles = new Set([
-    'natural',
-    'poster',
-    'product',
-    'portrait',
-    'anime',
-    'cinematic',
-    'logo',
-    'interior',
-    'raw',
-  ])
-  const styleId = (allowedStyles.has(payload.style) ? payload.style : 'raw') as
-    | 'natural'
-    | 'poster'
-    | 'product'
-    | 'portrait'
-    | 'anime'
-    | 'cinematic'
-    | 'logo'
-    | 'interior'
-    | 'raw'
-
-  const size = allowedSizes.has(payload.size ?? '') ? (payload.size as string) : '1024x1024'
-
-  const allowedQualitiesList = new Set(['auto', 'low', 'medium', 'high'])
-  const quality = allowedQualitiesList.has(payload.quality ?? '')
-    ? (payload.quality as 'auto' | 'low' | 'medium' | 'high')
-    : 'auto'
-
-  const hasReferenceImages = Boolean(
-    options.hasReferenceImages ?? (Array.isArray(payload.referenceImages) && payload.referenceImages.length > 0),
-  )
-  const intent = inferEnhanceIntent(styleId, hasReferenceImages)
-  const modelName = options.modelName ?? payload.model ?? ''
-  const count = options.count ?? 1
-
-  const doc = parsePrompt({
-    prompt: trimmedPrompt,
-    style: styleId,
-    size,
-    quality,
-    intent,
-    modelName,
-    count,
-  })
-
-  if (payload.negativePrompt.trim()) {
-    doc.constraints.forbid.push(payload.negativePrompt.trim())
-  }
-
-  const sessionProfile = options.history?.length ? buildSessionProfileWithLongTerm(options.history) : null
-  const context: PromptContext = {
-    brand: options.brandKit && options.brandKit.enabled ? options.brandKit : null,
-    session: sessionProfile,
-    continuation: null,
-  }
-
-  const composition = compose(doc, {
-    level: 'standard',
-    mode: 'faithful',
-    context,
-  })
-
-  const lines: string[] = [composition.rendered]
-
-  const creativityHint = resolveCreativityInstruction(payload.creativity)
-  if (creativityHint) lines.push(creativityHint)
-  if (payload.seed) lines.push(`一致性参考：${payload.seed}`)
-
-  return lines.filter(Boolean).join('\n')
+  return trimmedPrompt
 }
 
 interface RawUpstreamImage {
@@ -667,6 +753,7 @@ interface RawUpstreamImage {
 interface RawResponsesImageCall {
   id?: string
   type?: string
+  status?: string
   result?: string
   b64_json?: string
   b64Json?: string
@@ -683,16 +770,313 @@ function pickFirstString(...values: unknown[]): string | null {
   return null
 }
 
+function hasResponseImagePayload(item: unknown): item is RawResponsesImageCall {
+  if (!item || typeof item !== 'object') return false
+  const record = item as RawResponsesImageCall
+  return record.type === 'image_generation_call'
+    && Boolean(pickFirstString(
+      record.result,
+      record.b64_json,
+      record.b64Json,
+      record.image_base64,
+      record.imageBase64,
+    ))
+}
+
+function pushUniqueImageCall(
+  images: RawResponsesImageCall[],
+  item: unknown,
+): void {
+  if (!hasResponseImagePayload(item)) return
+
+  const id = item.id || ''
+  const b64 = pickFirstString(item.result, item.b64_json, item.b64Json, item.image_base64, item.imageBase64) || ''
+  const alreadySeen = images.some((existing) => {
+    const existingB64 = pickFirstString(
+      existing.result,
+      existing.b64_json,
+      existing.b64Json,
+      existing.image_base64,
+      existing.imageBase64,
+    )
+    return (id && existing.id === id) || existingB64 === b64
+  })
+  if (!alreadySeen) images.push(item)
+}
+
+function responseOutputItems(value: unknown): unknown[] {
+  const record = value as { output?: unknown; response?: { output?: unknown } }
+  if (Array.isArray(record?.output)) return record.output
+  if (Array.isArray(record?.response?.output)) return record.response.output
+  return []
+}
+
+export type ResponsesImageProgressStage =
+  | 'connected'
+  | 'processing'
+  | 'tool-started'
+  | 'generating'
+  | 'preview'
+  | 'finalizing'
+  | 'completed'
+
+export interface ResponsesImageProgress {
+  eventType: string
+  stage: ResponsesImageProgressStage
+  label: string
+  progress: number
+  partialImage?: {
+    b64Json: string
+    mimeType: string
+  }
+}
+
+const responsesProgressMap: Record<string, Omit<ResponsesImageProgress, 'eventType' | 'partialImage'>> = {
+  'response.created': {
+    stage: 'connected',
+    label: '正在连接绘图引擎',
+    progress: 8,
+  },
+  'response.in_progress': {
+    stage: 'processing',
+    label: '正在理解画面',
+    progress: 20,
+  },
+  'response.output_item.added': {
+    stage: 'tool-started',
+    label: '开始绘制',
+    progress: 34,
+  },
+  'response.image_generation_call.in_progress': {
+    stage: 'tool-started',
+    label: '开始绘制',
+    progress: 42,
+  },
+  'response.image_generation_call.generating': {
+    stage: 'generating',
+    label: '细节生成中',
+    progress: 66,
+  },
+  'response.image_generation_call.partial_image': {
+    stage: 'preview',
+    label: '收到预览，继续打磨',
+    progress: 76,
+  },
+  'response.output_item.done': {
+    stage: 'finalizing',
+    label: '整理最终图片',
+    progress: 92,
+  },
+  'response.completed': {
+    stage: 'completed',
+    label: '生成完成',
+    progress: 100,
+  },
+}
+
+const responsesProgressLabelKeys: Record<string, string> = {
+  'response.created': 'generation.progress.connected',
+  'response.in_progress': 'generation.progress.processing',
+  'response.output_item.added': 'generation.progress.toolStarted',
+  'response.image_generation_call.in_progress': 'generation.progress.toolStarted',
+  'response.image_generation_call.generating': 'generation.progress.generating',
+  'response.image_generation_call.partial_image': 'generation.progress.preview',
+  'response.output_item.done': 'generation.progress.finalizing',
+  'response.completed': 'generation.progress.completed',
+}
+
+function pickBase64LikeString(value: unknown, depth = 0): string | null {
+  if (typeof value === 'string' && value.trim()) {
+    const dataUrlMatch = value.match(/^data:image\/[a-z0-9.+-]+;base64,([\s\S]+)$/i)
+    return dataUrlMatch ? cleanBase64Body(dataUrlMatch[1]) : cleanBase64Body(value)
+  }
+  if (!value || typeof value !== 'object' || depth > 2) return null
+
+  const record = value as Record<string, unknown>
+  const direct = pickFirstString(
+    record.partial_image,
+    record.partialImage,
+    record.image_base64,
+    record.imageBase64,
+    record.b64_json,
+    record.b64Json,
+    record.data,
+  )
+  if (direct) return pickBase64LikeString(direct, depth + 1)
+
+  for (const key of ['partial_image', 'partialImage', 'image', 'item', 'delta'] as const) {
+    const nested = pickBase64LikeString(record[key], depth + 1)
+    if (nested) return nested
+  }
+
+  return null
+}
+
+function inferMimeTypeFromProgressEvent(event: Record<string, unknown>, outputFormat: string): string {
+  const direct = pickFirstString(event.mime_type, event.mimeType, event.output_format, event.outputFormat)
+  if (direct && direct.includes('/')) return direct
+  if (direct && mimeTypes[direct]) return mimeTypes[direct]
+  return mimeTypes[outputFormat] || 'image/png'
+}
+
+function decodeMinimalHtmlEntities(value: string): string {
+  return value
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#34;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, '&')
+}
+
+function extractDataUrlImagesFromText(text: string): Array<{ b64Json: string; mimeType: string }> {
+  const decoded = decodeMinimalHtmlEntities(text)
+  const images: Array<{ b64Json: string; mimeType: string }> = []
+  const seen = new Set<string>()
+  const dataUrlPattern = /data:(image\/[a-z0-9.+-]+);base64,([A-Za-z0-9+/_=-]+)/gi
+
+  for (const match of decoded.matchAll(dataUrlPattern)) {
+    const mimeType = match[1].toLowerCase()
+    const b64Json = cleanBase64Body(match[2])
+    if (!b64Json || seen.has(`${mimeType}:${b64Json}`)) continue
+    seen.add(`${mimeType}:${b64Json}`)
+    images.push({ b64Json, mimeType })
+  }
+
+  return images
+}
+
+function collectOutputText(value: unknown, depth = 0): string[] {
+  if (!value || depth > 6) return []
+
+  if (typeof value === 'string') {
+    return /data:image\/[a-z0-9.+-]+;base64,/i.test(value) ? [value] : []
+  }
+
+  if (Array.isArray(value)) {
+    return value.flatMap((entry) => collectOutputText(entry, depth + 1))
+  }
+
+  if (typeof value !== 'object') return []
+
+  const record = value as Record<string, unknown>
+  const texts: string[] = []
+  for (const key of ['output_text', 'outputText', 'text', 'delta'] as const) {
+    const text = record[key]
+    if (typeof text === 'string') {
+      texts.push(text)
+    }
+  }
+
+  for (const key of ['response', 'output', 'content', 'item', 'message'] as const) {
+    texts.push(...collectOutputText(record[key], depth + 1))
+  }
+
+  return texts
+}
+
+export function responsesImageProgressFromEvent(
+  event: unknown,
+  outputFormat = 'png',
+): ResponsesImageProgress | null {
+  if (!event || typeof event !== 'object') return null
+
+  const record = event as Record<string, unknown>
+  const eventType = typeof record.type === 'string' ? record.type : ''
+  const mapped = responsesProgressMap[eventType]
+  if (!mapped) return null
+
+  const progress: ResponsesImageProgress = {
+    eventType,
+    ...mapped,
+    label: t(responsesProgressLabelKeys[eventType] ?? 'generation.progress.generating'),
+  }
+
+  if (eventType === 'response.image_generation_call.partial_image') {
+    const b64Json = pickBase64LikeString(record)
+    if (b64Json) {
+      progress.partialImage = {
+        b64Json,
+        mimeType: inferMimeTypeFromProgressEvent(record, outputFormat),
+      }
+    }
+  }
+
+  return progress
+}
+
+export function parseResponsesImageSseBlock(block: string): unknown | null {
+  const dataLines: string[] = []
+  for (const line of block.split('\n')) {
+    if (!line || line.startsWith(':')) continue
+    if (line.startsWith('data:')) {
+      dataLines.push(line.slice(5).replace(/^ /, ''))
+    }
+  }
+
+  const data = dataLines.join('\n').trim()
+  if (!data || data === '[DONE]') return null
+
+  try {
+    return JSON.parse(data)
+  } catch {
+    return null
+  }
+}
+
+export function visitResponsesImageSseEvents(
+  text: string,
+  visitor: (event: unknown) => void,
+): void {
+  const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+  const blocks = normalized.split(/\n\n+/)
+
+  for (const block of blocks) {
+    const event = parseResponsesImageSseBlock(block)
+    if (event) visitor(event)
+  }
+}
+
+export function parseResponsesImageSse(text: string): Record<string, unknown> {
+  const output: RawResponsesImageCall[] = []
+  const outputTexts: string[] = []
+
+  visitResponsesImageSseEvents(text, (event) => {
+    const record = event as {
+      type?: string
+      item?: unknown
+      response?: unknown
+    }
+
+    if (record.type === 'response.output_item.done') {
+      pushUniqueImageCall(output, record.item)
+    }
+
+    if (record.type === 'response.completed') {
+      for (const item of responseOutputItems(record.response)) {
+        pushUniqueImageCall(output, item)
+      }
+    }
+
+    for (const item of responseOutputItems(record)) {
+      pushUniqueImageCall(output, item)
+    }
+
+    for (const outputText of collectOutputText(record)) {
+      if (!outputTexts.includes(outputText)) {
+        outputTexts.push(outputText)
+      }
+    }
+  })
+
+  return { output, output_text: outputTexts.join('\n') }
+}
+
 function normalizeResponsesImages(response: unknown, outputFormat: string): GeneratedImage[] {
-  const root = response as { output?: unknown; response?: { output?: unknown } }
-  const output = Array.isArray(root?.output)
-    ? root.output
-    : (Array.isArray(root?.response?.output) ? root.response.output : [])
+  const output = responseOutputItems(response)
 
   return output
-    .filter((item): item is RawResponsesImageCall => {
-      return Boolean(item && typeof item === 'object' && (item as RawResponsesImageCall).type === 'image_generation_call')
-    })
+    .filter(hasResponseImagePayload)
     .map((item, index) => ({
       id: item.id || `img_${index + 1}`,
       url: null,
@@ -701,6 +1085,27 @@ function normalizeResponsesImages(response: unknown, outputFormat: string): Gene
       revisedPrompt: item.revised_prompt || item.revisedPrompt || null,
     }))
     .filter((image) => Boolean(image.b64Json))
+}
+
+function normalizeOutputTextDataUrlImages(response: unknown): GeneratedImage[] {
+  const textImages = collectOutputText(response)
+    .flatMap(extractDataUrlImagesFromText)
+
+  const seen = new Set<string>()
+  return textImages
+    .filter((image) => {
+      const key = `${image.mimeType}:${image.b64Json}`
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+    .map((image, index) => ({
+      id: `img_text_${index + 1}`,
+      url: null,
+      b64Json: image.b64Json,
+      mimeType: image.mimeType,
+      revisedPrompt: null,
+    }))
 }
 
 export function normalizeImages(response: unknown, outputFormat: string): GeneratedImage[] {
@@ -718,7 +1123,10 @@ export function normalizeImages(response: unknown, outputFormat: string): Genera
     }))
   }
 
-  return normalizeResponsesImages(response, outputFormat)
+  const responsesImages = normalizeResponsesImages(response, outputFormat)
+  if (responsesImages.length > 0) return responsesImages
+
+  return normalizeOutputTextDataUrlImages(response)
 }
 
 export interface ResolvedError {
@@ -732,10 +1140,38 @@ export function resolveOpenAIError(error: {
   code?: string
   message?: string
   name?: string
+  model?: string
 }): ResolvedError {
   const status = error?.status
   const upstreamCode = error?.code
   const upstreamMessage = (error?.message ?? '').toLowerCase()
+  const model = error?.model ?? ''
+  const isPriorityModel = model.toLowerCase().includes('priority')
+  const modelAdvice = model.toLowerCase().includes('priority')
+    ? '当前使用的是 priority 模型/通道，建议先切回普通模型再试。'
+    : (model
+      ? '如果该模型持续失败，请换一个普通模型或在中转站后台确认该模型的图片额度。'
+      : '如果当前没有显式指定模型，请先指定一个已在 /models 中出现的可用模型。')
+  const isQuotaError =
+    upstreamCode === 'insufficient_quota'
+    || upstreamCode === 'billing_hard_limit_reached'
+    || upstreamCode === 'billing_limit_user_error'
+    || upstreamMessage.includes('billing hard limit')
+    || upstreamMessage.includes('insufficient')
+    || upstreamMessage.includes('quota')
+    || upstreamMessage.includes('no credit')
+    || upstreamMessage.includes('credit')
+    || upstreamMessage.includes('balance')
+    || upstreamMessage.includes('额度')
+    || upstreamMessage.includes('余额')
+
+  if (isQuotaError) {
+    return {
+      status: 429,
+      code: isPriorityModel ? 'PRIORITY_QUOTA_INSUFFICIENT' : 'INSUFFICIENT_QUOTA',
+      message: `中转站提示额度、余额或账单限制。这不一定代表 Key 整体无效；可能只是当前模型、图片额度、priority 渠道或上游线路没有额度。${modelAdvice} 请在中转站后台核对 Key 所属账号、模型权限和请求 ID。`,
+    }
+  }
 
   // 上游中转站"背后真实供应商全部熔断/无可用线路"——常见于负载型中转站，
   // 表现为 503 + "no available upstream"。这不是 key/url/CORS/分辨率问题，
@@ -749,29 +1185,52 @@ export function resolveOpenAIError(error: {
     return {
       status: 503,
       code: 'UPSTREAM_UNAVAILABLE',
-      message: '中转站暂时没有可用的上游线路（该模型线路全部熔断或冷却中）。这与你的 Key、地址、分辨率无关——请换一个模型，或稍后再试。',
+      message: `中转站暂时没有可用的上游线路（该模型线路全部熔断、冷却中或当前通道无额度）。这不一定代表 Key 整体无效。${modelAdvice} 也可以稍后重试。`,
     }
   }
 
   if (status === 401 || status === 403 || upstreamCode === 'invalid_api_key') {
     return {
       status: 401,
-      code: 'OPENAI_REQUEST_FAILED',
+      code: 'INVALID_API_KEY',
       message: 'API Key 无效或无权限，请检查「设置」中的 baseUrl 与 Key',
     }
   }
 
   if (
-    upstreamCode === 'insufficient_quota'
-    || upstreamCode === 'billing_hard_limit_reached'
-    || upstreamCode === 'billing_limit_user_error'
-    || upstreamMessage.includes('billing hard limit')
-    || upstreamMessage.includes('insufficient')
+    upstreamCode === 'model_not_found'
+    || upstreamCode === 'invalid_model'
+    || upstreamMessage.includes('invalid model')
+    || upstreamMessage.includes('model not found')
+    || upstreamMessage.includes('model does not exist')
+    || upstreamMessage.includes('unknown model')
+    || upstreamMessage.includes('unsupported model')
+    || upstreamMessage.includes('not support this model')
+    || upstreamMessage.includes('not supported model')
   ) {
     return {
-      status: 429,
-      code: 'INSUFFICIENT_QUOTA',
-      message: '这个 Key 在中转站的余额或额度已用尽（账单上限已达到）。请到中转站后台充值或更换 Key。',
+      status: status ?? 400,
+      code: 'MODEL_NOT_SUPPORTED',
+      message: `当前模型不被这个中转站、渠道或端点支持。${modelAdvice}`,
+    }
+  }
+
+  if (
+    status === 404
+    || status === 405
+    || status === 415
+    || status === 501
+    || upstreamMessage.includes('endpoint')
+    || upstreamMessage.includes('route')
+    || upstreamMessage.includes('path not found')
+    || upstreamMessage.includes('method not allowed')
+    || upstreamMessage.includes('/responses')
+    || upstreamMessage.includes('/images/generations')
+  ) {
+    return {
+      status: status ?? 400,
+      code: 'ENDPOINT_NOT_SUPPORTED',
+      message: '当前中转站不支持所选图片调用端点。请切换生成模式，或在自动检测后使用该站实际可用的图片路径。',
     }
   }
 
@@ -795,7 +1254,7 @@ export function resolveOpenAIError(error: {
     return {
       status: 429,
       code: 'RATE_LIMITED',
-      message: '上游请求频率过高，请稍后再试',
+      message: `上游请求频率过高或当前通道被临时限流。请稍后再试；如果反复出现，${modelAdvice}`,
     }
   }
 
@@ -815,7 +1274,7 @@ export function resolveOpenAIError(error: {
     return {
       status: 400,
       code: 'INVALID_REQUEST',
-      message: error?.message || '上游拒绝了当前图片生成参数',
+      message: `${error?.message || '上游拒绝了当前图片生成参数'}。请确认当前模式、模型和端点匹配：传统模式使用 /images/generations，Responses tool 模式使用 /responses + image_generation。${modelAdvice}`,
     }
   }
 
@@ -829,7 +1288,7 @@ export function resolveOpenAIError(error: {
     return {
       status: 504,
       code: 'OPENAI_REQUEST_FAILED',
-      message: '上游响应超时，请稍后再试',
+      message: '连接已中断或上游响应超时。请求可能已经被中转站接收并计费，请先用 request ID 核对后台；随后可降低分辨率、切换普通模型或稍后重试。',
     }
   }
 
@@ -837,7 +1296,7 @@ export function resolveOpenAIError(error: {
     return {
       status: 502,
       code: 'NETWORK_ERROR',
-      message: '无法读取上游响应；请求可能已被上游接收并计费，请先核对 request ID，再检查 baseUrl、网络与中转站的 CORS/TLS 配置',
+      message: '连接中断，浏览器无法读取上游响应；请求可能已被上游接收并计费。请先核对 request ID，再检查 baseUrl、网络与中转站的 CORS/TLS 配置。',
     }
   }
 
@@ -860,6 +1319,15 @@ export function payloadToValidated(payload: GenerateImageRequest): ValidationRes
     creativity: payload.creativity,
     seed: payload.seed,
     model: payload.model,
+    modelSelection: payload.modelSelection,
+    mode: payload.mode,
+    responseModel: payload.responseModel,
+    imageToolModel: payload.imageToolModel,
+    stream: payload.stream,
+    streamingWait: payload.streamingWait,
+    transparentBackground: payload.transparentBackground,
+    partialPreview: payload.partialPreview,
+    partialImages: payload.partialImages,
     referenceImages: payload.referenceImages,
     inpaintMask: payload.inpaintMask,
   })

@@ -1,77 +1,51 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import Icon from './Icon.vue'
-import StyleSwatch from './StyleSwatch.vue'
 import Select, { type SelectOption } from './Select.vue'
-import AiRewriteRibbon from './AiRewriteRibbon.vue'
-import { useInlineRewrite } from '../composables/useInlineRewrite'
 import { maxReferenceImages } from '../lib/imagesApi'
-import { customModelSentinel, styleOptions } from '../presets'
 import { useDiscoveredModels } from '../composables/useDiscoveredModels'
 import { useVibration } from '../composables/useVibration'
 import { rafThrottle } from '../lib/rafThrottle'
-import type { ContinuationContext, ImageQuality, ImageStyle, ReferenceImageAttachment } from '../types'
-import type { EnhanceResult } from '../lib/magicEnhance'
-import { inferEnhanceIntent } from '../lib/magicEnhance'
-import type { PromptContext } from '../lib/promptDoc'
-
-const MagicEnhanceMenu = defineAsyncComponent(() => import('./MagicEnhanceMenu.vue'))
+import { useI18n } from '../lib/i18n'
+import type { ContinuationContext, ReferenceImageAttachment } from '../types'
 
 interface Props {
   isGenerating: boolean
   canGenerate: boolean
   elapsedSeconds: number
   healthOffline: boolean
-  currentStyle: ImageStyle
   referenceImages: ReferenceImageAttachment[]
   keyboardInset?: number
   viewportHeight?: number
   continuation?: ContinuationContext | null
-  canUndoEnhance?: boolean
-  size?: string
-  quality?: ImageQuality
-  modelName?: string
-  promptContext?: PromptContext | null
+  modelWarning?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
   keyboardInset: 0,
   viewportHeight: 0,
   continuation: null,
-  canUndoEnhance: false,
-  size: '1024x1024',
-  quality: 'auto',
-  modelName: '',
-  promptContext: null,
+  modelWarning: '',
 })
 
 const prompt = defineModel<string>('prompt', { required: true })
 const modelChoice = defineModel<string>('modelChoice', { required: true })
-const customModel = defineModel<string>('customModel', { required: true })
+defineModel<string>('customModel', { required: true })
 
 const emit = defineEmits<{
   (e: 'send'): void
   (e: 'abort'): void
-  (e: 'open-style-sheet'): void
   (e: 'layout-change', height: number): void
   (e: 'select-reference-images', files: File[]): void
   (e: 'remove-reference-image', id: string): void
-  (e: 'magic-enhance', result: EnhanceResult): void
-  (e: 'magic-ab-test', original: string, optimized: EnhanceResult): void
-  (e: 'undo-enhance'): void
   (e: 'cancel-continuation'): void
   (e: 'jump-to-continuation', id: string): void
-  (e: 'ai-toast', kind: 'info' | 'error', title: string, hint?: string): void
 }>()
 
 const dockRef = ref<HTMLDivElement | null>(null)
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
 const referenceInputRef = ref<HTMLInputElement | null>(null)
 const focused = ref(false)
-const customModelOpen = ref(false)
-const customModelInputRef = ref<HTMLInputElement | null>(null)
-const isMagicPulsing = ref(false)
-const magicMenuOpen = ref(false)
 let dockResizeObserver: ResizeObserver | null = null
 let lastReportedHeight = 0
 let layoutFrame = 0
@@ -79,13 +53,25 @@ let autosizeFrame = 0
 
 const discoveredModels = useDiscoveredModels()
 const { vibrate } = useVibration()
+const { t } = useI18n()
+
+function isSimpleImageModelOption(option: { value: string; disabled?: boolean; kind?: 'group' }) {
+  const value = option.value.trim()
+  if (!value || option.disabled || option.kind === 'group') return false
+  const lower = value.toLowerCase()
+  return !lower.includes('glm') || lower.includes('glm-image')
+}
 
 const modelSelectOptions = computed<SelectOption<string>[]>(() =>
-  discoveredModels.mergedModelOptions.value.map((option) => ({
-    value: option.value,
-    label: option.label,
-    hint: option.hint,
-  })),
+  discoveredModels.mergedModelOptions.value
+    .filter(isSimpleImageModelOption)
+    .map((option) => ({
+      value: option.value,
+      label: option.label,
+      hint: option.hint,
+      disabled: option.disabled,
+      kind: option.kind,
+    })),
 )
 
 const promptCount = computed(() => prompt.value.length)
@@ -96,45 +82,39 @@ const promptCountTone = computed(() => {
   if (length >= 4000) {
     return {
       tone: 'text-accent',
-      hint: '提示词已超过 4000 字，部分模型的上下文窗口可能不够，建议继续精简或切换模型。',
+      hint: t('composer.prompt.tooLongHint'),
     }
   }
   if (length >= 2000) {
     return {
       tone: 'text-ochre',
-      hint: '提示词较长，注意目标模型的上下文上限。',
+      hint: t('composer.prompt.longHint'),
     }
   }
   return { tone: '', hint: '' }
 })
 
-const currentStyleMeta = computed(
-  () => styleOptions.find((option) => option.value === props.currentStyle) ?? styleOptions[0],
-)
-
-const isCustomModel = computed(() => modelChoice.value === customModelSentinel)
 const hasReferenceImages = computed(() => props.referenceImages.length > 0)
+const canAddReferenceImages = computed(() => props.referenceImages.length < maxReferenceImages)
 const keyboardIsOpen = computed(() => props.keyboardInset > 0)
-
-const modelLabel = computed(() => {
-  if (isCustomModel.value) {
-    return customModel.value.trim() || '自定义模型'
-  }
-  const match = discoveredModels.mergedModelOptions.value.find((option) => option.value === modelChoice.value)
-  return match?.label ?? (modelChoice.value || '默认')
-})
 
 const sendDisabled = computed(() => !props.isGenerating && !props.canGenerate)
 const inputPlaceholder = computed(() =>
-  props.continuation ? '接着这张图改什么？' : '写下你想画的画面…',
+  props.continuation ? t('dock.placeholderRemix') : t('dock.placeholder'),
 )
 const sendLabel = computed(() =>
   props.isGenerating
-    ? '取消生成'
+    ? t('dock.cancel')
     : props.continuation
-      ? '发送续作提示词'
-      : '发送提示词生成图片',
+      ? t('dock.sendRemix')
+      : t('dock.send'),
 )
+
+const referenceUploadLabel = computed(() => {
+  if (!canAddReferenceImages.value) return t('composer.tools.refLimitLabel', { max: maxReferenceImages })
+  if (hasReferenceImages.value) return t('dock.refOpenWith', { n: props.referenceImages.length })
+  return t('dock.refOpen')
+})
 
 // GPU-only translate when the on-screen keyboard pushes the dock up.
 // Avoids `bottom` transitions which trigger layout work each frame.
@@ -247,72 +227,6 @@ function send() {
   emit('send')
 }
 
-function magicEnhance() {
-  vibrate('tap')
-  if (!magicMenuOpen.value) textareaRef.value?.blur()
-  magicMenuOpen.value = !magicMenuOpen.value
-}
-
-// ── AI 改写 ──
-const inlineRewrite = useInlineRewrite()
-const aiRewriteState = inlineRewrite.state
-
-function startAiRewrite() {
-  if (!prompt.value.trim()) return
-  vibrate('tap')
-  textareaRef.value?.blur()
-  inlineRewrite.start({
-    promptRef: prompt,
-    intent: inferEnhanceIntent(props.currentStyle, hasReferenceImages.value),
-    hasReferenceImages: hasReferenceImages.value,
-    style: props.currentStyle,
-    size: props.size,
-    quality: props.quality,
-    modelName: props.modelName,
-  }).catch(() => {})
-}
-
-function revertAiResult() {
-  vibrate('tap')
-  inlineRewrite.revert()
-}
-
-function retryAiRewrite() {
-  if (inlineRewrite.isStreaming.value) return
-  vibrate('tap')
-  inlineRewrite.retry({
-    intent: inferEnhanceIntent(props.currentStyle, hasReferenceImages.value),
-    hasReferenceImages: hasReferenceImages.value,
-    style: props.currentStyle,
-    size: props.size,
-    quality: props.quality,
-    modelName: props.modelName,
-  }).catch(() => {})
-}
-
-function abortAiRewrite() {
-  vibrate('tap')
-  inlineRewrite.abort()
-}
-
-function dismissAiRibbon() {
-  inlineRewrite.reset()
-}
-
-function handleEnhanceResult(result: EnhanceResult) {
-  isMagicPulsing.value = true
-  setTimeout(() => { isMagicPulsing.value = false }, 1000)
-  emit('magic-enhance', result)
-  magicMenuOpen.value = false
-}
-
-function handleAbTest(original: string, optimized: EnhanceResult) {
-  isMagicPulsing.value = true
-  setTimeout(() => { isMagicPulsing.value = false }, 1000)
-  emit('magic-ab-test', original, optimized)
-  magicMenuOpen.value = false
-}
-
 function onKeydown(event: KeyboardEvent) {
   if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
     event.preventDefault()
@@ -321,14 +235,12 @@ function onKeydown(event: KeyboardEvent) {
 }
 
 watch(prompt, () => {
-  if (!prompt.value.trim()) magicMenuOpen.value = false
   autosize()
 })
 
 watch(
   () => props.isGenerating,
-  (busy) => {
-    if (busy && magicMenuOpen.value) magicMenuOpen.value = false
+  () => {
     syncLayoutSoon()
   },
 )
@@ -338,15 +250,10 @@ watch(focused, (isFocused) => {
   if (isFocused) ensureCaretVisible()
 })
 
-watch(isCustomModel, (next) => {
-  customModelOpen.value = next
-  if (next) nextTick(() => customModelInputRef.value?.focus())
-  syncLayoutSoon()
-})
-
 watch(() => props.referenceImages.length, syncLayoutSoon)
 watch(() => props.continuation?.fromMessageId, syncLayoutSoon)
 watch(() => props.healthOffline, syncLayoutSoon)
+watch(() => props.modelWarning, syncLayoutSoon)
 watch(
   () => [props.keyboardInset, props.viewportHeight] as const,
   () => {
@@ -409,12 +316,12 @@ defineExpose({ focusInput })
           v-if="continuation"
           class="chat-dock__continuation"
           role="status"
-          aria-label="正在接着画"
+          :aria-label="t('dock.continueLabel')"
         >
           <button
             type="button"
             class="chat-dock__continuation-target"
-            aria-label="跳回原始对话"
+            :aria-label="t('chat.continueLabel', { n: continuation.fromImageIndex + 1 })"
             @click.stop="emit('jump-to-continuation', continuation.fromMessageId)"
           >
             <span class="chat-dock__continuation-thumb">
@@ -422,16 +329,16 @@ defineExpose({ focusInput })
               <span class="chat-dock__continuation-thumb-mark"><Icon name="sparkle" :size="9" /></span>
             </span>
             <span class="chat-dock__continuation-text">
-              <span class="chat-dock__continuation-title">接着画</span>
+              <span class="chat-dock__continuation-title">{{ t('dock.continueTitle') }}</span>
               <span class="chat-dock__continuation-sub">
-                基于第 {{ continuation.fromImageIndex + 1 }} 张图，描述你想改的细节
+                {{ t('dock.continueBody', { n: continuation.fromImageIndex + 1 }) }}
               </span>
             </span>
           </button>
           <button
             type="button"
             class="chat-dock__icon-btn"
-            aria-label="取消接着画"
+            :aria-label="t('dock.continueCancel')"
             @click.stop="emit('cancel-continuation')"
           >
             <Icon name="close" :size="12" />
@@ -443,25 +350,9 @@ defineExpose({ focusInput })
       <Transition name="dock-fade">
         <div v-if="healthOffline" class="chat-dock__offline" role="alert">
           <Icon name="warning" :size="13" />
-          <span>后端离线，发送会失败</span>
+          <span>{{ t('dock.offline') }}</span>
         </div>
       </Transition>
-
-      <!-- AI 改写状态条 -->
-      <AiRewriteRibbon
-        :phase="aiRewriteState.phase"
-        :model-id="aiRewriteState.modelId"
-        :elapsed-ms="aiRewriteState.elapsedMs"
-        :done-elapsed-ms="aiRewriteState.doneElapsedMs"
-        :tool-call-count="aiRewriteState.toolCallCount"
-        :error-message="aiRewriteState.errorMessage"
-        :error-code="aiRewriteState.errorCode"
-        variant="mobile"
-        @revert="revertAiResult"
-        @retry="retryAiRewrite"
-        @abort="abortAiRewrite"
-        @dismiss="dismissAiRibbon"
-      />
 
       <!-- reference images strip — placed ABOVE the input (key fix) -->
       <Transition name="dock-fade">
@@ -469,7 +360,7 @@ defineExpose({ focusInput })
           v-if="hasReferenceImages"
           class="chat-dock__refs"
           role="region"
-          aria-label="参考图"
+          :aria-label="t('dock.refTitle', { count: props.referenceImages.length, max: maxReferenceImages })"
         >
           <div class="chat-dock__refs-row">
             <div
@@ -481,7 +372,7 @@ defineExpose({ focusInput })
               <button
                 type="button"
                 class="chat-dock__ref-remove"
-                :aria-label="`移除 ${image.name}`"
+                :aria-label="t('dock.refRemove', { name: image.name })"
                 @click.stop="handleRemoveReferenceImage(image.id)"
               >
                 <Icon name="close" :size="10" />
@@ -491,7 +382,7 @@ defineExpose({ focusInput })
               v-if="props.referenceImages.length < maxReferenceImages"
               type="button"
               class="chat-dock__ref-add"
-              aria-label="继续添加参考图"
+              :aria-label="t('dock.refContinue')"
               @click.stop="openReferencePicker"
             >
               <Icon name="upload" :size="14" />
@@ -503,36 +394,14 @@ defineExpose({ focusInput })
         </div>
       </Transition>
 
-      <!-- custom model name editor -->
-      <Transition name="dock-fade">
-        <div v-if="isCustomModel && customModelOpen" class="chat-dock__custom">
-          <label class="chat-dock__custom-label" for="chat-custom-model">
-            <Icon name="pencil" :size="11" />
-            <span>自定义模型名</span>
-          </label>
-          <input
-            id="chat-custom-model"
-            ref="customModelInputRef"
-            v-model="customModel"
-            type="text"
-            class="chat-dock__custom-input"
-            placeholder="例如 dall-e-3、flux-pro"
-            autocomplete="off"
-            spellcheck="false"
-            maxlength="64"
-          />
-        </div>
-      </Transition>
-
       <!-- main composer card -->
-      <div class="chat-dock__shell" :class="{ 'is-focused': focused, 'is-pulsing': isMagicPulsing, 'is-ai-streaming': inlineRewrite.isStreaming.value }">
+      <div class="chat-dock__shell" :class="{ 'is-focused': focused }">
         <textarea
           ref="textareaRef"
           v-model="prompt"
           rows="1"
           :placeholder="inputPlaceholder"
           class="chat-dock__textarea"
-          :readonly="inlineRewrite.isStreaming.value"
           autocomplete="off"
           autocorrect="on"
           autocapitalize="sentences"
@@ -560,101 +429,46 @@ defineExpose({ focusInput })
           :class="promptCountTone.tone"
           :title="promptCountTone.hint || undefined"
           :aria-hidden="promptCountTone.hint ? undefined : true"
-          :aria-label="promptCountTone.hint ? `提示词字数 ${promptCount}，${promptCountTone.hint}` : undefined"
+          :aria-label="promptCountTone.hint ? t('composer.prompt.countHintLabel', { count: promptCount, hint: promptCountTone.hint }) : undefined"
         >{{ promptCount }}</span>
 
         <!-- toolbar row: scrollable chips on the left, send on the right -->
         <div class="chat-dock__toolbar">
-          <div class="chat-dock__toolbar-scroll" role="toolbar" aria-label="提示词工具">
+          <div class="chat-dock__toolbar-scroll" role="toolbar" :aria-label="t('composer.prompt')">
+            <button
+              type="button"
+              class="chat-dock__chip chat-dock__chip--reference"
+              :class="{ 'has-refs': hasReferenceImages }"
+              :disabled="!canAddReferenceImages"
+              :aria-label="referenceUploadLabel"
+              :title="referenceUploadLabel"
+              @click.stop="openReferencePicker"
+            >
+              <span class="chat-dock__reference-glyph" aria-hidden="true">
+                <Icon name="image" :size="15" :stroke-width="1.7" />
+                <span class="chat-dock__reference-plus">
+                  <Icon name="plus" :size="8" :stroke-width="2.2" />
+                </span>
+              </span>
+              <span class="chat-dock__chip-label chat-dock__chip-label--reference">
+                <span v-if="hasReferenceImages" class="chat-dock__chip-count">
+                  {{ props.referenceImages.length }}/{{ maxReferenceImages }}
+                </span>
+                <span v-else>{{ t('dock.refOpen') }}</span>
+              </span>
+            </button>
+
             <div class="chat-dock__model-chip">
               <Select
                 v-model="modelChoice"
                 :options="modelSelectOptions"
                 size="sm"
-                placeholder="模型"
-                aria-label="选择生成模型"
+                :placeholder="t('settings.model')"
+                :aria-label="t('dock.modelLabel')"
                 :show-hints="true"
               />
             </div>
 
-            <button
-              type="button"
-              class="chat-dock__chip chat-dock__chip--ai"
-              :class="{
-                'is-busy': inlineRewrite.isStreaming.value,
-                'is-muted': !promptHasContent && !inlineRewrite.isStreaming.value,
-              }"
-              :disabled="!promptHasContent && !inlineRewrite.isStreaming.value"
-              :aria-label="inlineRewrite.isStreaming.value
-                ? '正在 AI 改写，点击取消'
-                : (promptHasContent ? 'AI 改写提示词' : '先写下至少 4 个字，再用 AI 改写')"
-              @click.stop="inlineRewrite.isStreaming.value ? abortAiRewrite() : startAiRewrite()"
-            >
-              <Icon
-                :name="inlineRewrite.isStreaming.value ? 'close' : 'sparkle'"
-                :size="13"
-              />
-              <span class="chat-dock__chip-label">
-                {{ inlineRewrite.isStreaming.value ? '取消' : 'AI 改写' }}
-              </span>
-            </button>
-
-            <div class="chat-dock__chip-wrap">
-              <button
-                type="button"
-                class="chat-dock__chip chat-dock__chip--magic"
-                :class="{
-                  'is-open': magicMenuOpen,
-                  'is-muted': !promptHasContent,
-                }"
-                :disabled="!promptHasContent"
-                :aria-label="promptHasContent ? '深度优化提示词' : '先写下至少 4 个字，再深度优化'"
-                :aria-expanded="magicMenuOpen"
-                @click.stop="magicEnhance"
-              >
-                <Icon name="sliders" :size="13" />
-                <span class="chat-dock__chip-label">深度</span>
-              </button>
-              <MagicEnhanceMenu
-                v-if="magicMenuOpen"
-                :prompt="prompt"
-                :image-style="props.currentStyle"
-                :has-reference-images="hasReferenceImages"
-                :size="props.size"
-                :quality="props.quality"
-                :model-name="props.modelName"
-                :context="props.promptContext ?? null"
-                compact
-                @enhance="handleEnhanceResult"
-                @ab-test="handleAbTest"
-                @update-prompt="(value: string) => { prompt = value }"
-                @close="magicMenuOpen = false"
-              />
-            </div>
-
-            <button
-              type="button"
-              class="chat-dock__chip chat-dock__chip--style"
-              :aria-label="`当前风格：${currentStyleMeta.label}，点击更换`"
-              @click.stop="emit('open-style-sheet')"
-            >
-              <StyleSwatch :variant="currentStyleMeta.value" :size="18" />
-              <span class="chat-dock__chip-label">
-                <span class="chat-dock__chip-prefix">风格</span>
-                <span class="chat-dock__chip-current">{{ currentStyleMeta.label }}</span>
-              </span>
-              <Icon name="chevronDown" :size="10" class="text-muted" />
-            </button>
-
-            <button
-              v-if="props.canUndoEnhance"
-              type="button"
-              class="chat-dock__chip chat-dock__chip--undo"
-              aria-label="撤销魔法增强"
-              @click.stop="emit('undo-enhance')"
-            >
-              <Icon name="reset" :size="13" />
-            </button>
           </div>
 
           <button
@@ -672,6 +486,11 @@ defineExpose({ focusInput })
             <Icon v-else name="send" :size="16" />
           </button>
         </div>
+
+        <p v-if="modelWarning" class="chat-dock__model-warning" role="status">
+          <Icon name="warning" :size="11" />
+          <span>{{ modelWarning }}</span>
+        </p>
       </div>
     </div>
   </div>
@@ -1029,7 +848,7 @@ defineExpose({ focusInput })
   contain: layout paint style;
 }
 
-/* faint top-edge gradient hairline for the AI sheen */
+/* faint top-edge gradient hairline */
 .chat-dock__shell::before {
   content: '';
   position: absolute;
@@ -1113,24 +932,6 @@ defineExpose({ focusInput })
   color: rgb(var(--color-muted) / 0.62);
 }
 
-.chat-dock__shell.is-pulsing::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: linear-gradient(90deg, transparent, rgb(var(--color-forest) / 0.14), rgb(var(--color-accent) / 0.12), transparent);
-  background-size: 200% 100%;
-  animation: dock-magic-sweep 900ms var(--motion-soft) forwards;
-  pointer-events: none;
-  z-index: 0;
-}
-
-@keyframes dock-magic-sweep {
-  from { background-position: 100% 0; opacity: 0.85; }
-  to { background-position: -100% 0; opacity: 0; }
-}
-
-
 /* ------------------------------------------------------------------
  * Toolbar — single horizontal row, scrolls when chips overflow.
  * Send button is pinned on the right and never scrolls.
@@ -1145,6 +946,27 @@ defineExpose({ focusInput })
   padding: 5px 6px 7px;
   border-top: 1px solid rgb(var(--color-line) / 0.45);
   margin-top: 2px;
+}
+
+.chat-dock__model-warning {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  margin: 0;
+  border-top: 1px solid rgb(var(--color-line) / 0.34);
+  padding: 6px 10px 8px;
+  color: rgb(var(--color-ochre));
+  background: rgb(var(--color-ochre) / 0.06);
+  font-size: 10.5px;
+  font-weight: 560;
+  line-height: 1.35;
+}
+
+.chat-dock__model-warning span {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .chat-dock__toolbar-scroll {
@@ -1242,6 +1064,77 @@ defineExpose({ focusInput })
   cursor: not-allowed;
 }
 
+.chat-dock__chip--reference {
+  min-width: 96px;
+  justify-content: flex-start;
+  padding: 0 11px 0 8px;
+  border-radius: 13px;
+  color: rgb(var(--color-forest));
+  background:
+    linear-gradient(135deg, rgb(var(--color-forest) / 0.1), rgb(var(--color-ivory) / 0.76) 58%),
+    rgb(var(--color-ivory) / 0.72);
+  border-color: rgb(var(--color-forest) / 0.26);
+}
+
+.chat-dock__chip--reference.has-refs {
+  min-width: 62px;
+  padding: 0 10px 0 8px;
+  border-radius: 14px;
+  background:
+    linear-gradient(135deg, rgb(var(--color-forest) / 0.16), rgb(var(--color-ivory) / 0.78) 64%),
+    rgb(var(--color-ivory) / 0.74);
+  border-color: rgb(var(--color-forest) / 0.38);
+}
+
+.chat-dock__chip--reference:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring), var(--shadow-inner-glass);
+}
+
+.chat-dock__chip--reference:not(:disabled):hover {
+  border-color: rgb(var(--color-forest) / 0.46);
+  color: rgb(var(--color-accent));
+}
+
+.chat-dock__reference-glyph {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 21px;
+  height: 21px;
+  border-radius: 7px;
+  background: rgb(var(--color-paper) / 0.72);
+  box-shadow:
+    inset 0 0 0 1px rgb(var(--color-forest) / 0.18),
+    0 1px 2px rgb(var(--color-ink) / 0.08);
+}
+
+.chat-dock__reference-plus {
+  position: absolute;
+  right: -5px;
+  bottom: -4px;
+  display: inline-grid;
+  place-items: center;
+  width: 13px;
+  height: 13px;
+  border-radius: 999px;
+  background: rgb(var(--color-forest));
+  color: rgb(var(--color-paper));
+  border: 1.5px solid rgb(var(--color-ivory));
+  box-shadow: 0 1px 3px rgb(var(--color-ink) / 0.16);
+}
+
+.chat-dock__chip-count {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 10px;
+  font-feature-settings: 'tnum';
+  letter-spacing: 0;
+}
+
+.chat-dock__chip-label--reference {
+  max-width: 5.8rem;
+}
+
 .chat-dock__chip.is-muted {
   opacity: 0.6;
 }
@@ -1308,89 +1201,6 @@ defineExpose({ focusInput })
 .chat-dock__chip-wrap {
   position: relative;
   flex-shrink: 0;
-}
-
-.chat-dock__chip--style {
-  max-width: min(9rem, 34vw);
-}
-
-.chat-dock__chip--magic {
-  background: linear-gradient(135deg, rgb(var(--color-forest) / 0.14), rgb(var(--color-accent) / 0.1));
-  border-color: rgb(var(--color-forest) / 0.32);
-  color: rgb(var(--color-forest));
-  font-weight: 600;
-}
-
-.chat-dock__chip--magic.is-muted {
-  background: rgb(var(--color-ivory) / 0.7);
-  border-color: rgb(var(--color-line-strong));
-  color: rgb(var(--color-muted));
-  font-weight: 500;
-}
-
-.chat-dock__chip--magic.is-open {
-  background: rgb(var(--color-ink));
-  border-color: rgb(var(--color-ink));
-  color: rgb(var(--color-paper));
-}
-
-/* ── AI 改写 chip ── */
-
-.chat-dock__chip--ai {
-  position: relative;
-  background:
-    linear-gradient(135deg, rgb(var(--color-ochre) / 0.18), rgb(var(--color-accent) / 0.12));
-  border-color: rgb(var(--color-ochre) / 0.42);
-  color: rgb(var(--color-ochre));
-  font-weight: 700;
-  user-select: none;
-  -webkit-user-select: none;
-}
-
-.chat-dock__chip--ai.is-muted {
-  background: rgb(var(--color-ivory) / 0.7);
-  border-color: rgb(var(--color-line-strong));
-  color: rgb(var(--color-muted));
-  font-weight: 500;
-}
-
-.chat-dock__chip--ai:hover {
-  border-color: rgb(var(--color-ink) / 0.3);
-}
-
-.chat-dock__chip--ai.is-busy,
-.chat-dock__chip--ai.is-picker-open {
-  background: rgb(var(--color-ink));
-  border-color: rgb(var(--color-ink));
-  color: rgb(var(--color-paper));
-}
-
-.chat-dock__chip--ai.is-busy {
-  animation: ai-chip-pulse 1.4s var(--motion-soft) infinite;
-}
-
-@keyframes ai-chip-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgb(var(--color-ochre) / 0.32); }
-  50% { box-shadow: 0 0 0 6px rgb(var(--color-ochre) / 0); }
-}
-
-/* ── 流式中：textarea 边缘流光 ── */
-
-.chat-dock__shell.is-ai-streaming {
-  border-color: rgb(var(--color-ochre) / 0.55);
-  box-shadow:
-    var(--shadow-inner-paper),
-    0 0 0 1.5px rgb(var(--color-ochre) / 0.32);
-}
-
-.chat-dock__shell.is-ai-streaming .chat-dock__textarea {
-  background:
-    linear-gradient(180deg, rgb(var(--color-vellum) / 0.6), rgb(var(--color-paper) / 0.92));
-  caret-color: transparent;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .chat-dock__chip--ai.is-busy { animation: none; }
 }
 
 .chat-dock__chip--undo {
@@ -1509,9 +1319,6 @@ defineExpose({ focusInput })
     height: 36px;
   }
 
-  .chat-dock__chip--style {
-    max-width: min(8rem, 30vw);
-  }
 }
 
 @media (max-width: 360px) {
@@ -1525,17 +1332,7 @@ defineExpose({ focusInput })
     gap: 4px;
   }
 
-  /* AI 改写 / 深度是关键入口，必须保留文字 */
   .chat-dock__chip--undo .chat-dock__chip-label {
-    display: none;
-  }
-
-  .chat-dock__chip--ai .chat-dock__chip-label,
-  .chat-dock__chip--magic .chat-dock__chip-label {
-    max-width: none;
-  }
-
-  .chat-dock__chip--style .chat-dock__chip-current {
     display: none;
   }
 
@@ -1571,8 +1368,7 @@ defineExpose({ focusInput })
     transition: none;
   }
 
-  .chat-dock__send--busy::after,
-  .chat-dock__shell.is-pulsing::after {
+  .chat-dock__send--busy::after {
     animation: none;
   }
 }

@@ -1,4 +1,5 @@
 import { decryptString, encryptString, isEncrypted } from './lib/crypto'
+import { defaultImageGenerationConfig, normalizeImageGenerationConfig } from './lib/imageGenerationDetection'
 import type { GeneratedImage, GenerationHistoryItem, ProviderConfig } from './types'
 
 const historyKey = 'promptcanvas:generation-history'
@@ -37,6 +38,9 @@ export interface DraftPayload {
   seed?: string
   modelChoice?: string
   customModel?: string
+  transparentBackground?: boolean
+  partialPreview?: boolean
+  streamingWait?: boolean
 }
 
 export function loadDraft(): DraftPayload | null {
@@ -329,12 +333,18 @@ export function clearHistory() {
   } catch {}
 }
 
-const emptyProvider: ProviderConfig = { baseUrl: '', apiKey: '', proxyUrl: DEFAULT_PROXY_URL }
+const emptyProvider: ProviderConfig = {
+  baseUrl: '',
+  apiKey: '',
+  proxyUrl: DEFAULT_PROXY_URL,
+  imageGeneration: { ...defaultImageGenerationConfig },
+}
 
 interface StoredProviderEntry {
   baseUrl?: unknown
   apiKey?: unknown
   proxyUrl?: unknown
+  imageGeneration?: unknown
 }
 
 function readRawEntry(): StoredProviderEntry | null {
@@ -356,18 +366,19 @@ export async function loadProviderConfig(): Promise<ProviderConfig> {
   const baseUrl = typeof entry.baseUrl === 'string' ? entry.baseUrl : ''
   const apiKeyField = typeof entry.apiKey === 'string' ? entry.apiKey : ''
   const storedProxy = typeof entry.proxyUrl === 'string' ? entry.proxyUrl.trim() : ''
+  const imageGeneration = normalizeImageGenerationConfig(entry.imageGeneration)
   // 老版本可能没存 proxyUrl，或用户自己清空过——这里始终回退到内置 proxy。
   const proxyUrl = storedProxy || DEFAULT_PROXY_URL
 
   if (!apiKeyField) {
-    return { baseUrl, apiKey: '', proxyUrl }
+    return { baseUrl, apiKey: '', proxyUrl, imageGeneration }
   }
 
   try {
     const apiKey = await decryptString(apiKeyField)
-    return { baseUrl, apiKey, proxyUrl }
+    return { baseUrl, apiKey, proxyUrl, imageGeneration }
   } catch {
-    return { baseUrl, apiKey: '', proxyUrl }
+    return { baseUrl, apiKey: '', proxyUrl, imageGeneration }
   }
 }
 
@@ -377,7 +388,8 @@ export async function saveProviderConfig(config: ProviderConfig) {
     const plaintextKey = (config.apiKey ?? '').trim()
     const apiKey = plaintextKey ? await encryptString(plaintextKey) : ''
     const proxyUrl = ((config.proxyUrl ?? '').trim()) || DEFAULT_PROXY_URL
-    localStorage.setItem(providerKey, JSON.stringify({ baseUrl, apiKey, proxyUrl }))
+    const imageGeneration = normalizeImageGenerationConfig(config.imageGeneration)
+    localStorage.setItem(providerKey, JSON.stringify({ baseUrl, apiKey, proxyUrl, imageGeneration }))
   } catch {}
 }
 
@@ -399,14 +411,8 @@ export function rawApiKeyIsEncrypted(): boolean {
   return isEncrypted(apiKeyField)
 }
 
-
 const rewriteModelKey = 'promptcanvas:rewrite-model-v1'
 
-/**
- * AI 改写模型偏好的轻量字符串持久化。仅存模型 id（如 'flash' / 'haiku'），
- * 不存任何敏感信息。改写凭据写死在反代环境变量里，访客不需要、也不应该
- * 知道；这里只是记住"上次用哪个"。
- */
 export function loadRewriteModelChoice(): string {
   try {
     return localStorage.getItem(rewriteModelKey) || ''
@@ -424,10 +430,6 @@ export function saveRewriteModelChoice(value: string) {
 
 const rewriteCustomInstructionKey = 'promptcanvas:rewrite-instruction-v1'
 
-/**
- * 用户自定义的"AI 改写补充指令"——会拼到 system prompt 末尾。
- * 让喜欢"奶油色调 / 35mm 纪实"风格的用户固化偏好。
- */
 export function loadRewriteCustomInstruction(): string {
   try {
     return localStorage.getItem(rewriteCustomInstructionKey) || ''

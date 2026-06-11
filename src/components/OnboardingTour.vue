@@ -44,7 +44,7 @@ const steps: Step[] = [
     placement: 'auto',
   },
   {
-    selector: '[data-tour="cmdk-hint"]',
+    selector: '[data-tour="header-actions"]',
     fallbackSelector: '[data-tour="header-menu"]',
     titleKey: 'onboarding.step3.title',
     bodyKey: 'onboarding.step3.body',

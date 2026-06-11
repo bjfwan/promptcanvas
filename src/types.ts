@@ -11,20 +11,54 @@ export type ImageSize =
 
 export type ResolutionTier = '1k' | '2k' | '4k'
 
-export type ImageStyle =
-  | 'natural'
-  | 'poster'
-  | 'product'
-  | 'portrait'
-  | 'anime'
-  | 'cinematic'
-  | 'logo'
-  | 'interior'
-  | 'raw'
+export type ImageStyle = 'raw'
 
 export type ImageQuality = 'auto' | 'low' | 'medium' | 'high'
 
 export type GenerationMode = 'text' | 'reference'
+
+export type ImageGenerationApiMode =
+  | 'images_generations'
+  | 'responses_tool'
+  | 'responses_text_data_url'
+
+export type ImageGenerationMode = 'auto' | ImageGenerationApiMode
+
+export type ImageGenerationDetectionSource = 'models_hint' | 'probe'
+
+export type ModelSelectionMode = 'auto' | 'none' | 'explicit'
+
+export type ImageCapabilitySupport = 'supported' | 'unsupported'
+
+export type ImageCapabilityPartialSupport = ImageCapabilitySupport | 'partial'
+
+export type ImageGenerationReturnFormat =
+  | 'b64_json'
+  | 'url'
+  | 'image_generation_call'
+  | 'output_text_data_url'
+
+export interface ImageGenerationCapabilityMatrix {
+  textToImage: ImageCapabilitySupport
+  imageEdit: ImageCapabilitySupport
+  responsesTool: ImageCapabilityPartialSupport
+  sseStream: ImageCapabilitySupport
+  partialPreview: ImageCapabilitySupport
+  transparentBackground?: ImageCapabilitySupport
+  generationMode: ImageGenerationMode
+  returnFormat: ImageGenerationReturnFormat
+  traditionalModel?: string
+  responseModel?: string
+  imageToolModel?: string
+}
+
+export interface ImageGenerationConfig extends ImageGenerationCapabilityMatrix {
+  /** Backward-compatible alias for generationMode. */
+  mode: ImageGenerationMode
+  stream?: boolean
+  detectedAt?: string
+  detectionSource?: ImageGenerationDetectionSource
+}
 
 export interface ReferenceImageAttachment {
   id: string
@@ -46,6 +80,26 @@ export interface GenerateImageRequest {
   creativity?: number
   seed?: string
   model?: string
+  modelSelection?: ModelSelectionMode
+  transparentBackground?: boolean
+  /**
+   * Transport mode for OpenAI-compatible image generation.
+   * `images_generations` uses /images/generations (and /images/edits for references).
+   * `responses_tool` uses /responses with the image_generation tool.
+   */
+  mode?: ImageGenerationApiMode
+  /** Responses API model, e.g. gpt-image-2-chat. */
+  responseModel?: string
+  /** image_generation tool model, e.g. gpt-image-2. */
+  imageToolModel?: string
+  /** Whether /responses should request SSE streaming. */
+  stream?: boolean
+  /** User-facing stage-preview preference. Adapter may ignore when unsupported. */
+  partialPreview?: boolean
+  /** Number of partial previews to request from Responses image tools. */
+  partialImages?: number
+  /** User-facing streaming wait preference. Adapters that cannot stream ignore it. */
+  streamingWait?: boolean
   referenceImages?: ReferenceImageAttachment[]
   /**
    * PNG mask for inpainting. Black = keep, white = edit.
@@ -62,6 +116,7 @@ export interface ProviderConfig {
   baseUrl: string
   apiKey: string
   proxyUrl?: string
+  imageGeneration: ImageGenerationConfig
 }
 
 export interface GeneratedImage {
@@ -106,15 +161,6 @@ export interface GenerationHistoryItem extends Omit<GenerateImageRequest, 'apiKe
   elapsedSeconds?: number
 }
 
-export interface PromptTemplate {
-  id: string
-  title: string
-  tone: string
-  prompt: string
-  style: ImageStyle
-  size: ImageSize
-}
-
 export interface ChatMessageMeta {
   style: ImageStyle
   size: ImageSize
@@ -122,6 +168,10 @@ export interface ChatMessageMeta {
   outputFormat: GenerateImageRequest['outputFormat']
   generationMode?: GenerationMode
   model?: string
+  modelSelection?: ModelSelectionMode
+  transparentBackground?: boolean
+  partialPreview?: boolean
+  streamingWait?: boolean
   quality?: ImageQuality
   creativity?: number
   seed?: string
@@ -152,6 +202,10 @@ export interface ChatProgressOverride {
   stage?: string
   /** Replaces the heuristic remaining label (e.g. "已收 1.2 / 2.4 MB"). */
   remainingLabel?: string
+  /** Replaces the heuristic progress estimate when real stream progress exists. */
+  progress?: number
+  /** Optional blurred preview shown while the final image is still rendering. */
+  previewUrl?: string
 }
 
 export interface ChatAssistantMessage {

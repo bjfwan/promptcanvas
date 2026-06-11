@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { mapClientPointToCanvas, useMaskCanvas, type MaskTool } from '../composables/useMaskCanvas'
 import Icon from './Icon.vue'
+import { useI18n } from '../lib/i18n'
 
 interface Props {
   /** Source image URL (data: or http) to paint over */
@@ -21,6 +22,7 @@ const emit = defineEmits<{
   (e: 'submit', payload: { mask: Blob; prompt: string }): void
   (e: 'cancel'): void
 }>()
+const { t } = useI18n()
 
 // ─── Refs ──────────────────────────────────────────────────────────────────
 const containerRef = ref<HTMLDivElement | null>(null)
@@ -42,10 +44,10 @@ const displayHeight = shallowRef(0)
 // ─── Mask canvas composable ────────────────────────────────────────────────
 const mask = useMaskCanvas()
 
-const toolOptions: { value: MaskTool; icon: string; label: string }[] = [
-  { value: 'brush', icon: 'brush', label: '画笔' },
-  { value: 'rect', icon: 'rectSelect', label: '矩形选区' },
-]
+const toolOptions = computed<Array<{ value: MaskTool; icon: string; label: string }>>(() => [
+  { value: 'brush', icon: 'brush', label: t('inpaint.tool.brush') },
+  { value: 'rect', icon: 'rectSelect', label: t('inpaint.tool.rect') },
+])
 
 const brushSizes = [16, 32, 48, 72, 100, 120]
 const brushSizeIndex = shallowRef(2) // default 48
@@ -293,8 +295,8 @@ const canSubmit = computed(() => promptText.value.trim().length > 0 && mask.hasC
           step="1"
           :value="brushSizeIndex"
           class="inpaint-toolbar__slider"
-          aria-label="画笔大小"
-          title="画笔大小"
+          :aria-label="t('inpaint.brushSize')"
+          :title="t('inpaint.brushSize')"
           @input="brushSizeIndex = Number(($event.target as HTMLInputElement).value)"
         />
       </div>
@@ -304,8 +306,8 @@ const canSubmit = computed(() => promptText.value.trim().length > 0 && mask.hasC
           type="button"
           class="inpaint-toolbar__btn"
           :disabled="!mask.canUndo.value"
-          aria-label="撤销"
-          title="撤销"
+          :aria-label="t('inpaint.undo')"
+          :title="t('inpaint.undo')"
           @click="handleUndo"
         >
           <Icon name="undo" :size="14" />
@@ -314,8 +316,8 @@ const canSubmit = computed(() => promptText.value.trim().length > 0 && mask.hasC
           type="button"
           class="inpaint-toolbar__btn"
           :disabled="!mask.hasContent.value"
-          aria-label="清除全部"
-          title="清除全部"
+          :aria-label="t('inpaint.clear')"
+          :title="t('inpaint.clear')"
           @click="handleClear"
         >
           <Icon name="trash" :size="14" />
@@ -362,7 +364,7 @@ const canSubmit = computed(() => promptText.value.trim().length > 0 && mask.hasC
       <!-- No-mask hint -->
       <div v-if="!mask.hasContent.value && imageLoaded" class="inpaint-hint" aria-live="polite">
         <Icon name="brush" :size="14" />
-        <span>涂抹或框选你想编辑的区域</span>
+        <span>{{ t('inpaint.hint') }}</span>
       </div>
     </div>
 
@@ -374,7 +376,7 @@ const canSubmit = computed(() => promptText.value.trim().length > 0 && mask.hasC
           v-model="promptText"
           class="inpaint-prompt-bar__input"
           rows="1"
-          placeholder="描述选中区域要变成什么…"
+          :placeholder="t('inpaint.placeholder')"
           enterkeyhint="send"
           autocomplete="off"
           @keydown="handleKeydown"
@@ -382,24 +384,24 @@ const canSubmit = computed(() => promptText.value.trim().length > 0 && mask.hasC
         <button
           type="button"
           class="inpaint-prompt-bar__cancel"
-          aria-label="取消编辑"
+          :aria-label="t('inpaint.cancelAria')"
           @click="emit('cancel')"
         >
-          取消
+          {{ t('inpaint.cancel') }}
         </button>
         <button
           type="button"
           class="inpaint-prompt-bar__submit"
           :disabled="!canSubmit || isSubmitting"
-          aria-label="生成编辑"
+          :aria-label="t('inpaint.generateAria')"
           @click="handleSubmit"
         >
           <Icon name="sparkle" :size="14" />
-          <span>生成</span>
+          <span>{{ t('inpaint.generate') }}</span>
         </button>
       </div>
       <p class="inpaint-prompt-bar__hint">
-        <kbd>⌘↵</kbd> 发送 · 用画笔涂要改的区域，再描述目标
+        <kbd>⌘↵</kbd> {{ t('inpaint.shortcutHint') }}
       </p>
     </footer>
   </div>

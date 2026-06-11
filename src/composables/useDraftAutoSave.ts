@@ -16,6 +16,9 @@ export interface DraftRefs {
   seed: Ref<string>
   modelChoice: Ref<string>
   customModel: Ref<string>
+  transparentBackground: Ref<boolean>
+  partialPreview: Ref<boolean>
+  streamingWait: Ref<boolean>
 }
 
 export function useDraftAutoSave(refs: DraftRefs) {
@@ -34,6 +37,9 @@ export function useDraftAutoSave(refs: DraftRefs) {
       refs.seed,
       refs.modelChoice,
       refs.customModel,
+      refs.transparentBackground,
+      refs.partialPreview,
+      refs.streamingWait,
     ],
     () => {
       if (timer) {
@@ -53,6 +59,9 @@ export function useDraftAutoSave(refs: DraftRefs) {
           seed: refs.seed.value,
           modelChoice: refs.modelChoice.value,
           customModel: refs.customModel.value,
+          transparentBackground: refs.transparentBackground.value,
+          partialPreview: refs.partialPreview.value,
+          streamingWait: refs.streamingWait.value,
         })
       }, 400)
     },

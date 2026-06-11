@@ -2,12 +2,13 @@ import { onUnmounted, type Ref } from 'vue'
 import { ApiRequestError, PROVIDER_NOT_CONFIGURED, generateImage } from '../api'
 import { payloadToMeta } from '../lib/chatMessage'
 import { createId } from '../lib/id'
-import { recordGenerationToPreference } from '../lib/preferenceLearner'
+import { t } from '../lib/i18n'
 import { useResolutionSupport } from './useResolutionSupport'
 import { prependHistory } from '../storage'
 import type {
   ChatAssistantMessage,
   ChatMessage,
+  ChatProgressOverride,
   GeneratedImage,
   GenerateImageRequest,
   GenerationHistoryItem,
@@ -25,10 +26,10 @@ export interface GenerationFlowDeps {
   elapsedSeconds: Ref<number>
   errorMessage: Ref<string>
   lastRequestId: Ref<string>
+  generationProgressOverride: Ref<ChatProgressOverride | undefined>
   isGenerating: Ref<boolean>
   history: Ref<GenerationHistoryItem[]>
   settingsOpen: Ref<boolean>
-  styleSheetOpen: Ref<boolean>
   toast: Toast
   vibrate: Vibrate
   primeGeneratedImages: (list: GeneratedImage[]) => void
@@ -73,10 +74,10 @@ export function useGenerationFlow(deps: GenerationFlowDeps) {
     deps.images.value = []
     deps.activeImageIndex.value = 0
     deps.lastRequestId.value = ''
+    deps.generationProgressOverride.value = undefined
     deps.elapsedSeconds.value = 0
 
     deps.settingsOpen.value = false
-    deps.styleSheetOpen.value = false
 
     if (activeAbortController) {
       activeAbortController.abort()
@@ -100,30 +101,56 @@ export function useGenerationFlow(deps: GenerationFlowDeps) {
     }, 1000)
 
     const formatMb = (bytes: number) => (bytes / 1024 / 1024).toFixed(1)
+    let lastProgressOverride: ChatProgressOverride | undefined
+
+    const applyProgressOverride = (override: ChatProgressOverride) => {
+      lastProgressOverride = override
+      deps.generationProgressOverride.value = override
+      updateAssistantMessage(assistantId, (current) => ({
+        ...current,
+        progressOverride: override,
+      }))
+    }
 
     try {
       const result = await generateImage(args.payload, {
         signal: controller.signal,
         onProgress: (event) => {
           if (event.stage === 'awaiting') {
-            updateAssistantMessage(assistantId, (current) => ({
-              ...current,
-              progressOverride: { stage: '上游作画中', remainingLabel: '等待模型返回' },
-            }))
+            applyProgressOverride({
+              stage: t('generation.progress.connected'),
+              remainingLabel: t('generation.progress.preparingFrame'),
+            })
           } else if (event.stage === 'downloading') {
             const received = formatMb(event.bytesReceived)
             const remainingLabel = event.bytesTotal
-              ? `已收 ${received} / ${formatMb(event.bytesTotal)} MB`
-              : `已收 ${received} MB`
-            updateAssistantMessage(assistantId, (current) => ({
-              ...current,
-              progressOverride: { stage: '下载图片', remainingLabel },
-            }))
+              ? t('generation.progress.receivedOf', { received, total: formatMb(event.bytesTotal) })
+              : t('generation.progress.received', { received })
+            applyProgressOverride({
+              stage: t('generation.progress.finalizing'),
+              remainingLabel,
+              previewUrl: lastProgressOverride?.previewUrl,
+            })
+          } else if (event.stage === 'responses_sse') {
+            const partial = event.progress.partialImage
+            const previewUrl = partial
+              ? `data:${partial.mimeType};base64,${partial.b64Json}`
+              : lastProgressOverride?.previewUrl
+            applyProgressOverride({
+              stage: event.progress.label,
+              remainingLabel: event.progress.stage === 'completed'
+                ? t('generation.progress.showingSoon')
+                : t('generation.progress.generating'),
+              progress: event.progress.progress,
+              previewUrl,
+            })
           } else if (event.stage === 'finalizing') {
-            updateAssistantMessage(assistantId, (current) => ({
-              ...current,
-              progressOverride: { stage: '渲染中', remainingLabel: '即将显示' },
-            }))
+            applyProgressOverride({
+              stage: t('generation.progress.finalizing'),
+              remainingLabel: t('generation.progress.showingSoon'),
+              progress: Math.max(lastProgressOverride?.progress ?? 0, 96),
+              previewUrl: lastProgressOverride?.previewUrl,
+            })
           }
         },
       })
@@ -156,6 +183,10 @@ export function useGenerationFlow(deps: GenerationFlowDeps) {
         creativity: args.payload.creativity,
         seed: args.payload.seed,
         model: args.payload.model,
+        modelSelection: args.payload.modelSelection,
+        transparentBackground: args.payload.transparentBackground,
+        streamingWait: args.payload.streamingWait,
+        partialPreview: args.payload.partialPreview,
         id: createId(),
         createdAt: new Date().toISOString(),
         requestId: result.requestId,
@@ -175,10 +206,11 @@ export function useGenerationFlow(deps: GenerationFlowDeps) {
         elapsedSeconds: elapsed,
         progressOverride: undefined,
       }))
+      deps.generationProgressOverride.value = undefined
 
       deps.vibrate('success')
       deps.toast.success(
-        `已生成 ${result.images.length} 张`,
+        t('generation.generated', { count: result.images.length }),
         result.requestId ? `req ${result.requestId.slice(0, 8)}` : undefined,
       )
 
@@ -186,17 +218,8 @@ export function useGenerationFlow(deps: GenerationFlowDeps) {
         deps.history.value = next
       })
 
-      try {
-        recordGenerationToPreference({
-          prompt: args.payload.prompt,
-          style: args.payload.style,
-          size: args.payload.size,
-          referenceImageCount: args.payload.referenceImages?.length,
-          model: args.payload.model,
-        })
-      } catch {}
     } catch (error) {
-      let message = '生成失败，请稍后重试。'
+      let message = t('generation.errorFallback')
       let code: string | undefined
       let requestId: string | undefined
 
@@ -210,12 +233,19 @@ export function useGenerationFlow(deps: GenerationFlowDeps) {
 
       if (code === 'ABORTED') {
         deps.messages.value = deps.messages.value.filter((m) => m.id !== assistantId)
+        deps.generationProgressOverride.value = undefined
         deps.vibrate('tap')
-        deps.toast.info('已取消这次生成', '可以接着改提示词再来一次')
+        deps.toast.info(t('generation.cancelled'), t('generation.cancelledHint'))
         return
       }
 
-      deps.errorMessage.value = requestId ? `${message}（请求 ID：${requestId}）` : message
+      const stuckLabel = lastProgressOverride?.stage
+        ? t('generation.stuckAt', { stage: lastProgressOverride.stage })
+        : ''
+      const displayMessage = `${message}${stuckLabel}`
+      deps.errorMessage.value = requestId
+        ? t('generation.requestId', { message: displayMessage, requestId })
+        : displayMessage
       deps.lastRequestId.value = requestId || ''
 
       elapsed = computeElapsed()
@@ -223,12 +253,13 @@ export function useGenerationFlow(deps: GenerationFlowDeps) {
       updateAssistantMessage(assistantId, (current) => ({
         ...current,
         status: 'error',
-        errorMessage: message,
+        errorMessage: displayMessage,
         errorCode: code,
         requestId,
         elapsedSeconds: elapsed,
         progressOverride: undefined,
       }))
+      deps.generationProgressOverride.value = undefined
 
       deps.vibrate('error')
       deps.toast.error(message, requestId ? `req ${requestId.slice(0, 8)}` : undefined)
@@ -242,7 +273,7 @@ export function useGenerationFlow(deps: GenerationFlowDeps) {
       if (code === 'SIZE_NOT_SUPPORTED') {
         const locked = resolutionSupport.learnBlockedSize(args.payload.size)
         if (locked) {
-          deps.toast.info('已记住该尺寸不被支持', '已在当前中转站隐藏这一分辨率档，请改用更低分辨率')
+          deps.toast.info(t('generation.sizeLocked'), t('generation.sizeLockedHint'))
         }
       }
     } finally {
@@ -272,15 +303,5 @@ export function useGenerationFlow(deps: GenerationFlowDeps) {
     }
   })
 
-  async function runABTest(args: {
-    payloadA: GenerateImageRequest
-    payloadB: GenerateImageRequest
-    userMessageId: string
-  }): Promise<void> {
-    deps.toast.info('A/B 双轨生成', '先发原始 prompt，再发优化版本')
-    await runGeneration({ payload: args.payloadA, userMessageId: args.userMessageId })
-    await runGeneration({ payload: args.payloadB, userMessageId: args.userMessageId })
-  }
-
-  return { runGeneration, abortGeneration, runABTest }
+  return { runGeneration, abortGeneration }
 }

@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import Icon from './Icon.vue'
-import { sizeOptions, styleOptions } from '../presets'
+import { sizeOptions } from '../presets'
 import { useFocusTrap } from '../composables/useFocusTrap'
 import { useBodyLock } from '../composables/useBodyLock'
 import { useResolutionSupport } from '../composables/useResolutionSupport'
 import { useI18n } from '../lib/i18n'
-import type { ImageSize, ImageStyle } from '../types'
+import type { ImageSize } from '../types'
 
 interface Props {
   open: boolean
@@ -19,11 +19,9 @@ const props = withDefaults(defineProps<Props>(), {
 
 const emit = defineEmits<{
   (e: 'update:open', value: boolean): void
-  (e: 'pick-style', value: ImageStyle): void
   (e: 'pick-size', value: ImageSize): void
   (e: 'open-history'): void
   (e: 'open-settings'): void
-  (e: 'open-style-sheet'): void
   (e: 'open-shortcuts'): void
   (e: 'open-onboarding'): void
   (e: 'install-app'): void
@@ -92,14 +90,6 @@ const commands = computed<CommandItem[]>(() => {
       run: () => emit('open-history'),
     },
     {
-      id: 'open-style-sheet',
-      group: t('cmd.group.nav'),
-      label: t('cmd.openStyleSheet'),
-      icon: 'palette',
-      keywords: 'style mood preset 风格 模板',
-      run: () => emit('open-style-sheet'),
-    },
-    {
       id: 'open-shortcuts',
       group: t('cmd.group.nav'),
       label: t('cmd.openShortcuts'),
@@ -146,27 +136,17 @@ const commands = computed<CommandItem[]>(() => {
     })
   }
 
-  for (const style of styleOptions) {
-    list.push({
-      id: `style-${style.value}`,
-      group: t('cmd.group.style'),
-      label: style.label,
-      hint: style.description,
-      icon: 'palette',
-      keywords: `${style.label} ${style.accent} ${style.description}`,
-      run: () => emit('pick-style', style.value),
-    })
-  }
-
   for (const size of sizeOptions) {
     if (!resolutionSupport.isTierUnlocked(size.tier)) continue
+    const label = t(`size.${size.value}.label`)
+    const hint = t(`size.${size.value}.hint`)
     list.push({
       id: `size-${size.value}`,
       group: t('cmd.group.size'),
-      label: `${size.label} · ${size.value}`,
-      hint: size.hint,
+      label: `${label} · ${size.value}`,
+      hint,
       icon: 'ratio',
-      keywords: `${size.label} ${size.value} ${size.hint}`,
+      keywords: `${label} ${size.label} ${size.value} ${hint} ${size.hint}`,
       run: () => emit('pick-size', size.value),
     })
   }

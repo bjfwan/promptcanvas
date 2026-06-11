@@ -1,6 +1,12 @@
 import { computed, ref } from 'vue'
-import { customModelSentinel, modelOptions as presetModelOptions } from '../presets'
-import { aggregateCapabilities, type AggregatedCapability } from '../lib/modelCapabilities'
+import {
+  autoModelSentinel,
+  relayModelsEmptySentinel,
+  relayModelsGroupSentinel,
+  modelOptions as presetModelOptions,
+} from '../presets'
+import { aggregateCapabilities, lookupModelCapability, type AggregatedCapability } from '../lib/modelCapabilities'
+import { t } from '../lib/i18n'
 
 const STORAGE_KEY = 'promptcanvas:discovered-models-v1'
 const MAX_MODELS = 200
@@ -108,11 +114,23 @@ function persist(models: string[]) {
 
 const discoveredImageOnly = computed(() => discovered.value.filter(isLikelyImageModel))
 
-const mergedModelOptions = computed<Array<{ value: string; label: string; hint: string }>>(() => {
+function modelHint(id: string): string {
+  const capability = lookupModelCapability(id)
+  if (!capability) return t('model.hint.fromRelay')
+
+  const bits = [t('model.hint.maxTier', { tier: capability.maxTier.toUpperCase() })]
+  if (capability.supportsEdits) bits.push(t('model.hint.edits'))
+  if (capability.supportsQuality) bits.push(t('model.hint.quality'))
+  return bits.join(' · ')
+}
+
+const mergedModelOptions = computed<Array<{ value: string; label: string; hint: string; disabled?: boolean; kind?: 'group' }>>(() => {
   const presetIds = new Set(presetModelOptions.map((option) => option.value))
-  const sentinelIndex = presetModelOptions.findIndex((option) => option.value === customModelSentinel)
-  const baseList = sentinelIndex >= 0 ? presetModelOptions.slice(0, sentinelIndex) : [...presetModelOptions]
-  const tail = sentinelIndex >= 0 ? presetModelOptions.slice(sentinelIndex) : []
+  const baseList = presetModelOptions.map((option) => ({
+    ...option,
+    label: option.value === autoModelSentinel ? t('model.auto.label') : option.label,
+    hint: option.value === autoModelSentinel ? t('model.auto.hint') : option.hint,
+  }))
 
   const additions: Array<{ value: string; label: string; hint: string }> = []
   const seen = new Set<string>(presetIds)
@@ -120,10 +138,27 @@ const mergedModelOptions = computed<Array<{ value: string; label: string; hint: 
   for (const id of discoveredImageOnly.value) {
     if (seen.has(id)) continue
     seen.add(id)
-    additions.push({ value: id, label: id, hint: '中转站发现' })
+    additions.push({ value: id, label: id, hint: modelHint(id) })
   }
 
-  return [...baseList, ...additions, ...tail]
+  return [
+    ...baseList,
+    {
+      value: relayModelsGroupSentinel,
+      label: t('model.relay.group'),
+      hint: additions.length ? t('model.relay.loaded', { count: additions.length }) : t('model.relay.afterTest'),
+      disabled: true,
+      kind: 'group',
+    },
+    ...(additions.length
+      ? additions
+      : [{
+          value: relayModelsEmptySentinel,
+          label: t('model.relay.empty'),
+          hint: t('model.relay.emptyHint'),
+          disabled: true,
+        }]),
+  ]
 })
 
 export function useDiscoveredModels() {

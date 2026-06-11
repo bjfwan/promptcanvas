@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import Icon from './Icon.vue'
+import { useI18n } from '../lib/i18n'
 import type { IconName } from '../icons'
 import type { PromptTreeAction, PromptTreeNode } from '../composables/usePromptTree'
 
@@ -12,6 +13,7 @@ interface Props {
 }
 
 const props = defineProps<Props>()
+const { t, locale } = useI18n()
 
 const emit = defineEmits<{
   (e: 'undo'): void
@@ -25,10 +27,6 @@ const sortedNodes = computed(() => [...props.nodes].sort((a, b) => a.createdAt -
 
 const actionIcon: Record<PromptTreeAction, IconName> = {
   manual: 'pencil',
-  enhance: 'sparkle',
-  'lint-fix': 'check',
-  'slot-edit': 'sliders',
-  'slot-refill': 'refresh',
   import: 'upload',
   undo: 'reset',
   redo: 'arrowRight',
@@ -44,7 +42,7 @@ function shortPreview(text: string): string {
 
 function timeLabel(createdAt: number): string {
   try {
-    return new Intl.DateTimeFormat('zh-CN', {
+    return new Intl.DateTimeFormat(locale.value, {
       hour: '2-digit',
       minute: '2-digit',
       second: '2-digit',
@@ -62,38 +60,38 @@ function timeLabel(createdAt: number): string {
         <span class="prompt-treeline__title-icon" aria-hidden="true">
           <Icon name="layers" :size="11" />
         </span>
-        <span class="gradient-text">Prompt 树</span>
-        <small>{{ sortedNodes.length }} 节点</small>
+        <span class="gradient-text">{{ t('promptTree.title') }}</span>
+        <small>{{ t('promptTree.nodes', { count: sortedNodes.length }) }}</small>
       </div>
       <div class="prompt-treeline__nav">
         <button
           type="button"
           class="prompt-treeline__btn"
           :disabled="!canUndo"
-          aria-label="回到上一个版本"
+          :aria-label="t('promptTree.undoAria')"
           @click="emit('undo')"
         >
           <Icon name="arrowUp" :size="11" />
-          <span>撤销</span>
+          <span>{{ t('promptTree.undo') }}</span>
         </button>
         <button
           type="button"
           class="prompt-treeline__btn"
           :disabled="!canRedo"
-          aria-label="重做"
+          :aria-label="t('promptTree.redoAria')"
           @click="emit('redo')"
         >
           <Icon name="arrowRight" :size="11" />
-          <span>重做</span>
+          <span>{{ t('promptTree.redo') }}</span>
         </button>
         <button
           type="button"
           class="prompt-treeline__btn"
-          aria-label="清空 Prompt 树"
+          :aria-label="t('promptTree.clearAria')"
           @click="emit('clear')"
         >
           <Icon name="trash" :size="11" />
-          <span>清空</span>
+          <span>{{ t('promptTree.clear') }}</span>
         </button>
       </div>
     </div>
@@ -117,7 +115,7 @@ function timeLabel(createdAt: number): string {
         </span>
       </button>
     </div>
-    <p class="prompt-treeline__hint">点击跳转 · 双击从该节点分支</p>
+    <p class="prompt-treeline__hint">{{ t('promptTree.hint') }}</p>
   </section>
 </template>
 

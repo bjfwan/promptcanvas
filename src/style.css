@@ -9,13 +9,13 @@
 
     /* Product palette: graphite neutrals with a single restrained action color. */
     --color-ink: 22 28 31;
-    --color-paper: 238 242 240;
-    --color-paper-soft: 229 235 232;
-    --color-cream: 223 230 226;
-    --color-vellum: 246 248 247;
-    --color-muted: 86 98 96;
-    --color-line: 204 214 210;
-    --color-line-strong: 145 160 155;
+    --color-paper: 236 237 240;
+    --color-paper-soft: 226 229 233;
+    --color-cream: 219 223 227;
+    --color-vellum: 247 248 250;
+    --color-muted: 84 94 99;
+    --color-line: 203 209 214;
+    --color-line-strong: 144 154 162;
     --color-accent: 11 103 97;
     --color-action: 11 103 97;
     --color-action-strong: 7 76 72;
@@ -27,8 +27,8 @@
     --color-ivory: 252 253 251;
     --color-surface: 252 253 251;
     --color-surface-raised: 255 255 255;
-    --color-surface-muted: 246 248 247;
-    --color-canvas: 216 224 220;
+    --color-surface-muted: 246 247 249;
+    --color-canvas: 214 219 224;
     --color-glass: var(--color-surface);
     --color-glass-strong: var(--color-surface-raised);
     --color-shadow: 22 28 31;
@@ -489,7 +489,7 @@
 
   .paper-bg {
     background:
-      linear-gradient(180deg, rgb(var(--color-paper)) 0%, rgb(var(--color-paper-soft)) 100%);
+      linear-gradient(132deg, rgb(var(--color-vellum) / 0.92) 0%, rgb(var(--color-paper)) 46%, rgb(var(--color-paper-soft)) 100%);
     position: relative;
     isolation: isolate;
     overflow: hidden;
@@ -506,17 +506,17 @@
 
   .paper-bg::before {
     background-image:
-      linear-gradient(to right, rgb(var(--color-ink) / 0.035) 1px, transparent 1px),
-      linear-gradient(to bottom, rgb(var(--color-ink) / 0.03) 1px, transparent 1px);
+      linear-gradient(to right, rgb(var(--color-blueprint) / 0.03) 1px, transparent 1px),
+      linear-gradient(to bottom, rgb(var(--color-ink) / 0.022) 1px, transparent 1px);
     background-size: 32px 32px;
-    mask-image: linear-gradient(to bottom, rgb(0 0 0 / 0.65), transparent 72%);
-    opacity: 0.5;
+    mask-image: linear-gradient(to bottom, rgb(0 0 0 / 0.58), transparent 72%);
+    opacity: 0.42;
   }
 
   .paper-bg::after {
     background:
-      radial-gradient(120% 80% at 50% -20%, rgb(var(--color-accent) / 0.06), transparent 62%),
-      linear-gradient(90deg, rgb(var(--color-shadow) / 0.025), transparent 26%, transparent 74%, rgb(var(--color-shadow) / 0.03));
+      linear-gradient(115deg, transparent 0%, rgb(var(--color-blueprint) / 0.04) 42%, transparent 74%),
+      linear-gradient(90deg, rgb(var(--color-shadow) / 0.018), transparent 28%, transparent 72%, rgb(var(--color-shadow) / 0.024));
     opacity: 1;
   }
 
@@ -667,25 +667,13 @@
   }
 
   /* ─── Canvas Generation Scan Line ─── */
-  .canvas-scan::before {
-    content: "";
-    position: absolute;
-    inset: 0 0 auto 0;
-    height: 3px;
-    background: var(--gradient-primary);
-    opacity: 0.58;
-    animation: canvas-scan-line 2.4s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite;
-    pointer-events: none;
-    border-radius: 2px;
-    box-shadow: 0 0 0 1px rgb(var(--color-accent) / 0.14);
-  }
-
   /* ─── Canvas Grid ─── */
   .canvas-grid {
+    border-radius: var(--radius-card);
+    background-color: rgb(var(--color-canvas) / 0.34);
     background-image:
-      linear-gradient(to right, rgb(var(--color-ink) / 0.03) 1px, transparent 1px),
-      linear-gradient(to bottom, rgb(var(--color-ink) / 0.03) 1px, transparent 1px);
-    background-size: 28px 28px;
+      linear-gradient(180deg, rgb(var(--color-surface-raised) / 0.52), transparent 42%),
+      linear-gradient(155deg, rgb(var(--color-canvas) / 0.42), rgb(var(--color-paper-soft) / 0.72) 48%, rgb(var(--color-surface-muted) / 0.86));
   }
 
   /* ─── Loading Dots ─── */
@@ -766,20 +754,6 @@
   100% { transform: translate(-2%, 3%) scale(0.98); }
 }
 
-@keyframes canvas-scan-line {
-  0% { transform: translateY(0); opacity: 0; }
-  10% { opacity: 0.8; }
-  90% { opacity: 0.8; }
-  100% { transform: translateY(calc(100cqh - 3px)); opacity: 0; }
-}
-
-/* Legacy compat */
-@keyframes canvas-scan {
-  0% { transform: translateY(-100%); }
-  60% { transform: translateY(380%); }
-  100% { transform: translateY(380%); }
-}
-
 @keyframes dev-focus {
   0%   { filter: blur(6px); opacity: 0.7; }
   100% { filter: blur(0); opacity: 1; }
@@ -832,9 +806,6 @@
     animation: none;
   }
 
-  .canvas-scan::before {
-    animation: none;
-  }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════

@@ -15,6 +15,7 @@
  */
 
 import type { GenerationHistoryItem, ImageQuality, ImageSize } from '../types'
+import { t } from './i18n'
 
 export interface EtaInput {
   size?: ImageSize
@@ -26,31 +27,30 @@ export interface EtaInput {
 const MIN_SAMPLES_FOR_LEARNED_TARGET = 2
 const MAX_SAMPLE_AGE_MS = 1000 * 60 * 60 * 24 * 14 // 14 days
 
-const SIZE_OVERHEAD: Record<string, number> = {
-  '1024x1024': 0,
-  '1024x1536': 3,
-  '1536x1024': 3,
-  '2048x2048': 8,
-  '2048x3072': 12,
-  '3072x2048': 12,
-  '4096x4096': 22,
-  '4096x6144': 30,
-  '6144x4096': 30,
+const SIZE_TARGET_SECONDS: Record<string, number> = {
+  '1024x1024': 18,
+  '1024x1536': 24,
+  '1536x1024': 24,
+  '2048x2048': 240,
+  '2048x3072': 300,
+  '3072x2048': 300,
+  '4096x4096': 660,
+  '4096x6144': 780,
+  '6144x4096': 780,
 }
 
-const QUALITY_OVERHEAD: Record<string, number> = {
-  low: -1,
-  auto: 0,
-  medium: 1,
-  high: 4,
+const QUALITY_FACTOR: Record<string, number> = {
+  low: 0.85,
+  auto: 1,
+  medium: 1.08,
+  high: 1.18,
 }
 
 function priorTargetSeconds(input: EtaInput): number {
-  let seconds = 11
-  seconds += SIZE_OVERHEAD[input.size ?? '1024x1024'] ?? 0
-  seconds += QUALITY_OVERHEAD[input.quality ?? 'auto'] ?? 0
-  seconds += Math.max(0, (input.count ?? 1) - 1) * 4
-  return Math.max(6, seconds)
+  let seconds = SIZE_TARGET_SECONDS[input.size ?? '1024x1024'] ?? 18
+  seconds *= QUALITY_FACTOR[input.quality ?? 'auto'] ?? 1
+  seconds += Math.max(0, (input.count ?? 1) - 1) * seconds * 0.65
+  return Math.max(6, Math.round(seconds))
 }
 
 function median(values: number[]): number {
@@ -160,16 +160,22 @@ export function computeProgress(elapsedSeconds: number, targetSeconds: number): 
 
 /** Discrete stage label derived from progress. */
 export function stageLabelForProgress(progress: number): string {
-  if (progress < 22) return '解析提示词'
-  if (progress < 50) return '搭建构图'
-  if (progress < 78) return '渲染细节'
-  if (progress < 94) return '准备出图'
-  return '等待返回'
+  if (progress < 22) return t('eta.stage.parse')
+  if (progress < 50) return t('eta.stage.compose')
+  if (progress < 78) return t('eta.stage.render')
+  if (progress < 94) return t('eta.stage.prepare')
+  return t('eta.stage.wait')
 }
 
 export interface RemainingLabelOptions {
   /** When `learned`, we can show "比平时快/慢" copy. */
   source?: EtaEstimate['source']
+}
+
+function formatSeconds(seconds: number): string {
+  const rounded = Math.max(1, Math.round(seconds))
+  if (rounded < 90) return `${rounded}s`
+  return t('eta.minutes', { count: Math.max(1, Math.round(rounded / 60)) })
 }
 
 /** Produce the human label rendered next to the progress ring. */
@@ -183,28 +189,28 @@ export function formatRemainingLabel(
   const remain = target - elapsed
 
   if (elapsed === 0) {
-    return `预计 ${target}s`
+    return t('eta.expected', { time: formatSeconds(target) })
   }
 
   if (remain >= 4) {
-    return `约 ${remain}s`
+    return t('eta.about', { time: formatSeconds(remain) })
   }
 
   if (remain >= 1) {
-    return '即将出图'
+    return t('eta.soon')
   }
 
   if (remain === 0) {
-    return '即将出图'
+    return t('eta.soon')
   }
 
   // Past the budget. Frame it constructively rather than alarmist.
   const overshoot = elapsed - target
   if (overshoot <= 4) {
-    return options.source === 'learned' ? '比平时稍慢一点' : '稍超预估，马上回包'
+    return options.source === 'learned' ? t('eta.slowerLearned') : t('eta.overSoon')
   }
   if (overshoot <= target) {
-    return '上游较忙，仍在生成'
+    return t('eta.busy')
   }
-  return '上游响应缓慢，可随时取消'
+  return t('eta.slow')
 }

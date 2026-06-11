@@ -1,32 +1,36 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, nextTick, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, ref, useId, watch } from 'vue'
 import Icon from './Icon.vue'
 import Select, { type SelectOption } from './Select.vue'
-import PromptInsightChips from './PromptInsightChips.vue'
-import AiRewriteRibbon from './AiRewriteRibbon.vue'
-import { useInlineRewrite } from '../composables/useInlineRewrite'
 import { maxReferenceImages } from '../lib/imagesApi'
 import { customModelSentinel } from '../presets'
 import { useDiscoveredModels } from '../composables/useDiscoveredModels'
+import { useI18n } from '../lib/i18n'
 import type { ContinuationContext, ImageQuality, ImageSize, ImageStyle, ReferenceImageAttachment } from '../types'
-import type { EnhanceResult } from '../lib/magicEnhance'
-import { inferEnhanceIntent } from '../lib/magicEnhance'
-import type { PromptContext } from '../lib/promptDoc'
 import type { PromptTreeNode } from '../composables/usePromptTree'
-import { reverseParseRevisedPrompt, docToPlainPrompt } from '../lib/revisedParser'
 
 const PromptTreeline = defineAsyncComponent(() => import('./PromptTreeline.vue'))
 
-const MagicEnhanceMenu = defineAsyncComponent(() => import('./MagicEnhanceMenu.vue'))
-
 const discoveredModels = useDiscoveredModels()
+const { t } = useI18n()
+
+function isSimpleImageModelOption(option: { value: string; disabled?: boolean; kind?: 'group' }) {
+  const value = option.value.trim()
+  if (!value || option.disabled || option.kind === 'group') return false
+  const lower = value.toLowerCase()
+  return !lower.includes('glm') || lower.includes('glm-image')
+}
 
 const modelChipOptions = computed<SelectOption<string>[]>(() =>
-  discoveredModels.mergedModelOptions.value.map((option) => ({
-    value: option.value,
-    label: option.value === customModelSentinel ? '自定义…' : option.label,
-    hint: option.hint,
-  })),
+  discoveredModels.mergedModelOptions.value
+    .filter(isSimpleImageModelOption)
+    .map((option) => ({
+      value: option.value,
+      label: option.value === customModelSentinel ? `${t('dock.modelCustom')}...` : option.label,
+      hint: option.hint,
+      disabled: option.disabled,
+      kind: option.kind,
+    })),
 )
 
 interface Props {
@@ -37,32 +41,28 @@ interface Props {
   referenceImages: ReferenceImageAttachment[]
   layout?: 'panel' | 'sheet' | 'draft'
   continuation?: ContinuationContext | null
-  canUndoEnhance?: boolean
-  modelName?: string
-  promptContext?: PromptContext | null
   treeNodes?: PromptTreeNode[]
   treeCurrentId?: string | null
   treeCanUndo?: boolean
   treeCanRedo?: boolean
+  modelWarning?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
   layout: 'panel',
   continuation: null,
-  canUndoEnhance: false,
-  modelName: '',
-  promptContext: null,
   treeNodes: () => [],
   treeCurrentId: null,
   treeCanUndo: false,
   treeCanRedo: false,
+  modelWarning: '',
 })
 
 const prompt = defineModel<string>('prompt', { required: true })
-const imageStyle = defineModel<ImageStyle>('imageStyle', { required: true })
-const size = defineModel<ImageSize>('size', { required: true })
-const count = defineModel<number>('count', { required: true })
-const quality = defineModel<ImageQuality>('quality', { required: true })
+defineModel<ImageStyle>('imageStyle', { required: true })
+defineModel<ImageSize>('size', { required: true })
+defineModel<number>('count', { required: true })
+defineModel<ImageQuality>('quality', { required: true })
 const modelChoice = defineModel<string>('modelChoice', { required: true })
 const customModel = defineModel<string>('customModel', { required: true })
 
@@ -74,10 +74,7 @@ const emit = defineEmits<{
   (e: 'open-settings'): void
   (e: 'select-reference-images', files: File[]): void
   (e: 'remove-reference-image', id: string): void
-  (e: 'magic-enhance', result: EnhanceResult): void
-  (e: 'magic-ab-test', original: string, optimized: EnhanceResult): void
   (e: 'toast-info', title: string, message?: string): void
-  (e: 'undo-enhance'): void
   (e: 'tree-undo'): void
   (e: 'tree-redo'): void
   (e: 'tree-jump', id: string): void
@@ -89,50 +86,32 @@ const emit = defineEmits<{
 const promptRef = ref<HTMLTextAreaElement | null>(null)
 const referenceInputRef = ref<HTMLInputElement | null>(null)
 const dragActive = ref(false)
-const magicMenuOpen = ref(false)
+const tooltipIdBase = useId()
 let dragDepth = 0
+
+const copyTooltipId = `${tooltipIdBase}-copy-prompt`
+const clearTooltipId = `${tooltipIdBase}-clear-prompt`
 
 const hasReferenceImages = computed(() => props.referenceImages.length > 0)
 const canAddReferenceImages = computed(() => props.referenceImages.length < maxReferenceImages)
 
-const promptCount = computed(() => prompt.value.length)
-const promptTokens = computed(() => Math.max(1, Math.round(prompt.value.length / 4)))
-const promptCountTone = computed(() => {
-  const length = promptCount.value
-  if (length >= 4000) {
-    return {
-      tone: 'text-accent',
-      hint: '提示词已超过 4000 字，部分模型的上下文窗口可能不够，建议继续精简或切换模型。',
-    }
-  }
-  if (length >= 2000) {
-    return {
-      tone: 'text-ochre',
-      hint: '提示词较长，注意目标模型的上下文上限。',
-    }
-  }
-  return { tone: 'text-muted', hint: '' }
-})
-const promptTone = computed(() => {
-  const length = promptCount.value
-  if (length < 24) return { label: '稀薄', tone: 'text-muted' }
-  if (length < 80) return { label: '聚焦', tone: 'text-forest' }
-  if (length < 240) return { label: '丰富', tone: 'text-ink' }
-  if (length < 600) return { label: '稠密', tone: 'text-ochre' }
-  return { label: '过载', tone: 'text-accent' }
-})
+const referenceButtonText = computed(() =>
+  hasReferenceImages.value
+    ? t('composer.refTitle', { count: props.referenceImages.length, max: maxReferenceImages })
+    : t('composer.tools.refUploadLabel'),
+)
 
 const generateLabel = computed(() => {
-  if (!prompt.value.trim()) return '写下提示词以生成'
-  if (props.isGenerating) return 'Composing · 点击取消'
-  if (props.continuation) return 'Continue frame'
-  return 'Generate'
+  if (!prompt.value.trim()) return t('composer.cta.write')
+  if (props.isGenerating) return t('composer.cta.busy')
+  if (props.continuation) return t('composer.cta.continue')
+  return t('composer.cta.generate')
 })
 
 const promptPlaceholder = computed(() =>
   props.continuation
-    ? '描述这张图下一步要改变什么：保留什么、替换什么、增加什么'
-    : '一张极简咖啡品牌海报，暖色调，自然光，留白充足',
+    ? t('composer.prompt.placeholderRemix')
+    : t('composer.prompt.placeholder'),
 )
 
 function handleGenerateClick(event: Event) {
@@ -150,10 +129,12 @@ function handleGenerateClick(event: Event) {
 const modelChipLabel = computed(() => {
   if (modelChoice.value === customModelSentinel) {
     const trimmed = customModel.value.trim()
-    return trimmed ? `自定义 · ${trimmed}` : '自定义 · 未填写'
+    return trimmed
+      ? t('composer.tools.modelCustom', { name: trimmed })
+      : t('composer.tools.modelCustomEmpty')
   }
-  const match = discoveredModels.mergedModelOptions.value.find((option) => option.value === modelChoice.value)
-  return match?.label ?? (modelChoice.value || '默认')
+  const match = modelChipOptions.value.find((option) => option.value === modelChoice.value)
+  return match?.label ?? (modelChoice.value || t('composer.tools.modelDefault'))
 })
 
 function focusPrompt() {
@@ -166,26 +147,6 @@ function clearPrompt() {
   prompt.value = ''
   emit('clear')
   focusPrompt()
-}
-
-function handlePromptPaste(event: ClipboardEvent) {
-  const pasted = event.clipboardData?.getData('text') ?? ''
-  if (!pasted) return
-  const looksStructured = /^(?:Subject|Lighting|Camera|Composition|主体|光位|镜头|构图)[:：]/m.test(pasted)
-  if (!looksStructured || pasted.length < 24) return
-  event.preventDefault()
-  const doc = reverseParseRevisedPrompt({
-    revisedPrompt: pasted,
-    style: imageStyle.value,
-    size: size.value,
-    hasReferenceImages: hasReferenceImages.value,
-  })
-  const plain = docToPlainPrompt(doc) || pasted
-  prompt.value = plain
-  nextTick(() => {
-    promptRef.value?.focus()
-    emit('toast-info', '已解析为槽位', `识别 ${Object.keys(doc.slots).filter((k) => doc.slots[k as keyof typeof doc.slots]?.value).length} 个槽位，已规整化为可读 prompt`)
-  })
 }
 
 function openReferencePicker() {
@@ -254,54 +215,6 @@ function removeReferenceImage(id: string) {
 
 defineExpose({ focusPrompt })
 
-// ── AI 改写（桌面） ──
-const inlineRewrite = useInlineRewrite()
-const aiRewriteState = inlineRewrite.state
-
-function startAiRewrite() {
-  if (!prompt.value.trim()) return
-  inlineRewrite.start({
-    promptRef: prompt,
-    intent: inferEnhanceIntent(imageStyle.value, hasReferenceImages.value),
-    hasReferenceImages: hasReferenceImages.value,
-    style: imageStyle.value,
-    size: size.value,
-    quality: quality.value,
-    modelName: props.modelName,
-  }).catch(() => {})
-}
-
-function revertAiResult() {
-  inlineRewrite.revert()
-}
-
-function retryAiRewrite() {
-  if (inlineRewrite.isStreaming.value) return
-  inlineRewrite.retry({
-    intent: inferEnhanceIntent(imageStyle.value, hasReferenceImages.value),
-    hasReferenceImages: hasReferenceImages.value,
-    style: imageStyle.value,
-    size: size.value,
-    quality: quality.value,
-    modelName: props.modelName,
-  }).catch(() => {})
-}
-
-function abortAiRewrite() {
-  inlineRewrite.abort()
-}
-
-function dismissAiRibbon() {
-  inlineRewrite.reset()
-}
-
-
-watch(modelChoice, (newValue, oldValue) => {
-  if (newValue === customModelSentinel && oldValue !== customModelSentinel) {
-    emit('open-settings')
-  }
-})
-
 watch(
   () => props.layout,
   () => {
@@ -311,14 +224,11 @@ watch(
   },
 )
 
-watch(prompt, () => {
-  if (!prompt.value.trim()) magicMenuOpen.value = false
-})
 </script>
 
 <template>
   <form
-    class="prompt-composer relative flex flex-col gap-7"
+    class="prompt-composer relative flex flex-col gap-4"
     :class="{
       'pb-2': layout === 'sheet',
       'prompt-composer--draft': layout === 'draft',
@@ -337,21 +247,13 @@ watch(prompt, () => {
       <div class="glass-card halo-pulse px-6 py-5">
         <Icon :name="canAddReferenceImages ? 'upload' : 'warning'" :size="22" class="mx-auto text-forest" />
         <p class="mt-3 font-display text-xl italic gradient-text">
-          {{ canAddReferenceImages ? '松手添加参考图' : '参考图已达上限' }}
+          {{ canAddReferenceImages ? t('canvas.drop.title') : t('canvas.drop.full') }}
         </p>
         <p class="mt-1 text-[12px] text-muted">
-          {{ canAddReferenceImages ? '支持 PNG / JPEG / WEBP / GIF' : `最多 ${maxReferenceImages} 张参考图` }}
+          {{ canAddReferenceImages ? t('canvas.drop.formats') : t('canvas.drop.fullHint', { n: maxReferenceImages }) }}
         </p>
       </div>
     </div>
-
-    <header v-if="layout === 'panel'" class="reveal space-y-2">
-      <p class="display-eyebrow">01 · Compose</p>
-      <h1 class="display-h1">构图草案</h1>
-      <p class="text-[13px] leading-6 text-muted">
-        控制主体、光线、镜头、材质与情绪。模板只塑造语气，不替你决定画面。
-      </p>
-    </header>
 
     <div
       v-if="healthOffline && layout !== 'draft'"
@@ -359,7 +261,7 @@ watch(prompt, () => {
       role="alert"
     >
       <Icon name="warning" :size="16" class="mt-0.5" />
-      <span>后端当前不可用。检查连接后再生成图片。</span>
+      <span>{{ t('composer.offline') }}</span>
     </div>
 
     <section class="space-y-2.5">
@@ -373,7 +275,7 @@ watch(prompt, () => {
       />
 
       <Transition name="composer-continuation">
-        <div v-if="continuation" class="composer-continuation" role="status" aria-label="正在接着画">
+        <div v-if="continuation" class="composer-continuation" role="status" :aria-label="t('composer.continuation.label')">
           <span class="composer-continuation__thumb" aria-hidden="true">
             <img :src="continuation.thumbnailUrl" alt="" loading="lazy" decoding="async" />
             <span class="composer-continuation__thumb-mark">
@@ -381,15 +283,15 @@ watch(prompt, () => {
             </span>
           </span>
           <span class="composer-continuation__body">
-            <span class="composer-continuation__title">接着画</span>
+            <span class="composer-continuation__title">{{ t('composer.continuation.title') }}</span>
             <span class="composer-continuation__sub">
-              基于第 {{ continuation.fromImageIndex + 1 }} 张图，告诉它你想改什么
+              {{ t('composer.continuation.body', { n: continuation.fromImageIndex + 1 }) }}
             </span>
           </span>
           <button
             type="button"
             class="composer-continuation__cancel"
-            aria-label="取消接着画"
+            :aria-label="t('composer.continuation.cancel')"
             @click="emit('cancel-continuation')"
           >
             <Icon name="close" :size="12" />
@@ -397,19 +299,49 @@ watch(prompt, () => {
         </div>
       </Transition>
 
-      <div class="flex items-center justify-between gap-3">
-        <label for="prompt-input" class="label inline-flex items-center gap-1.5">
-          <Icon name="pencil" :size="12" />
-          <span>提示词</span>
-        </label>
-        <p
-          class="font-mono text-[10px] tabular-nums transition-colors"
-          :class="promptCountTone.tone"
-          :title="promptCountTone.hint || undefined"
-          :aria-label="promptCountTone.hint ? `提示词字数 ${promptCount}，${promptCountTone.hint}` : `提示词字数 ${promptCount}`"
-        >{{ promptCount }}</p>
+      <div
+        v-if="hasReferenceImages"
+        class="prompt-reference-strip"
+        role="region"
+        :aria-label="t('composer.refTitle', { count: props.referenceImages.length, max: maxReferenceImages })"
+      >
+        <div class="prompt-reference-strip__items">
+          <div
+            v-for="image in props.referenceImages"
+            :key="image.id"
+            class="prompt-reference-thumb"
+          >
+            <img
+              :src="image.previewUrl"
+              :alt="image.name"
+              loading="lazy"
+              decoding="async"
+            />
+            <button
+              type="button"
+              class="prompt-reference-thumb__remove"
+              :aria-label="t('composer.refRemove', { name: image.name })"
+              :title="t('composer.refRemove', { name: image.name })"
+              @click.stop="removeReferenceImage(image.id)"
+            >
+              <Icon name="close" :size="10" />
+            </button>
+          </div>
+        </div>
+        <button
+          v-if="canAddReferenceImages"
+          type="button"
+          class="prompt-reference-strip__add"
+          :aria-label="t('composer.tools.refUploadLabel')"
+          :title="t('composer.tools.refUploadLabel')"
+          @click.stop="openReferencePicker"
+        >
+          <Icon name="upload" :size="13" />
+          <span>{{ t('composer.tools.refContinue') }}</span>
+        </button>
       </div>
-      <div class="prompt-field-shell" :class="{ 'is-ai-streaming': inlineRewrite.isStreaming.value }" data-tour="composer-prompt" @click="promptRef?.focus()">
+
+      <div class="prompt-field-shell" data-tour="composer-prompt" @click="promptRef?.focus()">
         <textarea
           id="prompt-input"
           ref="promptRef"
@@ -417,158 +349,70 @@ watch(prompt, () => {
           :rows="layout === 'draft' ? 4 : layout === 'sheet' ? 5 : 6"
           class="prompt-field-textarea"
           :placeholder="promptPlaceholder"
-          :readonly="inlineRewrite.isStreaming.value"
           autocomplete="off"
           spellcheck="false"
           @click.stop="promptRef?.focus()"
-          @paste="handlePromptPaste"
         ></textarea>
         <div class="prompt-field-tools">
           <span class="prompt-model-chip">
-            <span class="inline-flex items-center gap-1 font-mono text-[10px] uppercase tracking-[0.16em] text-muted">
-              <Icon name="layers" :size="10" />
-              模型
-            </span>
+            <button
+              type="button"
+              class="prompt-tool-btn prompt-tool-btn--reference prompt-reference-chip"
+              :disabled="!canAddReferenceImages"
+              :aria-label="canAddReferenceImages
+                ? referenceButtonText
+                : t('composer.tools.refLimitLabel', { max: maxReferenceImages })"
+              :title="canAddReferenceImages
+                ? referenceButtonText
+                : t('canvas.drop.fullHint', { n: maxReferenceImages })"
+              @click.stop="openReferencePicker"
+            >
+              <Icon name="upload" :size="12" />
+              <span>{{ referenceButtonText }}</span>
+            </button>
             <Select
               v-model="modelChoice"
               :options="modelChipOptions"
               variant="chip"
               align="end"
-              aria-label="选择生成模型"
+              :aria-label="t('dock.modelLabel')"
               :placeholder="modelChipLabel"
             />
           </span>
-          <span class="prompt-action-strip" aria-label="提示词操作">
-            <button
-              v-if="prompt.length"
-              type="button"
-              class="prompt-tool-btn prompt-tool-btn--ai"
-              :class="{ 'is-busy': inlineRewrite.isStreaming.value }"
-              :aria-label="inlineRewrite.isStreaming.value ? '正在 AI 改写，点击取消' : 'AI 优化提示词'"
-              @click.stop="inlineRewrite.isStreaming.value ? abortAiRewrite() : startAiRewrite()"
-            >
-              <Icon
-                :name="inlineRewrite.isStreaming.value ? 'close' : 'sparkle'"
-                :size="12"
-              />
-              <span>{{ inlineRewrite.isStreaming.value ? '取消' : 'AI 优化' }}</span>
-            </button>
-
-            <span class="relative">
-              <button
-                v-if="prompt.length"
-                type="button"
-                class="prompt-tool-btn prompt-tool-btn--accent"
-                aria-label="智能优化提示词"
-                :aria-expanded="magicMenuOpen"
-                @click.stop="magicMenuOpen = !magicMenuOpen"
-              >
-                <Icon name="sparkle" :size="12" />
-                <span>深度</span>
-              </button>
-              <MagicEnhanceMenu
-                v-if="magicMenuOpen"
-                :prompt="prompt"
-                :image-style="imageStyle"
-                :has-reference-images="hasReferenceImages"
-                :size="size"
-                :quality="quality"
-                :model-name="props.modelName"
-                :context="props.promptContext ?? null"
-                @enhance="(result: EnhanceResult) => { emit('magic-enhance', result); magicMenuOpen = false }"
-                @ab-test="(original: string, optimized: EnhanceResult) => { emit('magic-ab-test', original, optimized); magicMenuOpen = false }"
-                @update-prompt="(value: string) => { prompt = value }"
-                @close="magicMenuOpen = false"
-              />
-            </span>
-            <button
-              v-if="props.canUndoEnhance"
-              type="button"
-              class="prompt-tool-btn prompt-tool-btn--danger"
-              @click.stop="emit('undo-enhance')"
-            >
-              <Icon name="reset" :size="12" />
-              <span>撤销</span>
-            </button>
+          <span class="prompt-action-strip" :aria-label="t('composer.prompt')">
             <button
               v-if="prompt.length"
               type="button"
               class="prompt-tool-btn prompt-tool-btn--icon"
-              aria-label="复制提示词"
-              @click.stop="emit('copy', prompt, '已复制提示词')"
+              :aria-label="t('composer.tools.copyLabel')"
+              :aria-describedby="copyTooltipId"
+              @click.stop="emit('copy', prompt, t('toast.copyPrompt'))"
             >
               <Icon name="copy" :size="12" />
-              <span>复制</span>
+              <span class="prompt-tool-label">{{ t('composer.tools.copy') }}</span>
+              <span :id="copyTooltipId" class="prompt-tool-description" role="tooltip">
+                {{ t('composer.tools.copyDescription') }}
+              </span>
             </button>
             <button
               v-if="prompt.length"
               type="button"
               class="prompt-tool-btn prompt-tool-btn--icon"
-              aria-label="清空提示词"
+              :aria-label="t('composer.tools.clearLabel')"
+              :aria-describedby="clearTooltipId"
               @click.stop="clearPrompt"
             >
               <Icon name="eraser" :size="12" />
-              <span>清空</span>
+              <span class="prompt-tool-label">{{ t('composer.tools.clear') }}</span>
+              <span :id="clearTooltipId" class="prompt-tool-description" role="tooltip">
+                {{ t('composer.tools.clearDescription') }}
+              </span>
             </button>
           </span>
         </div>
-      </div>
-      <AiRewriteRibbon
-        :phase="aiRewriteState.phase"
-        :model-id="aiRewriteState.modelId"
-        :elapsed-ms="aiRewriteState.elapsedMs"
-        :done-elapsed-ms="aiRewriteState.doneElapsedMs"
-        :tool-call-count="aiRewriteState.toolCallCount"
-        :error-message="aiRewriteState.errorMessage"
-        :error-code="aiRewriteState.errorCode"
-        variant="desktop"
-        @revert="revertAiResult"
-        @retry="retryAiRewrite"
-        @abort="abortAiRewrite"
-        @dismiss="dismissAiRibbon"
-      />
-      <div
-        v-if="hasReferenceImages && layout !== 'draft'"
-        class="surface-1 reveal p-3"
-      >
-        <div class="mb-2 flex items-center justify-between gap-2">
-          <p class="inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.18em] text-muted">
-            <Icon name="image" :size="10" />
-            <span>参考图 {{ props.referenceImages.length }} / {{ maxReferenceImages }}</span>
-          </p>
-        </div>
-
-        <div class="flex flex-wrap gap-2">
-          <div
-            v-for="image in props.referenceImages"
-            :key="image.id"
-            class="group relative h-24 w-24 overflow-hidden rounded-[var(--radius-panel)] border border-line/50 bg-paper-soft shadow-[var(--shadow-inner-glass)] transition-transform duration-200 hover:-translate-y-0.5"
-          >
-            <img
-              :src="image.previewUrl"
-              :alt="image.name"
-              loading="lazy"
-              decoding="async"
-              class="h-full w-full object-cover"
-            />
-            <button
-              type="button"
-              class="absolute right-1.5 top-1.5 inline-grid h-6 w-6 place-items-center rounded-lg bg-ink/70 text-paper opacity-0 backdrop-blur-sm transition duration-200 hover:bg-accent group-hover:opacity-100"
-              :aria-label="`移除参考图 ${image.name}`"
-              @click="removeReferenceImage(image.id)"
-            >
-              <Icon name="close" :size="11" />
-            </button>
-            <span class="absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-ink/80 to-transparent px-2 pb-1 pt-4 text-[10px] font-medium text-paper">
-              {{ image.name }}
-            </span>
-          </div>
-        </div>
-      </div>
-      <div v-if="layout !== 'draft'" class="flex items-center justify-between text-[11px]">
-        <p class="flex items-center gap-2">
-          <span class="font-mono uppercase tracking-[0.2em]" :class="promptTone.tone">{{ promptTone.label }}</span>
-          <span class="font-mono text-muted/70">~{{ promptTokens }} tokens</span>
+        <p v-if="modelWarning" class="prompt-model-warning" role="status">
+          <Icon name="warning" :size="11" />
+          <span>{{ modelWarning }}</span>
         </p>
       </div>
 
@@ -584,24 +428,6 @@ watch(prompt, () => {
         @branch="(id) => emit('tree-branch', id)"
         @clear="emit('tree-clear')"
       />
-
-      <PromptInsightChips
-        v-if="layout !== 'draft'"
-        :prompt="prompt"
-        @pick="magicMenuOpen = true"
-      />
-
-      <p v-if="layout !== 'draft'" class="text-[10px] leading-snug text-muted">
-        需要负面提示词、Seed 等高级参数？
-        <button
-          type="button"
-          class="inline-flex items-center gap-1 text-ink underline-offset-2 hover:underline"
-          @click="emit('open-settings')"
-        >
-          <Icon name="sliders" :size="11" />
-          <span>打开设置</span>
-        </button>。
-      </p>
     </section>
 
     <div
@@ -612,22 +438,22 @@ watch(prompt, () => {
       <button
         type="submit"
         :disabled="!isGenerating && !canGenerate"
-        class="btn-primary group relative w-full overflow-hidden px-5 py-4 text-sm shadow-paper-2 disabled:shadow-paper-1"
+        class="btn-primary composer-submit group relative w-full overflow-hidden px-5 py-4 text-sm shadow-paper-2 disabled:shadow-paper-1"
         :class="{ 'btn-primary--busy': isGenerating }"
         aria-keyshortcuts="Meta+Enter Control+Enter"
         @click="handleGenerateClick"
       >
-        <span class="flex w-full items-center justify-between gap-3">
-          <span class="flex items-center gap-3">
+        <span class="composer-submit__content flex w-full items-center justify-between gap-3">
+          <span class="flex min-w-0 items-center gap-2.5">
             <Icon
-              :name="isGenerating ? 'close' : 'lightning'"
+              :name="isGenerating ? 'close' : 'send'"
               :size="14"
               :class="isGenerating ? '' : ''"
             />
-            <span class="font-display text-base italic">{{ generateLabel }}</span>
+            <span class="composer-submit__label font-display italic">{{ generateLabel }}</span>
             <span v-if="isGenerating" class="font-mono text-[11px] tabular-nums text-paper/70">{{ elapsedSeconds }}s</span>
           </span>
-          <span v-if="!isGenerating" class="hidden font-mono text-[10px] uppercase tracking-[0.22em] text-paper/65 sm:inline" aria-hidden="true">⌘ ↵</span>
+          <span v-if="!isGenerating" class="composer-submit__shortcut hidden font-mono text-[10px] uppercase tracking-[0.22em] text-paper/65 sm:inline" aria-hidden="true">⌘ ↵</span>
         </span>
         <span
           v-if="isGenerating"
@@ -641,14 +467,14 @@ watch(prompt, () => {
       <button
         type="submit"
         :disabled="!isGenerating && !canGenerate"
-        class="btn-primary group relative w-full overflow-hidden px-5 py-4 text-sm shadow-paper-2 disabled:shadow-paper-1"
+        class="btn-primary composer-submit group relative w-full overflow-hidden px-5 py-4 text-sm shadow-paper-2 disabled:shadow-paper-1"
         :class="{ 'btn-primary--busy': isGenerating }"
         @click="handleGenerateClick"
       >
-        <span class="flex w-full items-center justify-between gap-3">
-          <span class="flex items-center gap-3">
-            <Icon :name="isGenerating ? 'close' : 'lightning'" :size="14" />
-            <span class="font-display text-base italic">{{ generateLabel }}</span>
+        <span class="composer-submit__content flex w-full items-center justify-between gap-3">
+          <span class="flex min-w-0 items-center gap-2.5">
+            <Icon :name="isGenerating ? 'close' : 'send'" :size="14" />
+            <span class="composer-submit__label font-display italic">{{ generateLabel }}</span>
             <span v-if="isGenerating" class="font-mono text-[11px] tabular-nums text-paper/70">{{ elapsedSeconds }}s</span>
           </span>
         </span>
@@ -663,6 +489,105 @@ watch(prompt, () => {
 </template>
 
 <style scoped>
+.prompt-reference-strip {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  overflow: hidden;
+  border-radius: var(--radius-panel);
+  border: 1px solid rgb(var(--color-line) / 0.52);
+  background: rgb(var(--color-surface-muted) / 0.76);
+  padding: 0.45rem;
+}
+
+.prompt-reference-strip__items {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  gap: 0.45rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.prompt-reference-strip__items::-webkit-scrollbar {
+  display: none;
+}
+
+.prompt-reference-thumb {
+  position: relative;
+  flex: 0 0 auto;
+  width: 52px;
+  height: 52px;
+  overflow: hidden;
+  border-radius: 10px;
+  border: 1px solid rgb(var(--color-line-strong) / 0.54);
+  background: rgb(var(--color-paper-soft));
+}
+
+.prompt-reference-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.prompt-reference-thumb__remove {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  border: 1px solid rgb(var(--color-paper) / 0.65);
+  background: rgb(var(--color-ink) / 0.78);
+  color: rgb(var(--color-paper));
+  opacity: 0.92;
+  transition: background-color 150ms var(--motion-soft), transform 140ms var(--motion-press);
+}
+
+.prompt-reference-thumb__remove:hover {
+  background: rgb(var(--color-accent));
+}
+
+.prompt-reference-thumb__remove:active {
+  transform: scale(0.94);
+}
+
+.prompt-reference-thumb__remove:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.prompt-reference-strip__add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  gap: 0.35rem;
+  min-height: 34px;
+  padding: 0 0.7rem;
+  border-radius: 999px;
+  border: 1px dashed rgb(var(--color-line-strong) / 0.8);
+  background: rgb(var(--color-ivory) / 0.55);
+  color: rgb(var(--color-muted));
+  font-size: 11px;
+  font-weight: 680;
+  white-space: nowrap;
+  transition: border-color 150ms var(--motion-soft), color 150ms var(--motion-soft), background-color 150ms var(--motion-soft);
+}
+
+.prompt-reference-strip__add:hover {
+  border-color: rgb(var(--color-forest) / 0.5);
+  background: rgb(var(--color-ivory) / 0.78);
+  color: rgb(var(--color-ink));
+}
+
+.prompt-reference-strip__add:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
 .prompt-field-shell {
   overflow: hidden;
   border-radius: var(--radius-card);
@@ -722,6 +647,26 @@ watch(prompt, () => {
   box-shadow: var(--shadow-inner-glass);
 }
 
+.prompt-composer--draft .prompt-reference-strip {
+  padding: 0.35rem;
+}
+
+.prompt-composer--draft .prompt-reference-thumb {
+  width: 42px;
+  height: 42px;
+  border-radius: 9px;
+}
+
+.prompt-composer--draft .prompt-reference-strip__add {
+  width: 34px;
+  min-height: 34px;
+  padding: 0;
+}
+
+.prompt-composer--draft .prompt-reference-strip__add span {
+  display: none;
+}
+
 .prompt-composer--draft .prompt-field-textarea {
   min-height: 70px;
   height: 70px;
@@ -731,7 +676,7 @@ watch(prompt, () => {
 }
 
 .prompt-composer--draft .prompt-field-tools {
-  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, auto);
   padding: 0.48rem 0.55rem;
   background: rgb(var(--color-surface-muted) / 0.6);
   backdrop-filter: none;
@@ -748,8 +693,12 @@ watch(prompt, () => {
   gap: 0.35rem;
 }
 
-.prompt-composer--draft .prompt-model-chip > span {
-  display: none;
+.prompt-composer--draft .prompt-model-chip {
+  flex-wrap: nowrap;
+}
+
+.prompt-composer--draft .prompt-reference-chip span {
+  max-width: 5.4rem;
 }
 
 .prompt-composer--draft .composer-cta {
@@ -767,9 +716,9 @@ watch(prompt, () => {
 }
 
 .prompt-composer--draft .composer-cta .btn-primary {
-  min-height: 86px;
+  min-height: 56px;
   height: 100%;
-  padding-block: 0.74rem;
+  padding: 0.58rem 0.85rem;
 }
 
 @media (max-width: 1180px) {
@@ -777,8 +726,9 @@ watch(prompt, () => {
     grid-template-columns: 1fr;
   }
 
-  .prompt-composer--draft .composer-cta .btn-primary {
+.prompt-composer--draft .composer-cta .btn-primary {
     min-height: 44px;
+    width: 100%;
   }
 }
 
@@ -821,7 +771,7 @@ watch(prompt, () => {
 
 .prompt-field-tools {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 0.7rem;
   border-top: 1px solid rgb(var(--color-line) / 0.4);
@@ -830,6 +780,24 @@ watch(prompt, () => {
   backdrop-filter: blur(10px) saturate(1.4);
   -webkit-backdrop-filter: blur(10px) saturate(1.4);
   padding: 0.58rem 0.62rem;
+}
+
+.prompt-model-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.35rem;
+  border-top: 1px solid rgb(var(--color-line) / 0.32);
+  padding: 0.46rem 0.65rem 0.55rem;
+  color: rgb(var(--color-ochre));
+  background: rgb(var(--color-ochre) / 0.06);
+  font-size: 11px;
+  font-weight: 560;
+  line-height: 1.45;
+}
+
+.prompt-model-warning span {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .prompt-model-chip,
@@ -841,7 +809,20 @@ watch(prompt, () => {
 }
 
 .prompt-model-chip {
-  white-space: nowrap;
+  flex-wrap: wrap;
+}
+
+.prompt-reference-chip {
+  min-height: 30px;
+  padding-inline: 0.72rem;
+  border-style: solid;
+  color: rgb(var(--color-ink));
+}
+
+.prompt-reference-chip span {
+  max-width: 8.5rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .prompt-action-strip {
@@ -882,6 +863,11 @@ watch(prompt, () => {
   transform: translateY(0);
 }
 
+.prompt-tool-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring), var(--shadow-inner-glass);
+}
+
 .prompt-tool-btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
@@ -898,76 +884,6 @@ watch(prompt, () => {
   color: rgb(var(--color-ink));
 }
 
-.prompt-tool-btn--accent {
-  border-color: rgb(var(--color-forest) / 0.36);
-  background: rgb(var(--color-forest) / 0.12);
-  color: rgb(var(--color-forest));
-}
-
-.prompt-tool-btn--accent[aria-expanded="true"] {
-  border-color: transparent;
-  background: var(--gradient-primary);
-  color: #fff;
-  box-shadow: var(--shadow-glow-accent);
-}
-
-/* ── AI 优化按钮（桌面） ── */
-
-.prompt-tool-btn--ai {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  border-color: rgb(var(--color-ochre) / 0.45);
-  background: linear-gradient(135deg, rgb(var(--color-ochre) / 0.18), rgb(var(--color-accent) / 0.12));
-  color: rgb(var(--color-ochre));
-  font-weight: 740;
-  padding-right: 0.5rem;
-  /* hint: long-press to switch model */
-  position: relative;
-  user-select: none;
-  -webkit-user-select: none;
-}
-
-.prompt-tool-btn--ai:hover:not(:disabled) {
-  border-color: rgb(var(--color-ink) / 0.32);
-}
-
-.prompt-tool-btn--ai.is-busy {
-  border-color: transparent;
-  background: var(--gradient-primary);
-  color: #fff;
-  animation: prompt-ai-pulse 1.4s var(--motion-soft) infinite;
-}
-
-.prompt-tool-btn--ai.is-picker-open {
-  border-color: transparent;
-  background: var(--gradient-primary);
-  color: #fff;
-}
-
-@keyframes prompt-ai-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgb(var(--color-ochre) / 0.32); }
-  50% { box-shadow: 0 0 0 6px rgb(var(--color-ochre) / 0); }
-}
-
-/* ── 流式中：textarea shell 边缘流光 ── */
-
-.prompt-field-shell.is-ai-streaming {
-  border-color: rgb(var(--color-accent) / 0.5);
-  background: rgb(var(--color-ivory) / 0.7);
-  box-shadow:
-    var(--shadow-inner-glass),
-    var(--shadow-glow-accent);
-}
-
-.prompt-field-shell.is-ai-streaming .prompt-field-textarea {
-  caret-color: transparent;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .prompt-tool-btn--ai.is-busy { animation: none; }
-}
-
 .prompt-tool-btn--danger {
   border-color: rgb(var(--color-accent) / 0.28);
   background: rgb(var(--color-accent) / 0.08);
@@ -979,8 +895,50 @@ watch(prompt, () => {
   padding: 0;
 }
 
-.prompt-tool-btn--icon span {
+.prompt-tool-btn--icon .prompt-tool-label {
   display: none;
+}
+
+.prompt-tool-description {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  z-index: 18;
+  width: max-content;
+  max-width: 11rem;
+  padding: 0.38rem 0.52rem;
+  border-radius: 8px;
+  background: rgb(var(--color-ink) / 0.94);
+  color: rgb(var(--color-paper));
+  box-shadow: 0 4px 8px -6px rgb(var(--color-ink) / 0.8);
+  font-size: 11px;
+  font-weight: 620;
+  line-height: 1.35;
+  letter-spacing: 0;
+  text-align: left;
+  white-space: normal;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(3px);
+  transition: opacity 140ms var(--motion-soft), transform 140ms var(--motion-soft);
+}
+
+.prompt-tool-description::after {
+  content: '';
+  position: absolute;
+  right: 12px;
+  top: 100%;
+  width: 8px;
+  height: 8px;
+  background: inherit;
+  transform: translateY(-4px) rotate(45deg);
+}
+
+.prompt-tool-btn:hover:not(:disabled) .prompt-tool-description,
+.prompt-tool-btn:focus-visible:not(:disabled) .prompt-tool-description {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
 }
 
 .composer-continuation {
@@ -1105,13 +1063,57 @@ watch(prompt, () => {
   overflow: hidden;
 }
 
+.composer-submit {
+  min-height: 48px;
+  padding: 0.7rem 1rem;
+}
+
+.composer-submit__label {
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.prompt-composer--draft .composer-submit {
+  width: 100%;
+  min-height: 56px;
+  border-radius: var(--radius-panel);
+}
+
+.prompt-composer--draft .composer-submit__content {
+  justify-content: center;
+}
+
+.prompt-composer--draft .composer-submit__shortcut {
+  display: none;
+}
+
 .btn-primary--busy {
-  background: linear-gradient(135deg, rgb(var(--color-ink)), rgb(var(--color-ink) / 0.88));
+  background: linear-gradient(
+    120deg,
+    rgb(var(--color-action-strong)),
+    rgb(var(--color-accent)),
+    rgb(var(--color-blueprint) / 0.9)
+  );
+  background-size: 180% 180%;
+  animation: composer-submit-gradient 2.6s ease-in-out infinite;
   cursor: pointer;
 }
 
 .btn-primary--busy:hover {
-  background: linear-gradient(135deg, rgb(var(--color-accent)), rgb(var(--color-accent) / 0.88));
+  background: linear-gradient(
+    120deg,
+    rgb(var(--color-action-strong)),
+    rgb(var(--color-accent)),
+    rgb(var(--color-blueprint) / 0.9)
+  );
+  background-size: 180% 180%;
+}
+
+@keyframes composer-submit-gradient {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
 }
 
 .composer-alert {
@@ -1127,10 +1129,15 @@ watch(prompt, () => {
 
 @media (prefers-reduced-motion: reduce) {
   .prompt-tool-btn,
+  .prompt-tool-description,
+  .prompt-reference-strip__add,
+  .prompt-reference-thumb__remove,
   .composer-continuation-enter-active,
   .composer-continuation-leave-active,
-  .composer-continuation__cancel {
+  .composer-continuation__cancel,
+  .btn-primary--busy {
     transition: none;
+    animation: none;
   }
 }
 

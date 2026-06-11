@@ -1,16 +1,27 @@
 import { snapshotProviderConfig } from './composables/useProviderConfig'
 import { detectResolutionTiers, type ResolutionTierDetection } from './composables/useDiscoveredModels'
-import { loadBrandKit } from './lib/brandKit'
-import { loadHistory } from './storage'
 import {
   buildPrompt,
+  buildImagesEditsFormData,
   buildResponsesImageRequest,
-  ensurePngBlob,
+  buildResponsesTextDataUrlRequest,
+  imageGenerationsModelFor,
   isResponsesImageModel,
   normalizeImages,
+  parseResponsesImageSseBlock,
+  parseResponsesImageSse,
   payloadToValidated,
+  responsesImageProgressFromEvent,
   resolveOpenAIError,
+  visitResponsesImageSseEvents,
+  type ResponsesImageProgress,
 } from './lib/imagesApi'
+import {
+  detectImageGenerationConfig,
+  modelIdsFromEntries,
+  normalizeImageGenerationConfig,
+  parseOpenAIModelsResponse,
+} from './lib/imageGenerationDetection'
 import {
   logBanner,
   logGroup,
@@ -23,6 +34,7 @@ import type {
   GenerateImageRequest,
   GenerateImageResponse,
   HealthResponse,
+  ImageGenerationConfig,
 } from './types'
 
 export const PROVIDER_NOT_CONFIGURED = 'PROVIDER_NOT_CONFIGURED'
@@ -39,14 +51,20 @@ export class ApiRequestError extends Error {
   }
 }
 
-// Client-side generation timeout, scaled by resolution tier. Generous on
-// purpose: we would rather wait than abandon a request the upstream may have
-// already billed. Past this, we abort but keep the request ID visible so the
-// user can verify/retry safely.
+const MINUTE_MS = 60_000
+
+// Client-side generation timeout, scaled by resolution tier. 4K relays can
+// legitimately take 10+ minutes, so keep this well above the expected render
+// time; aborting early is worse because the upstream may still bill the call.
 function timeoutForSize(size: string): number {
-  if (/^(4096|6144)/.test(size)) return 480_000
-  if (/^(2048|3072)/.test(size)) return 300_000
+  if (/^(4096|6144)/.test(size)) return 25 * MINUTE_MS
+  if (/^(2048|3072)/.test(size)) return 12 * MINUTE_MS
   return 180_000
+}
+
+function formatDurationMs(ms: number): string {
+  if (ms >= MINUTE_MS) return `${Math.round(ms / MINUTE_MS)} 分钟`
+  return `${Math.round(ms / 1000)} 秒`
 }
 
 function generateRequestId(): string {
@@ -68,14 +86,15 @@ export type GenerationProgressEvent =
   | { stage: 'awaiting' }
   | { stage: 'downloading'; bytesReceived: number; bytesTotal?: number }
   | { stage: 'finalizing' }
+  | { stage: 'responses_sse'; progress: ResponsesImageProgress }
 
-async function readJsonStreamed<T = unknown>(
+async function readTextStreamed(
   response: Response,
   onBytes?: (bytesReceived: number, bytesTotal?: number) => void,
-): Promise<T | null> {
+): Promise<string> {
   const reader = response.body?.getReader?.()
   if (!reader) {
-    return readJson<T>(response)
+    return readText(response)
   }
 
   const contentLengthHeader = response.headers.get('content-length')
@@ -96,7 +115,7 @@ async function readJsonStreamed<T = unknown>(
     }
   }
 
-  if (chunks.length === 0) return null
+  if (chunks.length === 0) return ''
 
   const combined = new Uint8Array(received)
   let offset = 0
@@ -105,11 +124,92 @@ async function readJsonStreamed<T = unknown>(
     offset += chunk.byteLength
   }
 
+  return new TextDecoder('utf-8').decode(combined)
+}
+
+async function readJsonStreamed<T = unknown>(
+  response: Response,
+  onBytes?: (bytesReceived: number, bytesTotal?: number) => void,
+): Promise<T | null> {
+  const text = await readTextStreamed(response, onBytes)
+  if (!text) return null
+
   try {
-    const text = new TextDecoder('utf-8').decode(combined)
     return JSON.parse(text) as T
   } catch {
     return null
+  }
+}
+
+async function readResponsesBodyStreamed(
+  response: Response,
+  onBytes?: (bytesReceived: number, bytesTotal?: number) => void,
+  onResponsesEvent?: (event: unknown) => void,
+): Promise<unknown> {
+  const reader = response.body?.getReader?.()
+  if (!reader) {
+    const text = await readText(response)
+    visitResponsesImageSseEvents(text, onResponsesEvent ?? (() => {}))
+    if (!text) return null
+
+    try {
+      return JSON.parse(text)
+    } catch {
+      return parseResponsesImageSse(text)
+    }
+  }
+
+  const contentLengthHeader = response.headers.get('content-length')
+  const parsedLength = contentLengthHeader ? Number.parseInt(contentLengthHeader, 10) : Number.NaN
+  const bytesTotal = Number.isFinite(parsedLength) && parsedLength > 0 ? parsedLength : undefined
+
+  const decoder = new TextDecoder('utf-8')
+  const chunks: string[] = []
+  let received = 0
+  let pending = ''
+  onBytes?.(0, bytesTotal)
+
+  const dispatchBlock = (block: string) => {
+    const event = parseResponsesImageSseBlock(block)
+    if (!event) return
+    onResponsesEvent?.(event)
+  }
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    if (!value || value.byteLength === 0) continue
+
+    received += value.byteLength
+    onBytes?.(received, bytesTotal)
+
+    const chunk = decoder.decode(value, { stream: true })
+    chunks.push(chunk)
+    pending += chunk.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+
+    const blocks = pending.split(/\n\n+/)
+    pending = blocks.pop() ?? ''
+    for (const block of blocks) {
+      dispatchBlock(block)
+    }
+  }
+
+  const tail = decoder.decode()
+  if (tail) {
+    chunks.push(tail)
+    pending += tail.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+  }
+  if (pending.trim()) {
+    dispatchBlock(pending)
+  }
+
+  const text = chunks.join('')
+  if (!text) return null
+
+  try {
+    return JSON.parse(text)
+  } catch {
+    return parseResponsesImageSse(text)
   }
 }
 
@@ -135,6 +235,51 @@ interface BuiltRequest {
   via: 'direct' | 'proxy'
   upstreamBase: string
   pathOnUpstream: string
+}
+
+interface GenerationRequestCandidate {
+  built: BuiltRequest
+  requestBody: BodyInit
+  requestMode: string
+  responsesRequest: Record<string, unknown> | null
+  imageRequest?: Record<string, unknown>
+  editFields?: Record<string, unknown>
+  canRetryWithNextRoute: boolean
+}
+
+function uniqueStrings(values: string[]): string[] {
+  const seen = new Set<string>()
+  const result: string[] = []
+  for (const value of values) {
+    const normalized = value.trim()
+    const key = normalized.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    result.push(normalized)
+  }
+  return result
+}
+
+function isRouteCompatibilityError(status: number, mapped: { code: string }, rawMessage?: string): boolean {
+  if (mapped.code === 'SIZE_NOT_SUPPORTED') return false
+  if (status === 404 || status === 405 || status === 415 || status === 501) return true
+  if (status !== 400) return false
+
+  const message = (rawMessage || '').toLowerCase()
+  return (
+    message.includes('invalid model')
+    || message.includes('model not found')
+    || message.includes('model does not exist')
+    || message.includes('unknown model')
+    || message.includes('unsupported model')
+    || message.includes('not support this model')
+    || message.includes('not supported model')
+    || message.includes('endpoint')
+    || message.includes('route')
+    || message.includes('path')
+    || message.includes('/responses')
+    || message.includes('/images/generations')
+  )
 }
 
 function summarizeReferenceImages(
@@ -239,64 +384,6 @@ function summarizeImageItem(item: unknown) {
   }
 }
 
-async function buildEditFormData(payload: {
-  prompt: string
-  size: string
-  count: number
-  outputFormat: string
-  quality: string
-  model: string
-  referenceImages: Array<{
-    name: string
-    file?: File
-  }>
-  /**
-   * Optional inpainting mask (PNG). Black pixels = keep, white pixels = edit.
-   * When supplied, only one referenceImage is used (the first) as the source.
-   */
-  mask?: Blob
-}, requestId: string) {
-  const formData = new FormData()
-
-  formData.set('prompt', payload.prompt)
-  formData.set('size', payload.size)
-  formData.set('n', String(payload.count))
-  formData.set('user', requestId)
-  formData.set('output_format', payload.outputFormat)
-  formData.set('quality', payload.quality)
-  // See generateImage(): graceful no-op when upstream ignores it.
-  formData.set('response_format', 'url')
-
-  if (payload.model) {
-    formData.set('model', payload.model)
-  }
-
-  if (payload.referenceImages.length > 0) {
-    const firstImage = payload.referenceImages[0]
-    if (firstImage.file) {
-      const pngBlob = await ensurePngBlob(firstImage.file)
-      formData.append('image', pngBlob, 'image.png')
-    }
-
-    // When inpainting, only the first reference image is the canvas;
-    // additional references are ignored to keep mask alignment unambiguous.
-    if (!payload.mask && payload.referenceImages.length > 1) {
-      for (const image of payload.referenceImages.slice(1)) {
-        if (image.file) {
-          const pngBlob = await ensurePngBlob(image.file)
-          formData.append('image[]', pngBlob, 'image.png')
-        }
-      }
-    }
-  }
-
-  if (payload.mask) {
-    formData.append('mask', payload.mask, 'mask.png')
-  }
-
-  return formData
-}
-
 async function getHtmlErrorMessage(response: Response): Promise<string | null> {
   try {
     const text = await response.text()
@@ -343,6 +430,63 @@ function buildRequest(
     via: 'direct',
     upstreamBase: cleanBase,
     pathOnUpstream: cleanPath,
+  }
+}
+
+function applyImageGenerationDefaults(
+  payload: GenerateImageRequest,
+  provider: ReturnType<typeof snapshotProviderConfig>,
+): GenerateImageRequest {
+  const config = normalizeImageGenerationConfig(provider.imageGeneration)
+  const modelSelection = payload.modelSelection ?? (payload.model ? 'explicit' : 'auto')
+  const useDetectedModels = modelSelection === 'auto'
+  const explicitModel = modelSelection === 'explicit' ? payload.model : undefined
+  const configuredMode = config.generationMode || config.mode
+  const inferredMode = configuredMode === 'auto'
+    ? (config.responseModel && config.imageToolModel
+      ? 'responses_tool'
+      : (config.responseModel && config.returnFormat === 'output_text_data_url'
+        ? 'responses_text_data_url'
+        : (config.traditionalModel ? 'images_generations' : undefined)))
+    : configuredMode
+
+  if (!inferredMode) return payload
+
+  if (inferredMode === 'responses_tool') {
+    const responseModel = payload.responseModel
+      || explicitModel
+      || (useDetectedModels ? config.responseModel : undefined)
+    return {
+      ...payload,
+      modelSelection,
+      mode: payload.mode ?? 'responses_tool',
+      model: explicitModel || (useDetectedModels ? responseModel : undefined),
+      responseModel: useDetectedModels || explicitModel ? responseModel : payload.responseModel,
+      imageToolModel: payload.imageToolModel || (useDetectedModels ? config.imageToolModel : undefined),
+      stream: payload.stream ?? config.stream,
+    }
+  }
+
+  if (inferredMode === 'responses_text_data_url') {
+    const responseModel = payload.responseModel
+      || explicitModel
+      || (useDetectedModels ? (config.responseModel || config.traditionalModel) : undefined)
+    return {
+      ...payload,
+      modelSelection,
+      mode: payload.mode ?? 'responses_text_data_url',
+      model: explicitModel || (useDetectedModels ? (config.traditionalModel || responseModel) : undefined),
+      responseModel: useDetectedModels || explicitModel ? responseModel : payload.responseModel,
+      stream: payload.stream ?? config.stream,
+    }
+  }
+
+  return {
+    ...payload,
+    modelSelection,
+    mode: payload.mode ?? 'images_generations',
+    model: explicitModel || (useDetectedModels ? config.traditionalModel : undefined),
+    stream: payload.stream ?? config.stream,
   }
 }
 
@@ -401,7 +545,7 @@ export async function generateImage(
       throw new ApiRequestError('baseUrl 必须是 http(s) 协议', 'INVALID_REQUEST', requestId)
     }
 
-    const validation = payloadToValidated(payload)
+    const validation = payloadToValidated(applyImageGenerationDefaults(payload, provider))
     if (validation.error || !validation.value) {
       group.warn('validation failed', validation.error)
       throw new ApiRequestError(
@@ -412,114 +556,222 @@ export async function generateImage(
     }
 
     const validated = validation.value
-    const brandKit = loadBrandKit()
-    const sessionHistory = loadHistory()
-    const promptText = buildPrompt(validated, {
-      brandKit,
-      history: sessionHistory,
-      modelName: validated.model,
-      hasReferenceImages: validated.referenceImages.length > 0,
-      count: validated.count,
-    })
+    const promptText = buildPrompt(validated)
     const hasReferenceImages = validated.referenceImages.length > 0
-    const useResponsesImageApi = isResponsesImageModel(validated.model)
-    const upstreamRequest: Record<string, unknown> = {
+    const configuredGeneration = provider.imageGeneration
+    const normalizedGeneration = normalizeImageGenerationConfig(configuredGeneration)
+    const configuredMode = normalizedGeneration.generationMode === 'responses_tool'
+      || normalizedGeneration.generationMode === 'images_generations'
+      || normalizedGeneration.generationMode === 'responses_text_data_url'
+      ? normalizedGeneration.generationMode
+      : undefined
+    const selectedMode = validated.mode ?? configuredMode
+    const explicitMode = selectedMode !== undefined
+    const useModelDefaults = validated.modelSelection !== 'none'
+    const useResponsesToolApi = selectedMode === 'responses_tool'
+      || (!selectedMode && isResponsesImageModel(validated.responseModel || normalizedGeneration.responseModel || validated.model))
+    const useResponsesTextDataUrlApi = selectedMode === 'responses_text_data_url'
+    const responsesModel = validated.responseModel
+      || validated.model
+      || (useModelDefaults ? normalizedGeneration.responseModel : '')
+      || (useModelDefaults ? normalizedGeneration.traditionalModel : '')
+      || ''
+    const traditionalModel = validated.model || (useModelDefaults ? normalizedGeneration.traditionalModel : '') || ''
+    const imageToolModel = validated.imageToolModel
+      || (useModelDefaults ? normalizedGeneration.imageToolModel : '')
+      || (useModelDefaults ? imageGenerationsModelFor(responsesModel) : '')
+      || ''
+    const baseImageRequest: Record<string, unknown> = {
       prompt: promptText,
       size: validated.size,
       n: validated.count,
       output_format: validated.outputFormat,
       quality: validated.quality,
-      // Inline the image bytes in the generation response (base64) instead of a CDN URL.
-      // A URL forces a SECOND, cold, cross-origin download of the real pixels that runs AFTER
-      // we've already reported "done": the user watches a skeleton while it loads and it isn't
-      // counted in the progress bar. Inlining streams the bytes over the same warm
-      // (proxied, CORS-ready) connection, so download progress is honest and the image paints
-      // from memory the moment the response ends — no second round trip.
-      response_format: 'b64_json',
+      // Some OpenAI-compatible relays reject response_format for gpt-image-*.
+      // normalizeImages accepts either b64_json or url, so let the relay choose
+      // its default response shape.
       user: requestId,
     }
-    if (validated.model) {
-      upstreamRequest.model = validated.model
+
+    if (validated.transparentBackground && validated.outputFormat === 'png') {
+      baseImageRequest.background = 'transparent'
     }
 
-    let built: BuiltRequest
-    let requestBody: BodyInit
-    let requestMode: string
-    let responsesRequest: Record<string, unknown> | null = null
+    const buildImageRequest = (model: string) => {
+      const request = { ...baseImageRequest }
+      if (model) request.model = model
+      return request
+    }
 
-    if (useResponsesImageApi) {
-      responsesRequest = await buildResponsesImageRequest({
+    const requestCandidates: GenerationRequestCandidate[] = []
+    const addTextGenerationCandidate = (model: string, requestMode: string, canRetryWithNextRoute: boolean) => {
+      const imageRequest = buildImageRequest(model)
+      requestCandidates.push({
+        built: buildRequest(baseUrl, proxyUrl, '/images/generations', {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+          'X-Pc-Request-Id': requestId,
+        }),
+        requestBody: JSON.stringify(imageRequest),
+        requestMode,
+        responsesRequest: null,
+        imageRequest,
+        canRetryWithNextRoute,
+      })
+    }
+
+    const addResponsesToolCandidate = async (requestMode: string, canRetryWithNextRoute: boolean) => {
+      const responsesRequest = await buildResponsesImageRequest({
+          prompt: promptText,
+          size: validated.size,
+          count: validated.count,
+          outputFormat: validated.outputFormat,
+          quality: validated.quality,
+          model: responsesModel,
+          responseModel: responsesModel,
+          imageToolModel,
+          referenceImages: validated.referenceImages,
+          mask: validated.inpaintMask,
+          stream: validated.stream ?? normalizedGeneration.stream ?? true,
+          transparentBackground: validated.transparentBackground,
+          partialPreview: validated.partialPreview,
+          partialImages: validated.partialImages,
+        })
+      requestCandidates.push({
+        built: buildRequest(baseUrl, proxyUrl, '/responses', {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+          'X-Pc-Request-Id': requestId,
+        }),
+        requestBody: JSON.stringify(responsesRequest),
+        requestMode,
+        responsesRequest,
+        canRetryWithNextRoute,
+      })
+    }
+
+    const addResponsesTextDataUrlCandidate = async (requestMode: string, canRetryWithNextRoute: boolean) => {
+      const responsesRequest = await buildResponsesTextDataUrlRequest({
         prompt: promptText,
         size: validated.size,
         count: validated.count,
         outputFormat: validated.outputFormat,
         quality: validated.quality,
-        model: validated.model,
+        model: responsesModel || traditionalModel,
+        responseModel: responsesModel || traditionalModel,
         referenceImages: validated.referenceImages,
         mask: validated.inpaintMask,
+        stream: validated.stream ?? normalizedGeneration.stream ?? true,
+        transparentBackground: validated.transparentBackground,
       })
-      built = buildRequest(baseUrl, proxyUrl, '/responses', {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-        'X-Pc-Request-Id': requestId,
+      requestCandidates.push({
+        built: buildRequest(baseUrl, proxyUrl, '/responses', {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+          'X-Pc-Request-Id': requestId,
+        }),
+        requestBody: JSON.stringify(responsesRequest),
+        requestMode,
+        responsesRequest,
+        canRetryWithNextRoute,
       })
-      requestBody = JSON.stringify(responsesRequest)
-      requestMode = hasReferenceImages ? 'responses-reference-edit' : 'responses-text-generate'
-    } else {
-      built = hasReferenceImages
-        ? buildRequest(baseUrl, proxyUrl, '/images/edits', {
-            Authorization: `Bearer ${apiKey}`,
-            'X-Pc-Request-Id': requestId,
-          })
-        : buildRequest(baseUrl, proxyUrl, '/images/generations', {
-            Authorization: `Bearer ${apiKey}`,
-            'Content-Type': 'application/json',
-            'X-Pc-Request-Id': requestId,
-          })
-      requestBody = hasReferenceImages
-        ? await buildEditFormData(
-            {
-              prompt: promptText,
-              size: validated.size,
-              count: validated.count,
-              outputFormat: validated.outputFormat,
-              quality: validated.quality,
-              model: validated.model,
-              referenceImages: validated.referenceImages,
-              mask: typeof validated.inpaintMask === 'string' ? undefined : validated.inpaintMask,
-            },
-            requestId,
-          )
-        : JSON.stringify(upstreamRequest)
-      requestMode = hasReferenceImages ? 'reference-edit' : 'text-generate'
     }
 
-    group.log(`route via ${built.via}`)
-    group.log('upstream targetUrl', built.url)
-    group.log('upstream method', 'POST')
-    group.log('upstream headers', {
-      ...built.headers,
-      Authorization: `Bearer ${maskKey(apiKey)}`,
-    })
-    group.log('request mode', requestMode)
-    if (responsesRequest) {
-      group.log('upstream body (parsed)', summarizeResponsesRequestBody(responsesRequest))
-      group.log('upstream body (json)', JSON.stringify(summarizeResponsesRequestBody(responsesRequest)))
-    } else if (hasReferenceImages) {
-      group.log('reference images', summarizeReferenceImages(validated.referenceImages))
-      group.log('inpaint mask', validated.inpaintMask && typeof validated.inpaintMask !== 'string' ? `${Math.round(validated.inpaintMask.size / 1024)}KB` : 'none')
-      group.log('upstream body (fields)', {
+    const addImagesEditCandidate = async (canRetryWithNextRoute: boolean) => {
+      const editFields = {
         prompt: promptText,
         size: validated.size,
         n: validated.count,
         output_format: validated.outputFormat,
         quality: validated.quality,
         user: requestId,
-        model: validated.model || undefined,
+        model: traditionalModel || undefined,
+      }
+      requestCandidates.push({
+        built: buildRequest(baseUrl, proxyUrl, '/images/edits', {
+          Authorization: `Bearer ${apiKey}`,
+          'X-Pc-Request-Id': requestId,
+        }),
+        requestBody: await buildImagesEditsFormData(
+          {
+            prompt: promptText,
+            size: validated.size,
+            count: validated.count,
+            outputFormat: validated.outputFormat,
+            quality: validated.quality,
+            model: traditionalModel,
+            referenceImages: validated.referenceImages,
+            mask: typeof validated.inpaintMask === 'string' ? undefined : validated.inpaintMask,
+          },
+          requestId,
+        ),
+        requestMode: 'reference-edit',
+        responsesRequest: null,
+        editFields,
+        canRetryWithNextRoute,
       })
+    }
+
+    if (useResponsesToolApi && !hasReferenceImages && !validated.inpaintMask) {
+      await addResponsesToolCandidate('responses-text-generate', true)
+      if (!explicitMode) {
+        const imageModels = uniqueStrings([
+          imageGenerationsModelFor(responsesModel),
+          responsesModel,
+        ])
+        imageModels.forEach((model, index) => {
+          addTextGenerationCandidate(
+            model,
+            model === responsesModel ? 'text-generate-chat-model' : 'text-generate-model-alias',
+            index < imageModels.length - 1,
+          )
+        })
+      }
+    } else if (useResponsesToolApi) {
+      await addResponsesToolCandidate(
+        hasReferenceImages ? 'responses-reference-edit' : 'responses-text-generate',
+        false,
+      )
+    } else if (useResponsesTextDataUrlApi) {
+      if (hasReferenceImages && traditionalModel && typeof validated.inpaintMask !== 'string') {
+        await addImagesEditCandidate(false)
+      } else {
+        await addResponsesTextDataUrlCandidate(
+          hasReferenceImages ? 'responses-text-data-url-reference' : 'responses-text-data-url-generate',
+          false,
+        )
+      }
     } else {
-      group.log('upstream body (parsed)', upstreamRequest)
-      group.log('upstream body (json)', JSON.stringify(upstreamRequest))
+      if (hasReferenceImages) {
+        await addImagesEditCandidate(false)
+      } else {
+        addTextGenerationCandidate(traditionalModel, 'text-generate', false)
+      }
+    }
+
+    const logCandidate = (candidate: GenerationRequestCandidate, index: number) => {
+      group.log(`route via ${candidate.built.via}`)
+      if (requestCandidates.length > 1) {
+        group.log('route candidate', `${index + 1}/${requestCandidates.length}`)
+      }
+      group.log('upstream targetUrl', candidate.built.url)
+      group.log('upstream method', 'POST')
+      group.log('upstream headers', {
+        ...candidate.built.headers,
+        Authorization: `Bearer ${maskKey(apiKey)}`,
+      })
+      group.log('request mode', candidate.requestMode)
+      if (candidate.responsesRequest) {
+        group.log('upstream body (parsed)', summarizeResponsesRequestBody(candidate.responsesRequest))
+        group.log('upstream body (json)', JSON.stringify(summarizeResponsesRequestBody(candidate.responsesRequest)))
+      } else if (candidate.editFields) {
+        group.log('reference images', summarizeReferenceImages(validated.referenceImages))
+        group.log('inpaint mask', validated.inpaintMask && typeof validated.inpaintMask !== 'string' ? `${Math.round(validated.inpaintMask.size / 1024)}KB` : 'none')
+        group.log('upstream body (fields)', candidate.editFields)
+      } else {
+        group.log('upstream body (parsed)', candidate.imageRequest)
+        group.log('upstream body (json)', JSON.stringify(candidate.imageRequest))
+      }
     }
 
     // Merge the caller's abort signal with our own resolution-scaled timeout.
@@ -538,24 +790,30 @@ export async function generateImage(
     }, timeoutMs)
     group.log('client timeout (ms)', timeoutMs)
 
-    const t0 = nowMs()
+    const requestStartedAt = nowMs()
     options?.onProgress?.({ stage: 'awaiting' })
-    let upstream: Response
-    try {
-      upstream = await fetch(built.url, {
-        method: 'POST',
-        headers: built.headers,
-        body: requestBody,
-        signal: localController.signal,
-      })
-    } catch (error) {
-      const err = error as Error
-      const elapsedMs = Math.round(nowMs() - t0)
+    let upstream: Response | null = null
+    let successfulCandidate: GenerationRequestCandidate | null = null
+
+    for (let candidateIndex = 0; candidateIndex < requestCandidates.length; candidateIndex += 1) {
+      const candidate = requestCandidates[candidateIndex]
+      logCandidate(candidate, candidateIndex)
+      const attemptStartedAt = nowMs()
+      try {
+        upstream = await fetch(candidate.built.url, {
+          method: 'POST',
+          headers: candidate.built.headers,
+          body: candidate.requestBody,
+          signal: localController.signal,
+        })
+      } catch (error) {
+        const err = error as Error
+        const elapsedMs = Math.round(nowMs() - requestStartedAt)
 
       if (timedOut) {
         group.warn(`fetch aborted by client timeout after ${elapsedMs}ms`)
         throw new ApiRequestError(
-          `生成等待超过 ${Math.round(timeoutMs / 1000)} 秒已停止等待。上游可能已经出图并计费——请凭请求 ID 到中转站后台核对，重试是安全的。`,
+          `生成等待超过 ${formatDurationMs(timeoutMs)} 已停止等待。上游可能已经出图并计费——请凭请求 ID 到中转站后台核对，重试是安全的。`,
           'CLIENT_TIMEOUT',
           requestId,
         )
@@ -569,6 +827,7 @@ export async function generateImage(
       group.error(`fetch threw after ${elapsedMs}ms`, {
         name: err?.name,
         message: err?.message,
+        requestMode: candidate.requestMode,
       })
       group.error(
         '↑ Browser fetch failed before JS could read the response. This can be CORS, TLS/proxy abort, ' +
@@ -578,6 +837,7 @@ export async function generateImage(
       const mapped = resolveOpenAIError({
         name: err?.name,
         message: err?.message,
+        model: responsesModel || traditionalModel,
       })
       throw new ApiRequestError(mapped.message, mapped.code, requestId)
     }
@@ -586,12 +846,7 @@ export async function generateImage(
     // slow but progressing download isn't killed mid-stream; the streaming
     // progress UI and manual cancel (still wired to the external signal) cover
     // this phase.
-    if (timeoutTimer) {
-      clearTimeout(timeoutTimer)
-      timeoutTimer = undefined
-    }
-
-    const elapsedMs = Math.round(nowMs() - t0)
+    const elapsedMs = Math.round(nowMs() - attemptStartedAt)
     group.log(
       `response.status ${upstream.status} ${upstream.statusText} (${elapsedMs}ms)`,
     )
@@ -606,6 +861,7 @@ export async function generateImage(
     if (!upstream.ok) {
       const htmlError = await getHtmlErrorMessage(upstream.clone())
       const errorBody = htmlError ? null : await readJson<UpstreamErrorBody>(upstream)
+      const rawMessage = htmlError || errorBody?.error?.message || ''
       group.error('upstream returned non-ok', {
         status: upstream.status,
         body: errorBody || htmlError,
@@ -613,14 +869,55 @@ export async function generateImage(
       const mapped = resolveOpenAIError({
         status: upstream.status,
         code: errorBody?.error?.code,
-        message: htmlError || errorBody?.error?.message,
+        message: rawMessage,
+        model: candidate.responsesRequest
+          ? String(candidate.responsesRequest.model || imageToolModel)
+          : String(candidate.imageRequest?.model || traditionalModel || ''),
       })
+      const shouldTryNext =
+        candidate.canRetryWithNextRoute
+        && candidateIndex < requestCandidates.length - 1
+        && isRouteCompatibilityError(upstream.status, mapped, rawMessage)
+
+      if (shouldTryNext) {
+        group.warn('route candidate rejected before generation; trying next candidate', {
+          status: upstream.status,
+          code: mapped.code,
+          requestMode: candidate.requestMode,
+        })
+        upstream = null
+        continue
+      }
+
       throw new ApiRequestError(mapped.message, mapped.code, requestId)
     }
 
-    const data = await readJsonStreamed<{ data?: unknown }>(upstream, (bytesReceived, bytesTotal) => {
+      // Headers arrived and this is the successful route. Clear the wait
+      // timeout so a slow but progressing download is not killed mid-stream.
+      if (timeoutTimer) {
+        clearTimeout(timeoutTimer)
+        timeoutTimer = undefined
+      }
+      successfulCandidate = candidate
+      break
+    }
+
+    if (!upstream) {
+      throw new ApiRequestError('上游没有可用的图片生成路径，请检查模型与中转站接口配置', 'OPENAI_REQUEST_FAILED', requestId)
+    }
+
+    const elapsedMs = Math.round(nowMs() - requestStartedAt)
+
+    const data = successfulCandidate?.responsesRequest
+      ? await readResponsesBodyStreamed(upstream, undefined, (event) => {
+          const progress = responsesImageProgressFromEvent(event, validated.outputFormat)
+          if (progress) {
+            options?.onProgress?.({ stage: 'responses_sse', progress })
+          }
+        })
+      : await readJsonStreamed<{ data?: unknown }>(upstream, (bytesReceived, bytesTotal) => {
       options?.onProgress?.({ stage: 'downloading', bytesReceived, bytesTotal })
-    })
+        })
     options?.onProgress?.({ stage: 'finalizing' })
     group.log('response.body summary', summarizeResponseImages(data))
 
@@ -630,8 +927,8 @@ export async function generateImage(
     if (!images.length) {
       group.warn('upstream returned empty images array')
       throw new ApiRequestError(
-        '上游没有返回图片，请稍后再试',
-        'OPENAI_REQUEST_FAILED',
+        '上游返回成功，但图片返回格式无法识别。已支持 b64_json、url、image_generation_call 和 output_text data URL；请切换中转站模式或重新自动检测。',
+        'RETURN_FORMAT_UNRECOGNIZED',
         requestId,
       )
     }
@@ -641,7 +938,7 @@ export async function generateImage(
     return {
       requestId,
       images,
-      usage: { model: validated.model || undefined },
+      usage: { model: (successfulCandidate?.responsesRequest ? responsesModel : traditionalModel) || undefined },
     }
   } catch (error) {
     if (error instanceof ApiRequestError) {
@@ -689,8 +986,10 @@ export interface TestProviderResult {
   modelsOk: boolean
   generationsCorsOk: boolean
   generationsProbeStatus?: number
+  generationRouteOk: boolean
   warnings: string[]
   resolution: ResolutionTierDetection
+  imageGeneration: ImageGenerationConfig
 }
 
 interface ProbeOutcome {
@@ -845,18 +1144,17 @@ export async function testProvider(override?: {
       )
     }
 
-    const data = await readJson<{ data?: Array<{ id?: unknown } | string> }>(response)
-    const rawList = Array.isArray(data?.data) ? data.data : []
-    const models = rawList
-      .map((entry) => {
-        if (typeof entry === 'string') return entry
-        const id = (entry as { id?: unknown })?.id
-        return typeof id === 'string' ? id : ''
-      })
-      .filter((id) => id.length > 0)
+    const data = await readJson<{ data?: Array<Record<string, unknown> | string> }>(response)
+    const modelEntries = parseOpenAIModelsResponse(data)
+    const models = modelIdsFromEntries(modelEntries)
     const modelCount = models.length || (Array.isArray(data?.data) ? data.data.length : undefined)
     group.log('/models parsed count', modelCount)
     group.log('/models first 10 ids', models.slice(0, 10))
+    const imageGeneration = await detectImageGenerationConfig({
+      models: modelEntries,
+      detectedAt: new Date().toISOString(),
+    })
+    group.log('image generation capability', imageGeneration)
 
     group.log('---- step 2: POST /images/generations CORS probe (no auth, text/plain) ----')
     group.log(
@@ -886,8 +1184,15 @@ export async function testProvider(override?: {
 
     const resolution = detectResolutionTiers(models)
     group.log('resolution heuristic', resolution)
+    const selectedGenerationRouteOk = imageGeneration.mode === 'responses_tool'
+      || imageGeneration.mode === 'responses_text_data_url'
+      || probe.ok
 
-    if (!probe.ok) {
+    if (
+      !probe.ok
+      && imageGeneration.mode !== 'responses_tool'
+      && imageGeneration.mode !== 'responses_text_data_url'
+    ) {
       warnings.push(
         '/images/generations 路径缺少 CORS 头：浏览器可以发起预检与请求，但读不到响应正文。这意味着上游会照常计费但前端拿不到图。请联系中转站运维补 Access-Control-Allow-Origin（或换一个 CORS 完整的服务商）。',
       )
@@ -897,7 +1202,7 @@ export async function testProvider(override?: {
       ? `已读取 ${modelCount} 个模型 · ${totalMs}ms`
       : `连接成功 · ${totalMs}ms`
 
-    const message = probe.ok
+    const message = selectedGenerationRouteOk
       ? `连接成功 · ${baseMessage}`
       : `部分通过 · ${baseMessage}（生成路径 CORS 缺失，会失败）`
 
@@ -906,6 +1211,8 @@ export async function testProvider(override?: {
       modelCount,
       generationsCorsOk: probe.ok,
       generationsProbeStatus: probe.status,
+      imageGeneration,
+      selectedGenerationRouteOk,
       totalMs,
     })
 
@@ -918,8 +1225,10 @@ export async function testProvider(override?: {
       modelsOk: true,
       generationsCorsOk: probe.ok,
       generationsProbeStatus: probe.status,
+      generationRouteOk: selectedGenerationRouteOk,
       warnings,
       resolution,
+      imageGeneration,
     }
   } catch (error) {
     if (error instanceof ApiRequestError) {

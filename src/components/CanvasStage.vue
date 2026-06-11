@@ -15,6 +15,7 @@ import {
 import type {
   GeneratedImage,
   GenerationHistoryItem,
+  ChatProgressOverride,
   ImageQuality,
   ImageSize,
 } from '../types'
@@ -26,8 +27,8 @@ interface Props {
   elapsedSeconds: number
   errorMessage: string
   lastRequestId: string
+  progressOverride?: ChatProgressOverride
   size: ImageSize
-  styleLabel: string
   promptPreview: string
   hasPrompt: boolean
   modelLabel?: string
@@ -37,11 +38,15 @@ interface Props {
   history?: GenerationHistoryItem[]
   providerConfigured?: boolean
   canAcceptDrop?: boolean
+  canEditImages?: boolean
+  imageEditDisabledReason?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
   providerConfigured: true,
   canAcceptDrop: true,
+  canEditImages: true,
+  imageEditDisabledReason: '',
   modelName: '',
   quality: 'auto',
   count: 1,
@@ -57,7 +62,7 @@ const emit = defineEmits<{
   (e: 'export'): void
   (e: 'go-compose'): void
   (e: 'open-inpaint', index: number): void
-  (e: 'remix', image: GeneratedImage, index: number): void
+  (e: 'image-edit-unavailable', reason?: string): void
   (e: 'generate'): void
   (e: 'abort'): void
   (e: 'open-settings'): void
@@ -160,16 +165,22 @@ const canvasEta = computed(() =>
 
 const canvasProgress = computed(() => {
   if (!props.isGenerating) return 0
+  if (typeof props.progressOverride?.progress === 'number') {
+    return Math.max(0, Math.min(100, props.progressOverride.progress))
+  }
   return computeProgress(props.elapsedSeconds, canvasEta.value.targetSeconds)
 })
 
-const canvasStageLabel = computed(() => stageLabelForProgress(canvasProgress.value))
+const canvasStageLabel = computed(() => props.progressOverride?.stage || stageLabelForProgress(canvasProgress.value))
 
 const canvasRemainingLabel = computed(() =>
-  formatRemainingLabel(props.elapsedSeconds, canvasEta.value.targetSeconds, {
-    source: canvasEta.value.source,
-  }),
+  props.progressOverride?.remainingLabel
+    || formatRemainingLabel(props.elapsedSeconds, canvasEta.value.targetSeconds, {
+      source: canvasEta.value.source,
+    }),
 )
+
+const canvasPreviewUrl = computed(() => props.progressOverride?.previewUrl || '')
 
 function imageSource(image: GeneratedImage) {
   return resolveImageSource(image)
@@ -186,12 +197,33 @@ function markImageReady(image: GeneratedImage, index: number) {
 function isImageReady(image: GeneratedImage, index: number) {
   return !!revealedImageKeys.value[imageStateKey(image, index)]
 }
+
+const imageEditUnavailableReason = computed(() => props.imageEditDisabledReason.trim())
+const imageEditAriaDisabled = computed(() => props.canEditImages ? undefined : 'true')
+const imageEditTitle = computed(() => props.canEditImages ? undefined : imageEditUnavailableReason.value || undefined)
+
+function imageEditAriaLabel(label: string) {
+  if (props.canEditImages || !imageEditUnavailableReason.value) return label
+  return `${label}. ${imageEditUnavailableReason.value}`
+}
+
+function announceImageEditUnavailable() {
+  emit('image-edit-unavailable', imageEditUnavailableReason.value || undefined)
+}
+
+function openInpaint(index: number) {
+  if (!props.canEditImages) {
+    announceImageEditUnavailable()
+    return
+  }
+  emit('open-inpaint', index)
+}
 </script>
 
 <template>
   <section
     class="space-y-5 canvas-stage-root canvas-grid"
-    :class="{ 'canvas-stage-root--dragging': dragActive, 'canvas-scan': !isGenerating }"
+    :class="{ 'canvas-stage-root--dragging': dragActive }"
     @dragenter="handleDragEnter"
     @dragover="handleDragOver"
     @dragleave="handleDragLeave"
@@ -201,9 +233,9 @@ function isImageReady(image: GeneratedImage, index: number) {
       <div v-if="dragActive" class="canvas-drop-overlay" aria-hidden="true">
         <div class="canvas-drop-overlay__inner">
           <Icon name="upload" :size="22" />
-          <p class="font-display text-xl italic">松手添加为参考图</p>
+          <p class="font-display text-xl italic">{{ t('canvas.drop.title') }}</p>
           <p class="font-mono text-[10px] uppercase tracking-[0.18em] opacity-70">
-            支持 PNG · JPEG · WEBP · GIF
+            {{ t('canvas.drop.formats') }}
           </p>
         </div>
       </div>
@@ -211,17 +243,16 @@ function isImageReady(image: GeneratedImage, index: number) {
 
     <header class="flex items-end justify-between gap-4">
       <div class="space-y-2">
-        <p class="display-eyebrow">Canvas</p>
-        <h2 class="display-h2">制版画布</h2>
+        <p class="display-eyebrow">{{ t('canvas.eyebrow') }}</p>
+        <h2 class="display-h2">{{ t('canvas.title') }}</h2>
       </div>
       <div class="flex flex-wrap items-center justify-end gap-1.5">
-        <span class="chip">{{ styleLabel }}</span>
         <span class="chip font-mono">{{ size }}</span>
         <span
           v-if="lastRequestId"
           class="chip cursor-pointer font-mono normal-case tracking-normal hover:border-line-strong"
-          :title="`点击复制完整 request id: ${lastRequestId}`"
-          @click="emit('copy', lastRequestId, '已复制 request id')"
+          :title="t('canvas.requestId', { id: lastRequestId })"
+          @click="emit('copy', lastRequestId, t('toast.copyRequestId'))"
         >
           {{ lastRequestId.slice(0, 12) }}…
         </span>
@@ -249,8 +280,9 @@ function isImageReady(image: GeneratedImage, index: number) {
         :elapsed-seconds="elapsedSeconds"
         :stage="canvasStageLabel"
         :remaining-label="canvasRemainingLabel"
-        :meta-label="`${size} · ${styleLabel}`"
+        :meta-label="size"
         :prompt-preview="promptPreview || 'untitled draft'"
+        :preview-url="canvasPreviewUrl"
         :ring-size="200"
         @cancel="emit('abort')"
       />
@@ -266,12 +298,12 @@ function isImageReady(image: GeneratedImage, index: number) {
         <button
           type="button"
           class="absolute inset-0 grid place-items-center p-3 transition focus-visible:outline-none sm:p-5"
-          aria-label="放大查看图片"
+          :aria-label="t('canvas.tool.zoom')"
           @click="emit('open-lightbox', activeImageIndex)"
         >
           <div
-            v-if="!isImageReady(activeImage, activeImageIndex)"
             class="canvas-image-placeholder absolute inset-0"
+            :class="{ 'canvas-image-placeholder--hiding': isImageReady(activeImage, activeImageIndex) }"
             aria-hidden="true"
           >
             <div class="canvas-image-placeholder__glow"></div>
@@ -283,7 +315,7 @@ function isImageReady(image: GeneratedImage, index: number) {
           </div>
           <img
             :src="activeSrc"
-            alt="生成图片"
+            :alt="t('canvas.imageGenerated', { n: activeImageIndex + 1 })"
             loading="eager"
             fetchpriority="high"
             decoding="async"
@@ -296,12 +328,12 @@ function isImageReady(image: GeneratedImage, index: number) {
 
         <div
           class="canvas-tool-cluster pointer-events-none absolute right-3 top-3"
-          aria-label="图片操作"
+          :aria-label="t('canvas.mosaic.label')"
         >
           <button
             type="button"
             class="pointer-events-auto canvas-tool-btn"
-            aria-label="放大"
+            :aria-label="t('canvas.tool.zoom')"
             @click.stop="emit('open-lightbox', activeImageIndex)"
           >
             <Icon name="zoomIn" :size="14" />
@@ -309,7 +341,7 @@ function isImageReady(image: GeneratedImage, index: number) {
           <button
             type="button"
             class="pointer-events-auto canvas-tool-btn"
-            aria-label="新窗口打开"
+            :aria-label="t('canvas.tool.openExternal')"
             @click.stop="emit('open', activeImage)"
           >
             <Icon name="external" :size="14" />
@@ -317,7 +349,7 @@ function isImageReady(image: GeneratedImage, index: number) {
           <button
             type="button"
             class="pointer-events-auto canvas-tool-btn"
-            aria-label="下载"
+            :aria-label="t('canvas.tool.download')"
             @click.stop="emit('download', activeImage, activeImageIndex)"
           >
             <Icon name="download" :size="14" />
@@ -332,7 +364,7 @@ function isImageReady(image: GeneratedImage, index: number) {
         :class="`canvas-mosaic--${images.length}`"
         :data-orient="orient"
         role="listbox"
-        aria-label="生成结果"
+        :aria-label="t('canvas.mosaic.label')"
       >
         <div
           v-for="(image, index) in images"
@@ -347,15 +379,15 @@ function isImageReady(image: GeneratedImage, index: number) {
             type="button"
             class="canvas-mosaic__surface"
             :aria-label="activeImageIndex === index
-              ? `第 ${index + 1} 张已激活，点击放大`
-              : `选中第 ${index + 1} 张`"
+              ? t('canvas.mosaic.activeHint', { n: index + 1 })
+              : t('canvas.mosaic.selectHint', { n: index + 1 })"
             @click="activeImageIndex === index
               ? emit('open-lightbox', index)
               : emit('select', index)"
           >
             <div
-              v-if="!isImageReady(image, index)"
               class="canvas-image-placeholder absolute inset-0"
+              :class="{ 'canvas-image-placeholder--hiding': isImageReady(image, index) }"
               aria-hidden="true"
             >
               <div class="canvas-image-placeholder__glow"></div>
@@ -367,7 +399,7 @@ function isImageReady(image: GeneratedImage, index: number) {
             </div>
             <img
               :src="imageSource(image)"
-              :alt="`生成图片 ${index + 1}`"
+              :alt="t('canvas.imageGenerated', { n: index + 1 })"
               :loading="index < 2 ? 'eager' : 'lazy'"
               :fetchpriority="activeImageIndex === index ? 'high' : 'auto'"
               decoding="async"
@@ -395,7 +427,7 @@ function isImageReady(image: GeneratedImage, index: number) {
             <button
               type="button"
               class="pointer-events-auto canvas-mosaic__tool"
-              aria-label="放大"
+              :aria-label="t('canvas.tool.zoom')"
               @click.stop="emit('open-lightbox', index)"
             >
               <Icon name="zoomIn" :size="13" />
@@ -403,7 +435,7 @@ function isImageReady(image: GeneratedImage, index: number) {
             <button
               type="button"
               class="pointer-events-auto canvas-mosaic__tool"
-              aria-label="下载"
+              :aria-label="t('canvas.tool.download')"
               @click.stop="emit('download', image, index)"
             >
               <Icon name="download" :size="13" />
@@ -413,9 +445,16 @@ function isImageReady(image: GeneratedImage, index: number) {
       </div>
 
       <div class="canvas-action-grid">
-        <button type="button" class="canvas-action canvas-action--primary" @click="emit('open-inpaint', activeImageIndex)">
+        <button
+          type="button"
+          class="canvas-action canvas-action--primary"
+          :aria-disabled="imageEditAriaDisabled"
+          :aria-label="imageEditAriaLabel(t('canvas.action.inpaint'))"
+          :title="imageEditTitle"
+          @click="openInpaint(activeImageIndex)"
+        >
           <Icon name="brush" :size="14" />
-          局部编辑
+          {{ t('canvas.action.inpaint') }}
         </button>
         <button type="button" class="canvas-action" @click="emit('download', activeImage, activeImageIndex)">
           <Icon name="download" :size="14" />
@@ -457,9 +496,9 @@ function isImageReady(image: GeneratedImage, index: number) {
           <button
             type="button"
             class="font-mono text-[10px] uppercase tracking-[0.18em] text-muted transition hover:text-ink"
-            @click="emit('copy', activeImage.revisedPrompt!, '已复制提示词')"
+            @click="emit('copy', activeImage.revisedPrompt!, t('toast.copyPrompt'))"
           >
-            复制
+            {{ t('lightbox.copy') }}
           </button>
         </div>
         <p class="text-[13px] leading-6 text-ink/80">{{ activeImage.revisedPrompt }}</p>
@@ -480,9 +519,9 @@ function isImageReady(image: GeneratedImage, index: number) {
             >
               <Icon name="settings" :size="22" />
             </div>
-            <p class="font-display text-2xl italic tracking-tightish text-ink/85 sm:text-3xl">先配一下 API</p>
+            <p class="font-display text-2xl italic tracking-tightish text-ink/85 sm:text-3xl">{{ t('canvas.empty.unconfigured.title') }}</p>
             <p class="mt-3 text-[13px] leading-6 text-muted">
-              填入 OpenAI 或兼容中转站的 API 端点和 Key，请求会自动经内置反代中转，避免 CORS 与超时问题。
+              {{ t('canvas.empty.unconfigured.body') }}
             </p>
             <div class="mt-6 flex flex-col items-center gap-2.5 sm:flex-row sm:justify-center">
               <button
@@ -491,12 +530,12 @@ function isImageReady(image: GeneratedImage, index: number) {
                 @click="emit('open-settings')"
               >
                 <Icon name="settings" :size="14" />
-                <span>打开设置</span>
+                <span>{{ t('canvas.empty.unconfigured.cta') }}</span>
                 <Icon name="arrowRight" :size="14" />
               </button>
             </div>
             <p class="mt-4 font-mono text-[10px] uppercase tracking-[0.18em] text-muted/70">
-              proxy · likeyou.qzz.io · 透明转发
+              {{ t('canvas.empty.proxy') }}
             </p>
           </template>
 
@@ -507,10 +546,9 @@ function isImageReady(image: GeneratedImage, index: number) {
             >
               <img src="/brand/promptcanvas-icon-96.png" alt="" width="56" height="56" decoding="async" />
             </div>
-            <p class="font-display text-2xl italic tracking-tightish text-ink/85 sm:text-3xl">空白画布</p>
+            <p class="font-display text-2xl italic tracking-tightish text-ink/85 sm:text-3xl">{{ t('canvas.empty.title') }}</p>
             <p class="mt-3 text-[13px] leading-6 text-muted">
-              写下一段画面描述，或挑一个起点。
-              <kbd class="canvas-hero__kbd">⌘K</kbd> 唤出命令面板。
+              {{ t('canvas.empty.body') }}
             </p>
 
             <div class="mt-6 flex flex-col items-center gap-2.5 sm:flex-row sm:justify-center">
@@ -521,7 +559,7 @@ function isImageReady(image: GeneratedImage, index: number) {
                 @click="emit('generate')"
               >
                 <Icon name="lightning" :size="14" />
-                <span>立即生成</span>
+                <span>{{ t('canvas.empty.generate') }}</span>
               </button>
               <button
                 v-else
@@ -530,7 +568,7 @@ function isImageReady(image: GeneratedImage, index: number) {
                 @click="emit('go-compose')"
               >
                 <Icon name="textCursor" :size="14" />
-                去写提示词
+                {{ t('canvas.empty.compose') }}
                 <Icon name="arrowRight" :size="14" />
               </button>
             </div>
@@ -664,6 +702,26 @@ function isImageReady(image: GeneratedImage, index: number) {
   box-shadow: var(--shadow-glass), inset 0 1px 0 rgb(255 255 255 / 0.18);
 }
 
+.canvas-action[aria-disabled='true'] {
+  cursor: help;
+  color: rgb(var(--color-muted));
+  border-color: rgb(var(--color-line) / 0.54);
+  background: rgb(var(--color-surface-muted) / 0.76);
+  box-shadow: var(--shadow-inner-glass);
+  opacity: 0.62;
+}
+
+.canvas-action[aria-disabled='true']:hover,
+.canvas-action[aria-disabled='true']:active,
+.canvas-action--primary[aria-disabled='true'],
+.canvas-action--primary[aria-disabled='true']:hover {
+  color: rgb(var(--color-muted));
+  border: 1px solid rgb(var(--color-line) / 0.54);
+  background: rgb(var(--color-surface-muted) / 0.76);
+  transform: none;
+  box-shadow: var(--shadow-inner-glass);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .canvas-action {
     transition: none;
@@ -674,11 +732,20 @@ function isImageReady(image: GeneratedImage, index: number) {
   display: grid;
   place-items: center;
   pointer-events: none;
+  opacity: 1;
   background:
-    radial-gradient(120% 90% at 30% 10%, rgb(var(--color-accent) / 0.055), transparent 60%),
-    linear-gradient(180deg, rgb(var(--color-surface-muted) / 0.96), rgb(var(--color-paper-soft) / 0.86));
+    radial-gradient(78% 68% at 24% 72%, rgb(var(--color-accent) / 0.14), transparent 64%),
+    radial-gradient(62% 58% at 82% 18%, rgb(var(--color-clay) / 0.08), transparent 66%),
+    linear-gradient(132deg, rgb(var(--color-surface-raised) / 0.96), rgb(var(--color-vellum) / 0.72) 48%, rgb(var(--color-paper-soft) / 0.86));
+  background-size: 170% 170%;
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
+  transition: opacity 720ms var(--motion-snap);
+  animation: canvas-placeholder-gradient 7s ease-in-out infinite;
+}
+
+.canvas-image-placeholder--hiding {
+  opacity: 0;
 }
 
 .canvas-image-placeholder__glow {
@@ -686,8 +753,11 @@ function isImageReady(image: GeneratedImage, index: number) {
   width: min(44%, 220px);
   height: min(44%, 220px);
   border-radius: 999px;
-  background: radial-gradient(circle, rgb(var(--color-accent) / 0.1), rgb(var(--color-accent) / 0) 70%);
-  filter: blur(10px);
+  background:
+    radial-gradient(circle at 34% 32%, rgb(255 255 255 / 0.78), transparent 24%),
+    radial-gradient(circle, rgb(var(--color-accent) / 0.28), rgb(var(--color-blueprint) / 0.14) 58%, transparent 76%);
+  filter: blur(18px) saturate(1.2);
+  animation: canvas-placeholder-orb 4.8s var(--motion-soft) infinite;
 }
 
 .canvas-image-placeholder__loader {
@@ -695,10 +765,10 @@ function isImageReady(image: GeneratedImage, index: number) {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  padding: 0.7rem 0.95rem;
+  padding: 0.56rem 0.76rem;
   border-radius: 999px;
-  border: 1px solid rgb(var(--color-line) / 0.8);
-  background: rgb(var(--color-surface-raised) / 0.98);
+  border: 1px solid rgb(var(--color-line) / 0.6);
+  background: rgb(var(--color-surface-raised) / 0.74);
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
   box-shadow: var(--shadow-glass-sm), var(--shadow-inner-glass);
@@ -708,7 +778,7 @@ function isImageReady(image: GeneratedImage, index: number) {
   width: 6px;
   height: 6px;
   border-radius: 999px;
-  background: var(--gradient-primary);
+  background: linear-gradient(135deg, rgb(var(--color-accent)), rgb(var(--color-blueprint) / 0.9));
   animation: canvas-image-loader 1.15s ease-in-out infinite;
 }
 
@@ -740,37 +810,44 @@ function isImageReady(image: GeneratedImage, index: number) {
 
 .result-image {
   opacity: 0;
-  transform: translateY(8px) scale(0.992);
-  filter: blur(8px);
-  transition: opacity 420ms var(--motion-snap), transform 520ms var(--motion-snap), filter 200ms var(--motion-snap);
+  transform: translateY(10px) scale(0.986);
+  filter: blur(14px) saturate(0.86);
+  transition: opacity 820ms var(--motion-snap), transform 900ms var(--motion-snap), filter 920ms var(--motion-snap);
   will-change: opacity, transform, filter;
 }
 
 .result-image--ready {
   opacity: 1;
   transform: translateY(0) scale(1);
-  filter: blur(0);
-  animation: result-settle 720ms var(--motion-snap) both;
+  filter: blur(0) saturate(1);
+  animation: result-settle 920ms var(--motion-snap) both;
 }
 
 .result-image--loading {
   opacity: 0;
-  filter: blur(8px);
+  filter: blur(14px) saturate(0.86);
 }
 
 @keyframes result-settle {
   0% {
     opacity: 0;
-    transform: translateY(10px) scale(0.988);
-  }
-  62% {
-    opacity: 1;
-    transform: translateY(-1px) scale(1.002);
+    transform: translateY(10px) scale(0.986);
   }
   100% {
     opacity: 1;
     transform: translateY(0) scale(1);
   }
+}
+
+@keyframes canvas-placeholder-gradient {
+  0%, 100% { background-position: 0% 54%; }
+  50% { background-position: 100% 46%; }
+}
+
+@keyframes canvas-placeholder-orb {
+  0%, 100% { transform: translate3d(-18px, 12px, 0) scale(0.94); opacity: 0.78; }
+  42% { transform: translate3d(22px, -16px, 0) scale(1.08); opacity: 0.96; }
+  72% { transform: translate3d(18px, 18px, 0) scale(1); opacity: 0.86; }
 }
 
 @keyframes canvas-image-loader {
@@ -788,6 +865,8 @@ function isImageReady(image: GeneratedImage, index: number) {
 
 @media (prefers-reduced-motion: reduce) {
   .canvas-image-placeholder__loader span,
+  .canvas-image-placeholder,
+  .canvas-image-placeholder__glow,
   .result-image,
   .canvas-progress span {
     animation: none;
@@ -801,8 +880,11 @@ function isImageReady(image: GeneratedImage, index: number) {
   overflow: hidden;
   border-style: solid;
   background:
-    radial-gradient(120% 80% at 20% 0%, rgb(var(--color-accent) / 0.055), transparent 55%),
-    linear-gradient(180deg, rgb(var(--color-surface) / 0.98), rgb(var(--color-surface-muted) / 0.94));
+    linear-gradient(180deg, rgb(var(--color-surface-raised) / 0.98) 0%, rgb(var(--color-surface) / 0.98) 56%, rgb(var(--color-surface-muted) / 0.94) 100%);
+  box-shadow:
+    var(--shadow-glass),
+    var(--shadow-inner-glass),
+    inset 0 -1px 0 rgb(var(--color-line) / 0.28);
 }
 
 .canvas-hero__badge {
@@ -822,26 +904,43 @@ function isImageReady(image: GeneratedImage, index: number) {
   object-fit: cover;
 }
 
-.canvas-hero__kbd {
-  display: inline-flex;
-  align-items: center;
-  padding: 0.08rem 0.42rem;
-  border-radius: 5px;
-  border: 1px solid rgb(var(--color-line) / 0.6);
-  background: rgb(var(--color-surface-muted) / 0.95);
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-  box-shadow: var(--shadow-inner-glass);
-  color: rgb(var(--color-muted));
-  font-family: 'JetBrains Mono', ui-monospace, monospace;
-  font-size: 10px;
-  letter-spacing: 0.04em;
-  vertical-align: middle;
-  margin-inline: 0.18rem;
-}
-
 .canvas-stage-root {
   position: relative;
+  overflow: hidden;
+  padding: clamp(0.85rem, 1.45vw, 1.2rem);
+  border: 1px solid rgb(var(--color-line) / 0.72);
+  box-shadow:
+    inset 0 1px 0 rgb(var(--color-surface-raised) / 0.68),
+    0 16px 34px -30px rgb(var(--color-shadow) / 0.48);
+}
+
+.canvas-stage-root::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background:
+    linear-gradient(180deg, rgb(var(--color-surface-raised) / 0.28), transparent 34%),
+    linear-gradient(90deg, rgb(var(--color-shadow) / 0.04), transparent 18%, transparent 82%, rgb(var(--color-shadow) / 0.045));
+  pointer-events: none;
+}
+
+.canvas-stage-root > * {
+  position: relative;
+  z-index: 1;
+}
+
+.canvas-stage-root--dragging {
+  border-color: rgb(var(--color-forest) / 0.44);
+  box-shadow:
+    inset 0 1px 0 rgb(var(--color-surface-raised) / 0.72),
+    0 0 0 2px rgb(var(--color-forest) / 0.12),
+    0 16px 34px -30px rgb(var(--color-shadow) / 0.48);
+}
+
+.canvas-stage-root .display-h2 {
+  font-size: 1.85rem;
+  line-height: 1.08;
 }
 
 @media (max-height: 760px) and (min-width: 1024px) {
@@ -967,20 +1066,30 @@ function isImageReady(image: GeneratedImage, index: number) {
   object-fit: cover;
   display: block;
   opacity: 0;
-  transform: scale(1.005);
-  filter: blur(8px);
-  transition: opacity 360ms var(--motion-snap), transform 480ms var(--motion-snap), filter 200ms var(--motion-snap);
+  transform: scale(1.018);
+  filter: blur(14px) saturate(0.86);
+  transition: opacity 780ms var(--motion-snap), transform 860ms var(--motion-snap), filter 880ms var(--motion-snap);
 }
 
 .canvas-mosaic__img--ready {
   opacity: 1;
   transform: scale(1);
-  filter: blur(0);
+  filter: blur(0) saturate(1);
+}
+
+.canvas-mosaic__img--loading {
+  opacity: 0;
+  transform: scale(1.018);
+  filter: blur(14px) saturate(0.86);
 }
 
 /* Inactive cells get a subtle tonal dampening so the active one pops. */
 .canvas-mosaic__cell:not(.canvas-mosaic__cell--active) .canvas-mosaic__img {
   filter: saturate(0.92) brightness(0.97);
+}
+
+.canvas-mosaic__cell:not(.canvas-mosaic__cell--active) .canvas-mosaic__img--loading {
+  filter: blur(14px) saturate(0.86);
 }
 
 .canvas-mosaic__cell:not(.canvas-mosaic__cell--active):hover .canvas-mosaic__img {

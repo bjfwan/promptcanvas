@@ -1,11 +1,9 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { nextTick, onMounted, ref, watch } from 'vue'
 import ChatBubble from './ChatBubble.vue'
 import Icon from './Icon.vue'
-import StyleSwatch from './StyleSwatch.vue'
-import { styleOptions } from '../presets'
 import { useI18n } from '../lib/i18n'
-import type { ChatMessage, GeneratedImage, GenerationHistoryItem, ImageStyle } from '../types'
+import type { ChatMessage, GeneratedImage, GenerationHistoryItem } from '../types'
 
 interface Props {
   messages: ChatMessage[]
@@ -13,6 +11,8 @@ interface Props {
   jumpBottom?: number
   providerConfigured?: boolean
   history?: GenerationHistoryItem[]
+  canEditImages?: boolean
+  imageEditDisabledReason?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -20,6 +20,8 @@ const props = withDefaults(defineProps<Props>(), {
   jumpBottom: 14,
   providerConfigured: true,
   history: () => [] as GenerationHistoryItem[],
+  canEditImages: true,
+  imageEditDisabledReason: '',
 })
 
 const VIRTUALIZE_THRESHOLD = 24
@@ -45,11 +47,11 @@ function estimateMessageHeight(message: ChatMessage): number {
 const emit = defineEmits<{
   (e: 'retry', id: string): void
   (e: 'open-image', images: GeneratedImage[], index: number): void
+  (e: 'edit-image', images: GeneratedImage[], index: number): void
   (e: 'download', image: GeneratedImage, index: number): void
   (e: 'copy', text: string, message: string): void
-  (e: 'remix', image: GeneratedImage, prompt: string, messageId: string, imageIndex: number): void
+  (e: 'image-edit-unavailable', reason?: string): void
   (e: 'import-prompt', text: string): void
-  (e: 'pick-suggestion', style: ImageStyle): void
   (e: 'scroll-to-message', id: string): void
   (e: 'abort', id: string): void
   (e: 'open-settings'): void
@@ -63,8 +65,6 @@ function shouldVirtualize(index: number, total: number): boolean {
   if (total < VIRTUALIZE_THRESHOLD) return false
   return index < total - KEEP_LIVE_TAIL
 }
-
-const suggestionStyles = computed(() => styleOptions.slice(0, 4))
 
 function isNearBottom(el: HTMLElement, threshold = 120) {
   return el.scrollHeight - el.scrollTop - el.clientHeight <= threshold
@@ -176,22 +176,6 @@ defineExpose({ scrollToBottom, scrollToMessage })
             {{ t('stream.empty.body') }}
           </p>
 
-          <ul class="empty-suggestions mt-7 grid w-full max-w-sm grid-cols-1 gap-2.5 min-[380px]:grid-cols-2">
-            <li v-for="item in suggestionStyles" :key="item.value">
-              <button
-                type="button"
-                class="empty-suggestion group flex w-full items-center gap-3 p-3 text-left"
-                @click="emit('pick-suggestion', item.value)"
-              >
-                <StyleSwatch :variant="item.value" :size="38" />
-                <span class="min-w-0 flex-1">
-                  <span class="block text-[13.5px] font-semibold leading-tight text-ink">{{ item.label }}</span>
-                  <span class="mt-0.5 block text-[11.5px] leading-snug text-muted">{{ item.accent }}</span>
-                </span>
-                <Icon name="arrowRight" :size="13" class="empty-suggestion__arrow shrink-0 text-muted" />
-              </button>
-            </li>
-          </ul>
         </template>
       </div>
 
@@ -210,18 +194,23 @@ defineExpose({ scrollToBottom, scrollToMessage })
           <ChatBubble
             :message="message"
             :history="history"
+            :can-edit-images="canEditImages"
+            :image-edit-disabled-reason="imageEditDisabledReason"
             v-memo="[
               message.id,
               message.role,
               message.role === 'assistant' ? message.status : '',
               message.role === 'assistant' ? message.elapsedSeconds ?? 0 : 0,
               message.role === 'assistant' ? message.images?.length ?? 0 : message.referenceImages?.length ?? 0,
+              canEditImages,
+              imageEditDisabledReason,
             ]"
             @retry="(id) => emit('retry', id)"
             @open-image="(images, idx) => emit('open-image', images, idx)"
+            @edit-image="(images, idx) => emit('edit-image', images, idx)"
             @download="(image, idx) => emit('download', image, idx)"
             @copy="(text, msg) => emit('copy', text, msg)"
-            @remix="(image, content, idx) => emit('remix', image, content, message.id, idx)"
+            @image-edit-unavailable="(reason) => emit('image-edit-unavailable', reason)"
             @import-prompt="(text) => emit('import-prompt', text)"
             @scroll-to-message="(id) => emit('scroll-to-message', id)"
             @abort="(id) => emit('abort', id)"

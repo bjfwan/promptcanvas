@@ -17,7 +17,6 @@ const emit = defineEmits<{
   (e: 'toggleTheme'): void
   (e: 'openHistory'): void
   (e: 'openSettings'): void
-  (e: 'openCommandPalette'): void
   (e: 'reset'): void
 }>()
 
@@ -28,7 +27,7 @@ const menuOpen = ref(false)
 
 const dotClass = computed(() => {
   if (props.healthStatus === 'online') return 'bg-forest health-dot health-dot--online'
-  if (props.healthStatus === 'offline') return 'bg-accent health-dot health-dot--offline'
+  if (props.healthStatus === 'offline') return 'health-dot health-dot--offline'
   return 'bg-muted/60 animate-breathe'
 })
 
@@ -37,6 +36,10 @@ const labelText = computed(() => {
   if (props.healthStatus === 'offline') return t('header.healthOffline')
   return t('header.healthChecking')
 })
+
+const themeActionLabel = computed(() =>
+  props.theme === 'paper' ? t('header.toggleThemeToNight') : t('header.toggleThemeToPaper'),
+)
 
 function closeMenu() {
   menuOpen.value = false
@@ -94,75 +97,65 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <div class="header-actions-wide flex shrink-0 items-center gap-1 sm:gap-2">
+      <div class="header-actions-wide flex shrink-0 items-center gap-1.5 sm:gap-2" data-tour="header-actions">
         <button
           type="button"
-          class="cmdk-hint hidden md:inline-flex"
-          data-tour="cmdk-hint"
-          :title="t('header.cmdkOpenTitle')"
-          :aria-label="t('header.cmdkOpenTitle')"
-          @click="emit('openCommandPalette')"
-        >
-          <Icon name="search" :size="13" />
-          <span>{{ t('header.cmdkSearch') }}</span>
-          <kbd>⌘K</kbd>
-        </button>
-
-        <button
-          type="button"
-          class="icon-btn"
+          class="header-action-btn"
           :title="t('header.history')"
           :aria-label="t('header.history')"
           @click="emit('openHistory')"
         >
           <Icon name="history" :size="17" />
+          <span class="header-action-label">{{ t('header.history') }}</span>
         </button>
 
         <button
           type="button"
-          class="icon-btn"
+          class="header-action-btn"
           :title="t('header.settings')"
           :aria-label="t('header.settings')"
           @click="emit('openSettings')"
         >
           <Icon name="settings" :size="17" />
+          <span class="header-action-label">{{ t('header.settings') }}</span>
         </button>
 
         <button
           type="button"
-          class="icon-btn"
-          :title="theme === 'paper' ? t('header.toggleThemeToNight') : t('header.toggleThemeToPaper')"
-          :aria-label="theme === 'paper' ? t('header.toggleThemeToNight') : t('header.toggleThemeToPaper')"
+          class="header-action-btn header-action-btn--theme"
+          :title="themeActionLabel"
+          :aria-label="themeActionLabel"
           @click="emit('toggleTheme')"
         >
           <Icon :name="theme === 'paper' ? 'moon' : 'sun'" :size="17" />
+          <span class="header-action-label">{{ themeActionLabel }}</span>
         </button>
 
         <button
           type="button"
-          class="health-pill inline-flex h-10 items-center gap-2 px-2.5 text-[11px] font-medium uppercase tracking-[0.12em] active:translate-y-px sm:px-3"
+          class="header-action-btn header-action-btn--status health-pill"
           :class="{
             'health-pill--checking': healthStatus === 'checking',
             'health-pill--online': healthStatus === 'online',
             'health-pill--offline': healthStatus === 'offline',
           }"
           :title="healthMessage"
-          :aria-label="`${t('header.refresh')} · ${labelText}`"
+          :aria-label="`${t('header.refresh')} · ${t('header.status')}: ${labelText}`"
           @click="emit('refreshHealth')"
         >
           <span class="h-1.5 w-1.5 rounded-full" :class="dotClass" aria-hidden="true"></span>
-          <span class="hidden sm:inline">{{ labelText }}</span>
+          <span class="header-action-label">{{ t('header.status') }}: {{ labelText }}</span>
         </button>
 
         <button
           type="button"
-          class="reset-pill hidden items-center gap-1.5 px-3 py-2 text-[11px] font-medium uppercase tracking-[0.16em] sm:inline-flex"
+          class="header-action-btn header-action-btn--reset"
           :title="t('header.resetTip')"
           :aria-label="t('header.resetTip')"
           @click="emit('reset')"
         >
           <Icon name="reset" :size="13" />
-          <span>{{ t('header.reset') }}</span>
+          <span class="header-action-label">{{ t('header.reset') }}</span>
         </button>
       </div>
 
@@ -198,7 +191,7 @@ onBeforeUnmount(() => {
             </button>
             <button type="button" class="header-menu-item" @click="runMenuAction(() => emit('refreshHealth'))">
               <span class="h-1.5 w-1.5 rounded-full" :class="dotClass" aria-hidden="true"></span>
-              <span>{{ labelText }}</span>
+              <span>{{ t('header.status') }}: {{ labelText }}</span>
             </button>
             <button type="button" class="header-menu-item" @click="runMenuAction(() => emit('reset'))">
               <Icon name="reset" :size="14" />
@@ -236,28 +229,33 @@ onBeforeUnmount(() => {
   transition: transform 220ms var(--motion-press), box-shadow 220ms var(--motion-soft);
 }
 
-.cmdk-hint {
+.header-action-btn {
   display: inline-flex;
   align-items: center;
-  gap: 0.55rem;
-  height: 36px;
-  padding: 0 0.65rem 0 0.85rem;
-  border-radius: 999px;
+  justify-content: center;
+  gap: 0.45rem;
+  min-width: 0;
+  max-width: 12rem;
+  height: 40px;
+  padding: 0 0.75rem;
+  border-radius: 8px;
   border: 1px solid rgb(var(--color-line) / 0.8);
-  background: rgb(var(--color-surface-muted) / 0.96);
+  background: rgb(var(--color-surface) / 0.95);
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
   box-shadow: var(--shadow-inner-glass);
-  color: rgb(var(--color-muted));
+  color: rgb(var(--color-ink));
   font-size: 12px;
-  font-weight: 500;
-  letter-spacing: 0.01em;
+  font-weight: 600;
+  letter-spacing: 0;
+  line-height: 1;
+  white-space: nowrap;
   cursor: pointer;
   transition: border-color 160ms var(--motion-soft), background-color 160ms var(--motion-soft), color 160ms ease, box-shadow 180ms var(--motion-soft), transform 160ms var(--motion-press);
   -webkit-tap-highlight-color: transparent;
 }
 
-.cmdk-hint:hover {
+.header-action-btn:hover {
   border-color: rgb(var(--color-line-strong) / 0.6);
   background: rgb(var(--color-surface-raised) / 1);
   box-shadow: var(--shadow-glass-sm);
@@ -265,27 +263,45 @@ onBeforeUnmount(() => {
   transform: translateY(-1px);
 }
 
-.cmdk-hint:active {
+.header-action-btn:active {
   transform: translateY(0);
 }
 
-.cmdk-hint:focus-visible,
-.health-pill:focus-visible,
-.reset-pill:focus-visible,
+.header-action-btn:focus-visible,
 .header-menu-item:focus-visible {
   outline: none;
   box-shadow: var(--focus-ring);
 }
 
-.cmdk-hint kbd {
-  font-family: 'JetBrains Mono', ui-monospace, monospace;
-  font-size: 10px;
-  padding: 0.16rem 0.4rem;
-  border-radius: 5px;
-  border: 1px solid rgb(var(--color-line-strong) / 0.4);
-  background: rgb(var(--color-surface-raised) / 1);
-  color: rgb(var(--color-ink));
-  letter-spacing: 0.04em;
+.header-action-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.header-action-btn--theme {
+  max-width: 11.5rem;
+}
+
+.header-action-btn--status {
+  max-width: 10.5rem;
+  color: rgb(var(--color-muted));
+}
+
+.header-action-btn--reset {
+  max-width: 7.5rem;
+}
+
+.health-pill--offline {
+  border-color: rgb(var(--color-clay) / 0.5);
+  background: rgb(var(--color-clay) / 0.1);
+  color: rgb(var(--color-clay));
+}
+
+.health-pill--offline:hover {
+  border-color: rgb(var(--color-clay) / 0.68);
+  background: rgb(var(--color-clay) / 0.14);
+  color: rgb(var(--color-clay));
 }
 
 .brand-mark:hover {
@@ -318,8 +334,12 @@ onBeforeUnmount(() => {
 }
 
 .health-dot--offline::after {
-  background: rgb(var(--color-accent));
+  background: rgb(var(--color-clay));
   animation: health-halo 1.8s ease-out infinite;
+}
+
+.health-dot--offline {
+  background: rgb(var(--color-clay));
 }
 
 @keyframes health-halo {
@@ -335,7 +355,8 @@ onBeforeUnmount(() => {
 
 @media (prefers-reduced-motion: reduce) {
   .health-dot::after,
-  .brand-mark {
+  .brand-mark,
+  .header-action-btn {
     animation: none;
     transition: none;
   }
@@ -373,7 +394,7 @@ onBeforeUnmount(() => {
   transition: opacity 160ms ease, transform 160ms ease;
 }
 
-@media (max-width: 430px) {
+@media (max-width: 760px) {
   .header-actions-wide {
     display: none;
   }

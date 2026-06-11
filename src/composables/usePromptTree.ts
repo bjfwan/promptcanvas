@@ -1,12 +1,8 @@
 import { reactive, computed, watch } from 'vue'
-import type { SlotName } from '../lib/promptDoc'
+import { t } from '../lib/i18n'
 
 export type PromptTreeAction =
   | 'manual'
-  | 'enhance'
-  | 'lint-fix'
-  | 'slot-edit'
-  | 'slot-refill'
   | 'import'
   | 'undo'
   | 'redo'
@@ -19,7 +15,6 @@ export interface PromptTreeNode {
   prompt: string
   action: PromptTreeAction
   label: string
-  slotOverrides?: Partial<Record<SlotName, string>>
   createdAt: number
 }
 
@@ -117,7 +112,6 @@ export function usePromptTree() {
     prompt: string
     action: PromptTreeAction
     label: string
-    slotOverrides?: Partial<Record<SlotName, string>>
     parentOverride?: string | null
   }): PromptTreeNode {
     const trimmed = args.prompt
@@ -128,7 +122,6 @@ export function usePromptTree() {
       prompt: trimmed,
       action: args.action,
       label: args.label || labelForAction(args.action),
-      slotOverrides: args.slotOverrides,
       createdAt: Date.now(),
     }
     state.nodes = [...state.nodes, node]
@@ -208,26 +201,18 @@ export function usePromptTree() {
 function labelForAction(action: PromptTreeAction): string {
   switch (action) {
     case 'manual':
-      return '手动编辑'
-    case 'enhance':
-      return '智能优化'
-    case 'lint-fix':
-      return '一键修复'
-    case 'slot-edit':
-      return '槽位编辑'
-    case 'slot-refill':
-      return '槽位重填'
+      return t('promptTree.manual')
     case 'import':
-      return '反向导入'
+      return t('promptTree.import')
     case 'undo':
-      return '撤销'
+      return t('promptTree.undo')
     case 'redo':
-      return '重做'
+      return t('promptTree.redo')
     case 'reset':
-      return '重置'
+      return t('promptTree.reset')
     case 'history-restore':
-      return '历史恢复'
+      return t('promptTree.historyRestore')
     default:
-      return '更新'
+      return t('promptTree.update')
   }
 }

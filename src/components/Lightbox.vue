@@ -11,8 +11,19 @@ import { useToast } from '../composables/useToast'
 import Icon from './Icon.vue'
 import InpaintEditor from './InpaintEditor.vue'
 
+interface Props {
+  canEditImages?: boolean
+  imageEditDisabledReason?: string
+}
+
+const props = withDefaults(defineProps<Props>(), {
+  canEditImages: true,
+  imageEditDisabledReason: '',
+})
+
 const emit = defineEmits<{
   (e: 'inpaint-submit', payload: { mask: Blob; prompt: string; imageSrc: string; imageIndex: number }): void
+  (e: 'image-edit-unavailable', reason?: string): void
 }>()
 
 const lightbox = useLightbox()
@@ -57,6 +68,26 @@ const imageStyle = computed(() => ({
   transition: gestureActive.value ? 'none' : 'transform 0.32s cubic-bezier(0.2, 0.8, 0.2, 1)',
   cursor: isZoomed.value ? 'zoom-out' : 'zoom-in',
 }))
+const imageEditUnavailableReason = computed(() => props.imageEditDisabledReason.trim())
+const imageEditAriaDisabled = computed(() => props.canEditImages ? undefined : 'true')
+const imageEditTitle = computed(() => props.canEditImages ? undefined : imageEditUnavailableReason.value || undefined)
+
+function imageEditAriaLabel(label: string) {
+  if (props.canEditImages || !imageEditUnavailableReason.value) return label
+  return `${label}. ${imageEditUnavailableReason.value}`
+}
+
+function announceImageEditUnavailable() {
+  emit('image-edit-unavailable', imageEditUnavailableReason.value || undefined)
+}
+
+function switchToEdit() {
+  if (!props.canEditImages) {
+    announceImageEditUnavailable()
+    return
+  }
+  lightbox.switchToEdit()
+}
 
 function resetTransform() {
   scale.value = 1
@@ -166,6 +197,16 @@ watch(() => lightbox.state.index, () => {
   resetTransform()
   preloadAdjacentImages()
 })
+
+watch(
+  () => props.canEditImages,
+  (canEdit) => {
+    if (!canEdit && lightbox.state.mode === 'edit') {
+      lightbox.switchToView()
+    }
+  },
+  { immediate: true },
+)
 
 watch(
   () => [lightbox.state.open, lightbox.state.index, lightbox.state.images.length] as const,
@@ -389,6 +430,11 @@ async function shareCurrent() {
 
 function handleInpaintSubmit(payload: { mask: Blob; prompt: string }) {
   if (!activeSrc.value) return
+  if (!props.canEditImages) {
+    announceImageEditUnavailable()
+    lightbox.switchToView()
+    return
+  }
   emit('inpaint-submit', {
     mask: payload.mask,
     prompt: payload.prompt,
@@ -426,18 +472,22 @@ function handleInpaintSubmit(payload: { mask: Blob; prompt: string }) {
           <div class="flex items-center gap-1.5">
             <button
               type="button"
-              class="hidden sm:inline-flex h-11 items-center gap-1.5 rounded-full border border-paper/15 bg-paper/[0.06] px-3 text-paper backdrop-blur-md transition hover:border-paper/30 hover:bg-paper/15"
-              aria-label="编辑这张图"
-              @click="lightbox.switchToEdit()"
+              class="lb-edit-button hidden sm:inline-flex h-11 items-center gap-1.5 rounded-full border border-paper/15 bg-paper/[0.06] px-3 text-paper backdrop-blur-md transition hover:border-paper/30 hover:bg-paper/15"
+              :aria-disabled="imageEditAriaDisabled"
+              :aria-label="imageEditAriaLabel(t('lightbox.editImage'))"
+              :title="imageEditTitle"
+              @click="switchToEdit"
             >
               <Icon name="brush" :size="14" />
-              <span class="font-mono text-[10px] uppercase tracking-[0.18em]">编辑</span>
+              <span class="font-mono text-[10px] uppercase tracking-[0.18em]">{{ t('lightbox.edit') }}</span>
             </button>
             <button
               type="button"
-              class="sm:hidden grid h-11 w-11 place-items-center rounded-full border border-paper/15 bg-paper/[0.06] text-paper backdrop-blur-md transition hover:border-paper/30 hover:bg-paper/15"
-              aria-label="编辑这张图"
-              @click="lightbox.switchToEdit()"
+              class="lb-edit-button sm:hidden grid h-11 w-11 place-items-center rounded-full border border-paper/15 bg-paper/[0.06] text-paper backdrop-blur-md transition hover:border-paper/30 hover:bg-paper/15"
+              :aria-disabled="imageEditAriaDisabled"
+              :aria-label="imageEditAriaLabel(t('lightbox.editImage'))"
+              :title="imageEditTitle"
+              @click="switchToEdit"
             >
               <Icon name="brush" :size="16" />
             </button>
@@ -630,6 +680,23 @@ function handleInpaintSubmit(payload: { mask: Blob; prompt: string }) {
     radial-gradient(circle at 18% 0%, rgb(var(--color-accent) / 0.28), transparent 36%),
     radial-gradient(circle at 82% 100%, rgb(var(--color-blueprint) / 0.22), transparent 40%),
     rgb(10 11 16 / 0.97);
+}
+
+.lb-edit-button[aria-disabled='true'] {
+  cursor: help;
+  opacity: 0.56;
+  color: rgb(var(--color-paper) / 0.66);
+  border-color: rgb(var(--color-paper) / 0.1);
+  background: rgb(var(--color-paper) / 0.035);
+  box-shadow: none;
+}
+
+.lb-edit-button[aria-disabled='true']:hover,
+.lb-edit-button[aria-disabled='true']:active {
+  color: rgb(var(--color-paper) / 0.66);
+  border-color: rgb(var(--color-paper) / 0.1);
+  background: rgb(var(--color-paper) / 0.035);
+  transform: none;
 }
 
 .lb-fade-enter-from,

@@ -14,6 +14,7 @@ Thumbs.db
 # TypeScript / Vite build cache
 *.tsbuildinfo
 .vite/
+.test-dist/
 
 # Cloudflare Wrangler
 .wrangler/

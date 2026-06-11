@@ -1,12 +1,14 @@
 <script setup lang="ts" generic="V extends string | number">
 import { computed, nextTick, onBeforeUnmount, ref, useId, watch } from 'vue'
 import Icon from './Icon.vue'
+import { useI18n } from '../lib/i18n'
 
 export interface SelectOption<V extends string | number = string> {
   value: V
   label: string
   hint?: string
   disabled?: boolean
+  kind?: 'group'
 }
 
 interface Props {
@@ -22,15 +24,16 @@ interface Props {
 }
 
 const props = withDefaults(defineProps<Props>(), {
-  placeholder: '请选择…',
+  placeholder: '',
   size: 'md',
   variant: 'default',
   align: 'start',
-  emptyText: '没有可用选项',
+  emptyText: '',
   showHints: true,
 })
 
 const value = defineModel<V>({ required: true })
+const { t } = useI18n()
 
 const open = ref(false)
 const triggerEl = ref<HTMLButtonElement | null>(null)
@@ -41,8 +44,10 @@ const popoverPlacement = ref<'down' | 'up'>('down')
 const generatedId = useId()
 const listboxId = computed(() => `${props.id ?? generatedId}-listbox`)
 
+const resolvedPlaceholder = computed(() => props.placeholder || t('select.placeholder'))
+const resolvedEmptyText = computed(() => props.emptyText || t('select.empty'))
 const selected = computed(() => props.options.find((option) => option.value === value.value))
-const triggerLabel = computed(() => selected.value?.label ?? props.placeholder)
+const triggerLabel = computed(() => selected.value?.label ?? resolvedPlaceholder.value)
 
 const heightClass = computed(() => {
   if (props.variant === 'chip') return 'h-7 text-[11px]'
@@ -68,10 +73,14 @@ function nextEnabled(from: number, direction: 1 | -1): number {
   if (props.options.length === 0) return -1
   let cursor = clampIndex(from)
   for (let i = 0; i < props.options.length; i += 1) {
-    if (!props.options[cursor].disabled) return cursor
+    if (!isOptionDisabled(props.options[cursor])) return cursor
     cursor = clampIndex(cursor + direction)
   }
   return -1
+}
+
+function isOptionDisabled(option: SelectOption<V>) {
+  return option.disabled || option.kind === 'group'
 }
 
 function computePosition() {
@@ -174,7 +183,7 @@ function toggle() {
 }
 
 function commit(option: SelectOption<V>) {
-  if (option.disabled) return
+  if (isOptionDisabled(option)) return
   value.value = option.value
   closePopover()
 }
@@ -245,7 +254,7 @@ function onListKeydown(event: KeyboardEvent) {
           searchBuffer = ''
         }, 600)
         const match = props.options.findIndex(
-          (option) => !option.disabled && option.label.toLowerCase().startsWith(searchBuffer),
+          (option) => !isOptionDisabled(option) && option.label.toLowerCase().startsWith(searchBuffer),
         )
         if (match >= 0) {
           activeIndex.value = match
@@ -324,13 +333,14 @@ onBeforeUnmount(() => {
               :key="String(option.value)"
               role="option"
               :aria-selected="option.value === value"
-              :aria-disabled="option.disabled || undefined"
+              :aria-disabled="isOptionDisabled(option) || undefined"
               :data-index="index"
               :data-active="activeIndex === index || undefined"
               :data-selected="option.value === value || undefined"
-              :data-disabled="option.disabled || undefined"
+              :data-disabled="isOptionDisabled(option) || undefined"
+              :data-kind="option.kind"
               class="select-option"
-              @mouseenter="activeIndex = index"
+              @mouseenter="!isOptionDisabled(option) && (activeIndex = index)"
               @click="commit(option)"
             >
               <span class="select-option__check" aria-hidden="true">
@@ -346,7 +356,7 @@ onBeforeUnmount(() => {
               </span>
             </li>
             <li v-if="!options.length" class="select-option select-option--empty">
-              <span class="text-muted">{{ emptyText }}</span>
+              <span class="text-muted">{{ resolvedEmptyText }}</span>
             </li>
           </ul>
         </div>
@@ -544,6 +554,37 @@ onBeforeUnmount(() => {
   opacity: 0.55;
 }
 
+.select-option[data-kind='group'] {
+  align-items: center;
+  margin: 0.125rem 0 0.25rem;
+  padding: 0.45rem 0.625rem 0.35rem;
+  border-radius: 0;
+  border-bottom: 1px solid rgb(var(--color-line) / 0.55);
+  background: transparent;
+  box-shadow: none;
+  cursor: default;
+  opacity: 1;
+}
+
+.select-option[data-kind='group'] .select-option__check {
+  width: 0;
+  margin: 0;
+}
+
+.select-option[data-kind='group'] .select-option__label {
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgb(var(--color-muted));
+}
+
+.select-option[data-kind='group'] .select-option__hint {
+  font-size: 10px;
+  opacity: 0.72;
+}
+
 .select-option--empty {
   cursor: default;
   padding: 0.75rem 0.5rem;
@@ -565,6 +606,9 @@ onBeforeUnmount(() => {
 
 .select-option__label {
   display: block;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
   font-size: 13px;
   font-weight: 500;
   line-height: 1.25;
@@ -574,6 +618,9 @@ onBeforeUnmount(() => {
 .select-option__hint {
   display: block;
   margin-top: 2px;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
   font-size: 11px;
   line-height: 1.35;
   color: currentColor;

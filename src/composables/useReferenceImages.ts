@@ -5,6 +5,7 @@ import {
   maxReferenceImages,
 } from '../lib/imagesApi'
 import { createId } from '../lib/id'
+import { t } from '../lib/i18n'
 import type { ReferenceImageAttachment } from '../types'
 import type { useToast } from './useToast'
 
@@ -76,7 +77,7 @@ export function useReferenceImages(deps: { toast: Toast }) {
     if (!files.length) return
 
     if (items.value.length >= maxReferenceImages) {
-      deps.toast.info(`最多添加 ${maxReferenceImages} 张参考图`)
+      deps.toast.info(t('reference.limit', { max: maxReferenceImages }))
       return
     }
 
@@ -93,17 +94,20 @@ export function useReferenceImages(deps: { toast: Toast }) {
       const identity = `${file.name}:${file.size}:${mimeType}`
 
       if (!allowedReferenceImageMimeTypes.has(mimeType)) {
-        rejected.push(`${file.name} 格式不支持`)
+        rejected.push(t('reference.unsupported', { name: file.name }))
         continue
       }
 
       if (file.size > maxReferenceImageSizeBytes) {
-        rejected.push(`${file.name} 超过 ${Math.round(maxReferenceImageSizeBytes / 1024 / 1024)}MB`)
+        rejected.push(t('reference.tooLarge', {
+          name: file.name,
+          max: Math.round(maxReferenceImageSizeBytes / 1024 / 1024),
+        }))
         continue
       }
 
       if (existingKeys.has(identity)) {
-        rejected.push(`${file.name} 已添加过`)
+        rejected.push(t('reference.duplicate', { name: file.name }))
         continue
       }
 
@@ -113,15 +117,18 @@ export function useReferenceImages(deps: { toast: Toast }) {
 
     if (accepted.length) {
       items.value = [...items.value, ...accepted]
-      deps.toast.success(`已添加 ${accepted.length} 张参考图`)
+      deps.toast.success(t('reference.added', { count: accepted.length }))
     }
 
     if (files.length > candidates.length) {
-      rejected.push(`最多添加 ${maxReferenceImages} 张参考图`)
+      rejected.push(t('reference.limit', { max: maxReferenceImages }))
     }
 
     if (rejected.length) {
-      deps.toast.info(rejected[0], rejected.length > 1 ? `另有 ${rejected.length - 1} 项未加入` : undefined)
+      deps.toast.info(
+        rejected[0],
+        rejected.length > 1 ? t('reference.moreRejected', { count: rejected.length - 1 }) : undefined,
+      )
     }
   }
 
