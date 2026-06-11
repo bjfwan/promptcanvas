@@ -301,6 +301,8 @@ function focusInput() {
 function send() {
   if (props.isGenerating) {
     vibrate('tap')
+    closeQuickSettings()
+    closeKeyboard()
     emit('abort')
     return
   }
@@ -460,6 +462,7 @@ defineExpose({ focusInput })
       </Transition>
 
       <!-- reference images strip — placed ABOVE the input (key fix) -->
+      <!-- quick generation settings stay close to the composer without taking over the view -->
       <Transition name="dock-fade">
         <section
           v-if="quickSettingsOpen"
@@ -554,6 +557,7 @@ defineExpose({ focusInput })
         </section>
       </Transition>
 
+      <!-- reference images strip stays above the input -->
       <Transition name="dock-fade">
         <div
           v-if="hasReferenceImages"
@@ -897,6 +901,136 @@ defineExpose({ focusInput })
  * always glued to the keyboard. Horizontally scrollable.
  * ------------------------------------------------------------------ */
 
+/* ------------------------------------------------------------------
+ * Quick settings: compact generation controls near the composer.
+ * ------------------------------------------------------------------ */
+
+.chat-dock__quick-settings {
+  display: grid;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 16px;
+  border: 1px solid rgb(var(--color-line) / 0.72);
+  background: rgb(var(--color-vellum) / 0.96);
+  box-shadow: var(--shadow-glass-sm), var(--shadow-inner-glass);
+  overflow: hidden;
+}
+
+.chat-dock__quick-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 32px;
+}
+
+.chat-dock__quick-head > span {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  gap: 6px;
+  color: rgb(var(--color-muted));
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.chat-dock__quick-close {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  border: 1px solid rgb(var(--color-line) / 0.7);
+  background: rgb(var(--color-surface-raised) / 0.78);
+  color: rgb(var(--color-muted));
+  -webkit-tap-highlight-color: transparent;
+}
+
+.chat-dock__quick-close::before {
+  content: '';
+  position: absolute;
+  inset: -6px;
+}
+
+.chat-dock__quick-close:active {
+  color: rgb(var(--color-ink));
+  background: rgb(var(--color-surface-raised));
+}
+
+.chat-dock__quick-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.chat-dock__quick-field {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.chat-dock__quick-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  color: rgb(var(--color-muted));
+  font-size: 11px;
+  font-weight: 720;
+  line-height: 1.15;
+}
+
+.chat-dock__quick-field :deep(.select-trigger) {
+  height: 44px;
+  border-radius: 10px;
+  padding-inline: 10px 28px;
+  background: rgb(var(--color-surface-raised) / 0.92);
+  font-size: 12px;
+  letter-spacing: 0;
+}
+
+.chat-dock__count-stepper {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 44px;
+  align-items: center;
+  min-height: 44px;
+  overflow: hidden;
+  border: 1px solid rgb(var(--color-line) / 0.78);
+  border-radius: 10px;
+  background: rgb(var(--color-surface-raised) / 0.92);
+}
+
+.chat-dock__count-stepper button {
+  position: relative;
+  display: grid;
+  min-height: 44px;
+  place-items: center;
+  color: rgb(var(--color-muted));
+  -webkit-tap-highlight-color: transparent;
+}
+
+.chat-dock__count-stepper button:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.chat-dock__count-stepper button:active:not(:disabled) {
+  background: rgb(var(--color-surface-muted));
+  color: rgb(var(--color-ink));
+}
+
+.chat-dock__count-stepper span {
+  color: rgb(var(--color-ink));
+  font-size: 13px;
+  font-weight: 760;
+  text-align: center;
+  font-feature-settings: 'tnum';
+}
+
 .chat-dock__refs {
   position: relative;
   display: flex;
@@ -1211,7 +1345,7 @@ defineExpose({ focusInput })
 }
 
 .chat-dock__model-chip :deep(.select-trigger) {
-  height: 34px;
+  height: 38px;
   max-width: clamp(6.5rem, 32vw, 10rem);
   border-radius: 999px;
   padding: 0 26px 0 12px;
@@ -1242,7 +1376,7 @@ defineExpose({ focusInput })
   align-items: center;
   gap: 4px;
   flex-shrink: 0;
-  height: 34px;
+  height: 38px;
   padding: 0 11px;
   border-radius: 999px;
   background: rgb(var(--color-ivory) / 0.68);
@@ -1272,6 +1406,11 @@ defineExpose({ focusInput })
 
 .chat-dock__chip:active {
   transform: scale(0.96);
+}
+
+.chat-dock__chip:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring), var(--shadow-inner-glass);
 }
 
 .chat-dock__chip:disabled {
@@ -1309,6 +1448,21 @@ defineExpose({ focusInput })
 .chat-dock__chip--reference:not(:disabled):hover {
   border-color: rgb(var(--color-forest) / 0.46);
   color: rgb(var(--color-accent));
+}
+
+.chat-dock__chip--settings {
+  max-width: min(14rem, 54vw);
+  min-width: 44px;
+  color: rgb(var(--color-ink));
+}
+
+.chat-dock__chip--settings.is-open {
+  border-color: rgb(var(--color-accent) / 0.42);
+  background:
+    linear-gradient(180deg, rgb(var(--color-accent) / 0.12), rgb(var(--color-ivory) / 0.74)),
+    rgb(var(--color-ivory) / 0.76);
+  color: rgb(var(--color-accent));
+  box-shadow: var(--focus-ring), var(--shadow-inner-glass);
 }
 
 .chat-dock__reference-glyph {
@@ -1380,11 +1534,20 @@ defineExpose({ focusInput })
 }
 
 .chat-dock[data-keyboard-open="true"] .chat-dock__refs,
+.chat-dock[data-keyboard-open="true"] .chat-dock__quick-settings,
 .chat-dock[data-keyboard-open="true"] .chat-dock__custom,
 .chat-dock[data-keyboard-open="true"] .chat-dock__continuation,
 .chat-dock[data-keyboard-open="true"] .chat-dock__offline {
   border-radius: 12px;
   padding-block: 5px;
+}
+
+.chat-dock[data-keyboard-open="true"] .chat-dock__quick-grid {
+  gap: 6px;
+}
+
+.chat-dock[data-keyboard-open="true"] .chat-dock__quick-head {
+  min-height: 28px;
 }
 
 .chat-dock[data-keyboard-open="true"] .chat-dock__ref-card,
@@ -1531,7 +1694,11 @@ defineExpose({ focusInput })
 
   .chat-dock__chip {
     min-width: 38px;
-    height: 36px;
+    height: 38px;
+  }
+
+  .chat-dock__chip--settings {
+    max-width: 48vw;
   }
 
 }
@@ -1553,6 +1720,10 @@ defineExpose({ focusInput })
 
   .chat-dock__model-chip :deep(.select-trigger) {
     max-width: clamp(4.5rem, 22vw, 7rem);
+  }
+
+  .chat-dock__chip--settings .chat-dock__chip-label {
+    max-width: 5.6rem;
   }
 }
 
