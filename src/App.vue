@@ -151,14 +151,6 @@ const healthMessage = health.message
 const refreshHealth = health.refresh
 const handleProviderTestResult = health.handleTestResult
 
-const mobileRootStyle = computed(() => {
-  // We deliberately stop clamping #app to visualViewport height. iOS keyboard
-  // openings cause visualViewport.height to oscillate, and locking #app to
-  // those values causes the whole layout (and the dock with it) to jitter.
-  // Instead we let the document use 100dvh and translate only the dock when
-  // the keyboard is actually shown.
-  return undefined
-})
 const mobileDockKeyboardInset = computed(() => mobileKeyboardInset.value)
 const mobileChatBottomPadding = computed(() => {
   // ChatDock is `position: fixed`, so its height does not push ChatStream.
@@ -170,6 +162,11 @@ const mobileChatBottomPadding = computed(() => {
 const mobileJumpButtonBottom = computed(() => {
   return Math.max(18, mobileDockHeight.value + mobileKeyboardInset.value + 14)
 })
+const mobileRootStyle = computed(() => ({
+  '--mobile-dock-height': `${mobileDockHeight.value}px`,
+  '--mobile-keyboard-inset': `${mobileKeyboardInset.value}px`,
+  '--mobile-chat-bottom-padding': `${mobileChatBottomPadding.value}px`,
+}))
 
 const restoredDraft = loadDraft()
 
@@ -1480,7 +1477,7 @@ watch(sw.updateAvailable, (available) => {
 </script>
 
 <template>
-  <div class="paper-bg relative flex min-h-dvh flex-col overflow-x-hidden text-ink" :style="mobileRootStyle">
+  <div class="app-root paper-bg relative flex min-h-dvh flex-col overflow-x-hidden text-ink" :style="mobileRootStyle">
     <a
       href="#canvas"
       class="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[80] focus:rounded-md focus:bg-ink focus:px-3 focus:py-2 focus:text-paper"
@@ -1816,7 +1813,93 @@ watch(sw.updateAvailable, (available) => {
       </span>
     </footer>
 
-    <div v-if="!isDesktop" class="mobile-shell flex min-h-0 flex-1 flex-col overflow-hidden">
+    <div id="canvas" v-if="!isDesktop" class="mobile-shell flex min-h-0 flex-1 flex-col overflow-hidden">
+      <section class="mobile-generation-panel" :aria-label="t('desktop.render.settings')">
+        <details class="mobile-generation-details">
+          <summary class="mobile-generation-summary">
+            <span class="mobile-generation-summary__label">
+              <Icon name="sliders" :size="13" />
+              <span>{{ t('desktop.render.settings') }}</span>
+            </span>
+            <strong>{{ generationSettingsSummary }}</strong>
+            <Icon name="chevronDown" :size="13" />
+          </summary>
+
+          <div class="mobile-generation-body">
+            <div class="mobile-generation-grid">
+              <label class="mobile-generation-field" for="mobile-size">
+                <span>{{ t('desktop.render.size') }}</span>
+                <Select
+                  id="mobile-size"
+                  v-model="size"
+                  :options="desktopSizeOptions"
+                  :aria-label="t('desktop.render.size')"
+                  size="sm"
+                  :show-hints="false"
+                />
+              </label>
+
+              <label class="mobile-generation-field" for="mobile-format">
+                <span>{{ t('desktop.render.format') }}</span>
+                <Select
+                  id="mobile-format"
+                  v-model="outputFormat"
+                  :options="desktopFormatOptions"
+                  :aria-label="t('settings.format.label')"
+                  size="sm"
+                  :show-hints="false"
+                />
+              </label>
+
+              <label class="mobile-generation-field" for="mobile-quality">
+                <span>{{ t('desktop.render.quality') }}</span>
+                <Select
+                  id="mobile-quality"
+                  v-model="quality"
+                  :options="desktopQualityOptions"
+                  :aria-label="t('settings.quality.label')"
+                  size="sm"
+                  :show-hints="false"
+                />
+              </label>
+
+              <div class="mobile-generation-field">
+                <span>{{ t('desktop.render.count') }}</span>
+                <div class="mobile-generation-stepper" role="group" :aria-label="t('desktop.render.count')">
+                  <button type="button" :disabled="count <= 1 || isGenerating" @click="adjustGenerationCount(-1)">
+                    <Icon name="minus" :size="12" />
+                  </button>
+                  <span aria-live="polite">{{ count }}</span>
+                  <button type="button" :disabled="count >= 4 || isGenerating" @click="adjustGenerationCount(1)">
+                    <Icon name="plus" :size="12" />
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div class="mobile-generation-switches">
+              <label class="mobile-generation-toggle" :class="{ 'is-disabled': !canUseTransparentBackground }">
+                <input v-model="transparentBackground" type="checkbox" :disabled="!canUseTransparentBackground" />
+                <span>{{ t('settings.transparentBackground') }}</span>
+              </label>
+              <label class="mobile-generation-toggle" :class="{ 'is-disabled': !canUseStreamingWait }">
+                <input v-model="streamingWait" type="checkbox" :disabled="!canUseStreamingWait" />
+                <span>{{ t('settings.streamingWait') }}</span>
+              </label>
+              <label class="mobile-generation-toggle" :class="{ 'is-disabled': !canUsePartialPreview }">
+                <input v-model="partialPreview" type="checkbox" :disabled="!canUsePartialPreview" />
+                <span>{{ t('settings.stagePreview') }}</span>
+              </label>
+            </div>
+
+            <button type="button" class="mobile-generation-more" @click="settingsOpen = true">
+              <Icon name="settings" :size="13" />
+              <span>{{ t('settings.advanced.title') }}</span>
+            </button>
+          </div>
+        </details>
+      </section>
+
       <ChatStream
         ref="chatStreamRef"
         :messages="messages"
@@ -2395,6 +2478,282 @@ watch(sw.updateAvailable, (available) => {
   gap: 1rem;
 }
 
+@media (max-width: 1023px) {
+  .app-root {
+    height: 100svh;
+    height: 100dvh;
+    max-height: 100dvh;
+    overflow: hidden;
+  }
+
+  .mobile-shell {
+    width: 100%;
+    min-width: 0;
+    min-height: 0;
+    flex: 1 1 auto;
+    isolation: isolate;
+  }
+
+  .mobile-shell :deep(.chat-stream) {
+    flex: 1 1 auto;
+    min-height: 0;
+    height: 100%;
+  }
+
+  .mobile-generation-panel {
+    position: relative;
+    z-index: 3;
+    flex: 0 0 auto;
+    padding:
+      8px max(10px, env(safe-area-inset-right, 0px)) 4px
+      max(10px, env(safe-area-inset-left, 0px));
+  }
+
+  .mobile-generation-details {
+    overflow: clip;
+    border: 1px solid rgb(var(--color-line) / 0.78);
+    border-radius: 10px;
+    background: rgb(var(--color-surface) / 0.97);
+    box-shadow: var(--shadow-inner-glass), var(--shadow-glass-sm);
+  }
+
+  .mobile-generation-summary {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.55rem;
+    min-height: 40px;
+    padding: 0 0.72rem;
+    cursor: pointer;
+    color: rgb(var(--color-ink));
+    font-size: 12px;
+    font-weight: 720;
+    line-height: 1.2;
+  }
+
+  .mobile-generation-summary__label {
+    display: inline-flex;
+    align-items: center;
+    min-width: 0;
+    gap: 0.35rem;
+    white-space: nowrap;
+  }
+
+  .mobile-generation-summary strong {
+    min-width: 0;
+    overflow: hidden;
+    color: rgb(var(--color-muted));
+    font-size: 11px;
+    font-weight: 650;
+    text-align: right;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .mobile-generation-summary > svg:last-child {
+    color: rgb(var(--color-muted));
+    transition: transform 140ms var(--motion-soft);
+  }
+
+  .mobile-generation-details[open] .mobile-generation-summary > svg:last-child {
+    transform: rotate(180deg);
+  }
+
+  .mobile-generation-body {
+    display: grid;
+    gap: 0.65rem;
+    max-height: min(280px, 36svh);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    border-top: 1px solid rgb(var(--color-line) / 0.62);
+    padding: 0.65rem;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .mobile-generation-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.55rem;
+  }
+
+  .mobile-generation-field {
+    display: grid;
+    min-width: 0;
+    gap: 0.32rem;
+  }
+
+  .mobile-generation-field > span {
+    overflow: hidden;
+    color: rgb(var(--color-muted));
+    font-size: 11px;
+    font-weight: 720;
+    line-height: 1.2;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .mobile-generation-field :deep(.select-trigger) {
+    height: 36px;
+    border-radius: 8px;
+    padding-left: 0.7rem;
+    padding-right: 1.9rem;
+    font-size: 12px;
+  }
+
+  .mobile-generation-field :deep(.select-trigger__caret) {
+    right: 0.55rem;
+  }
+
+  .mobile-generation-stepper {
+    display: grid;
+    grid-template-columns: 34px minmax(0, 1fr) 34px;
+    align-items: center;
+    overflow: hidden;
+    min-height: 36px;
+    border: 1px solid rgb(var(--color-line) / 0.82);
+    border-radius: 8px;
+    background: rgb(var(--color-surface-raised) / 0.96);
+    box-shadow: var(--shadow-inner-glass);
+  }
+
+  .mobile-generation-stepper button {
+    display: grid;
+    height: 36px;
+    place-items: center;
+    color: rgb(var(--color-muted));
+  }
+
+  .mobile-generation-stepper button:disabled {
+    cursor: not-allowed;
+    opacity: 0.42;
+  }
+
+  .mobile-generation-stepper span {
+    color: rgb(var(--color-ink));
+    font-size: 12px;
+    font-weight: 760;
+    text-align: center;
+  }
+
+  .mobile-generation-switches {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+  }
+
+  .mobile-generation-toggle {
+    display: inline-flex;
+    align-items: center;
+    flex: 1 1 130px;
+    min-width: 0;
+    min-height: 34px;
+    gap: 0.45rem;
+    border-radius: 8px;
+    background: rgb(var(--color-surface-muted) / 0.72);
+    padding: 0.35rem 0.55rem;
+    color: rgb(var(--color-ink));
+    font-size: 11.5px;
+    font-weight: 680;
+    line-height: 1.2;
+  }
+
+  .mobile-generation-toggle input {
+    flex: 0 0 auto;
+    accent-color: rgb(var(--color-action));
+  }
+
+  .mobile-generation-toggle span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .mobile-generation-toggle.is-disabled {
+    opacity: 0.58;
+  }
+
+  .mobile-generation-more {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    justify-self: start;
+    gap: 0.35rem;
+    min-height: 34px;
+    border: 1px solid rgb(var(--color-line) / 0.76);
+    border-radius: 8px;
+    background: rgb(var(--color-surface-raised) / 0.96);
+    color: rgb(var(--color-ink));
+    padding: 0 0.7rem;
+    font-size: 12px;
+    font-weight: 720;
+    box-shadow: var(--shadow-inner-glass);
+  }
+}
+
+@media (max-width: 380px) {
+  .mobile-generation-panel {
+    padding-inline: max(8px, env(safe-area-inset-left, 0px)) max(8px, env(safe-area-inset-right, 0px));
+  }
+
+  .mobile-generation-summary {
+    gap: 0.42rem;
+    padding-inline: 0.6rem;
+  }
+
+  .mobile-generation-summary strong {
+    font-size: 10.5px;
+  }
+
+  .mobile-generation-body {
+    padding: 0.55rem;
+  }
+
+  .mobile-generation-grid {
+    gap: 0.45rem;
+  }
+}
+
+@media (max-width: 1023px) and (max-height: 540px) and (orientation: landscape) {
+  .mobile-generation-panel {
+    padding-top: 5px;
+  }
+
+  .mobile-generation-summary {
+    min-height: 34px;
+  }
+
+  .mobile-generation-body {
+    max-height: min(190px, 40svh);
+    padding: 0.5rem;
+  }
+
+  .mobile-generation-grid {
+    grid-template-columns: repeat(4, minmax(108px, 1fr));
+    overflow-x: auto;
+    padding-bottom: 0.1rem;
+    scrollbar-width: none;
+  }
+
+  .mobile-generation-grid::-webkit-scrollbar {
+    display: none;
+  }
+
+  .mobile-generation-switches {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .mobile-generation-switches::-webkit-scrollbar {
+    display: none;
+  }
+
+  .mobile-generation-toggle {
+    flex-basis: 142px;
+  }
+}
+
 @media (max-width: 1279px) {
   .desktop-workbench--tool {
     max-width: 1320px;
@@ -2404,7 +2763,8 @@ watch(sw.updateAvailable, (available) => {
 @media (prefers-reduced-motion: reduce) {
   .rail-icon-button,
   .rail-stepper button,
-  .rail-details summary svg {
+  .rail-details summary svg,
+  .mobile-generation-summary > svg:last-child {
     transition: none;
   }
 }

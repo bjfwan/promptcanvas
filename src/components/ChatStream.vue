@@ -132,7 +132,10 @@ defineExpose({ scrollToBottom, scrollToMessage })
     <div
       ref="scrollerRef"
       class="chat-stream__scroller"
-      :style="{ paddingBottom: `${mobileBottomPadding}px` }"
+      :style="{
+        paddingBottom: `${mobileBottomPadding}px`,
+        '--chat-stream-bottom-padding': `${mobileBottomPadding}px`,
+      }"
       role="log"
       aria-live="polite"
       :aria-label="t('stream.label')"
@@ -140,7 +143,7 @@ defineExpose({ scrollToBottom, scrollToMessage })
     >
       <div
         v-if="messages.length === 0"
-        class="flex min-h-full flex-col items-center justify-center px-5 pb-8 pt-10 text-center"
+        class="chat-stream__empty"
       >
         <div
           class="empty-studio-mark mb-5 grid h-14 w-14 place-items-center overflow-hidden rounded-[1.35rem] border border-line-strong/60 bg-vellum text-ink shadow-inner-paper"
@@ -150,36 +153,36 @@ defineExpose({ scrollToBottom, scrollToMessage })
         </div>
 
         <template v-if="!providerConfigured">
-          <p class="font-display text-[1.75rem] italic leading-tight tracking-tightish text-ink/85">{{ t('stream.empty.unconfigured.title') }}</p>
-          <p class="mt-2.5 max-w-[28ch] text-[13.5px] leading-6 text-muted">
+          <p class="chat-stream__empty-title text-ink/85">{{ t('stream.empty.unconfigured.title') }}</p>
+          <p class="chat-stream__empty-copy">
             {{ t('stream.empty.unconfigured.body') }}
           </p>
           <button
             type="button"
-            class="empty-cta mt-6 inline-flex min-h-[48px] items-center gap-2 rounded-full px-5 text-[13.5px] font-semibold text-white active:scale-[0.97]"
+            class="empty-cta chat-stream__empty-cta"
             @click="emit('open-settings')"
           >
             <Icon name="settings" :size="14" />
             <span>{{ t('stream.empty.unconfigured.cta') }}</span>
             <Icon name="arrowRight" :size="14" />
           </button>
-          <p class="mt-3 font-mono text-[10px] uppercase tracking-[0.18em] text-muted/70">
+          <p class="chat-stream__empty-meta">
             proxy · likeyou.qzz.io
           </p>
         </template>
 
         <template v-else>
-          <p class="font-display text-[1.75rem] italic leading-tight tracking-tightish">
-            <span class="gradient-text">{{ t('stream.empty.title') }}</span>
+          <p class="chat-stream__empty-title">
+            <span class="empty-title-text">{{ t('stream.empty.title') }}</span>
           </p>
-          <p class="mt-2.5 max-w-[26ch] text-[13.5px] leading-6 text-muted">
+          <p class="chat-stream__empty-copy">
             {{ t('stream.empty.body') }}
           </p>
 
         </template>
       </div>
 
-      <ol v-else class="flex flex-col gap-4 px-4 pt-4 sm:px-6">
+      <ol v-else class="chat-stream__list flex flex-col gap-4 px-4 pt-4 sm:px-6">
         <li
           v-for="(message, index) in messages"
           :key="message.id"
@@ -236,16 +239,20 @@ defineExpose({ scrollToBottom, scrollToMessage })
 .chat-stream {
   display: flex;
   flex-direction: column;
+  height: 100%;
   min-height: 0;
+  overflow: hidden;
 }
 
 .chat-stream__scroller {
   flex: 1 1 auto;
+  height: 100%;
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
   scroll-behavior: smooth;
+  scroll-padding-bottom: calc(var(--chat-stream-bottom-padding, 200px) + 1rem);
   padding-top: 0.25rem;
   scrollbar-width: thin;
   scrollbar-color: rgb(var(--color-ink) / 0.18) transparent;
@@ -258,6 +265,72 @@ defineExpose({ scrollToBottom, scrollToMessage })
 .chat-stream__scroller::-webkit-scrollbar-thumb {
   background: rgb(var(--color-ink) / 0.18);
   border-radius: 999px;
+}
+
+.chat-stream__empty {
+  display: flex;
+  min-block-size: max(220px, calc(100% - var(--chat-stream-bottom-padding, 200px)));
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(1.5rem, 7svh, 3.5rem) 1.25rem 1.5rem;
+  text-align: center;
+}
+
+.chat-stream__empty-title {
+  margin: 0;
+  color: rgb(var(--color-ink));
+  font-family: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-size: 1.62rem;
+  font-weight: 720;
+  letter-spacing: 0;
+  line-height: 1.12;
+  text-wrap: balance;
+}
+
+.empty-title-text {
+  color: rgb(var(--color-accent));
+}
+
+.chat-stream__empty-copy {
+  max-width: 30ch;
+  margin: 0.65rem 0 0;
+  color: rgb(var(--color-muted));
+  font-size: 13.5px;
+  line-height: 1.58;
+  text-wrap: pretty;
+}
+
+.chat-stream__empty-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 46px;
+  margin-top: 1.25rem;
+  border-radius: 10px;
+  padding: 0 1rem;
+  color: white;
+  font-size: 13.5px;
+  font-weight: 720;
+}
+
+.chat-stream__empty-cta:active {
+  transform: scale(0.97);
+}
+
+.chat-stream__empty-meta {
+  margin: 0.75rem 0 0;
+  color: rgb(var(--color-muted) / 0.72);
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0;
+}
+
+.chat-stream__list {
+  min-width: 0;
+  padding-bottom: 0;
 }
 
 .chat-stream__item {
@@ -393,12 +466,13 @@ defineExpose({ scrollToBottom, scrollToMessage })
 }
 
 .chat-stream__jump {
-  position: absolute;
+  position: fixed;
   right: max(14px, env(safe-area-inset-right, 0px));
+  z-index: 44;
   display: inline-grid;
   place-items: center;
-  width: 48px;
-  height: 48px;
+  width: 44px;
+  height: 44px;
   border-radius: 999px;
   border: 1px solid rgb(var(--color-line) / 0.4);
   background: rgb(var(--color-ivory) / 0.6);
@@ -422,6 +496,7 @@ defineExpose({ scrollToBottom, scrollToMessage })
 
 @media (max-width: 639px) {
   .chat-stream__scroller {
+    padding-top: 0;
     scrollbar-width: none;
   }
 
@@ -429,10 +504,82 @@ defineExpose({ scrollToBottom, scrollToMessage })
     display: none;
   }
 
+  .chat-stream__empty {
+    justify-content: center;
+    padding: clamp(1.25rem, 6svh, 2.5rem) 1rem 1.25rem;
+  }
+
+  .empty-studio-mark {
+    width: 52px;
+    height: 52px;
+    margin-bottom: 1rem;
+    border-radius: 14px;
+  }
+
+  .empty-studio-mark::after {
+    opacity: 0.42;
+  }
+
+  .chat-stream__empty-title {
+    max-width: 16ch;
+    font-size: 1.38rem;
+    line-height: 1.12;
+    letter-spacing: 0;
+  }
+
+  .chat-stream__empty-copy {
+    max-width: 30ch;
+    font-size: 13px;
+    line-height: 1.65;
+  }
+
+  .chat-stream__empty-cta {
+    width: min(100%, 240px);
+  }
+
+  .chat-stream__list {
+    gap: 0.9rem;
+    padding: 0.75rem 0.75rem 0;
+  }
+
   .chat-stream__jump {
-    width: 46px;
-    height: 46px;
+    width: 42px;
+    height: 42px;
     right: max(10px, env(safe-area-inset-right, 0px));
+  }
+}
+
+@media (max-width: 1023px) and (max-height: 540px) and (orientation: landscape) {
+  .chat-stream__empty {
+    min-block-size: max(160px, calc(100% - var(--chat-stream-bottom-padding, 180px)));
+    padding-block: 0.75rem;
+  }
+
+  .empty-studio-mark {
+    width: 44px;
+    height: 44px;
+    margin-bottom: 0.7rem;
+  }
+
+  .chat-stream__empty-title {
+    max-width: 24ch;
+    font-size: 1.2rem;
+  }
+
+  .chat-stream__empty-copy {
+    max-width: 42ch;
+    margin-top: 0.45rem;
+    font-size: 12.5px;
+    line-height: 1.45;
+  }
+
+  .chat-stream__empty-cta {
+    min-height: 38px;
+    margin-top: 0.8rem;
+  }
+
+  .chat-stream__empty-meta {
+    margin-top: 0.45rem;
   }
 }
 

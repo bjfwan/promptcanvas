@@ -200,7 +200,7 @@ function isImageReady(image: GeneratedImage, index: number) {
     :class="isUser ? 'justify-end' : 'justify-start'"
     :data-role="message.role"
   >
-    <div v-if="message.role === 'user'" class="flex max-w-[86%] flex-col items-end gap-1.5">
+    <div v-if="message.role === 'user'" class="chat-message-stack chat-message-stack--user flex max-w-[86%] flex-col items-end gap-1.5">
       <button
         v-if="message.continuedFrom"
         type="button"
@@ -225,7 +225,7 @@ function isImageReady(image: GeneratedImage, index: number) {
 
       <div
         v-if="(message.referenceImages?.length ?? 0) > 0"
-        class="grid max-w-full gap-2 self-end"
+        class="chat-reference-grid grid max-w-full gap-2 self-end"
         :class="(message.referenceImages?.length ?? 0) > 1 ? 'grid-cols-2' : 'grid-cols-1'"
       >
         <div
@@ -257,7 +257,7 @@ function isImageReady(image: GeneratedImage, index: number) {
       </div>
     </div>
 
-    <div v-else class="flex max-w-[92%] flex-col items-start gap-1.5">
+    <div v-else class="chat-message-stack chat-message-stack--assistant flex max-w-[92%] flex-col items-start gap-1.5">
       <div class="chat-meta-row chat-meta-row--assistant">
         <span
           class="grid h-5 w-5 shrink-0 place-items-center rounded-full border border-line-strong bg-vellum text-ink"
@@ -274,6 +274,7 @@ function isImageReady(image: GeneratedImage, index: number) {
         v-if="message.status === 'pending'"
         class="chat-bubble-assistant chat-bubble-assistant--pending relative w-full overflow-hidden rounded-[22px] rounded-bl-[8px]"
         :class="previewFrameClass"
+        :data-size="message.meta.size"
         role="status"
         aria-live="polite"
       >
@@ -302,7 +303,7 @@ function isImageReady(image: GeneratedImage, index: number) {
             <p class="font-medium">{{ message.errorMessage || t('chat.errorFallback') }}</p>
             <p
               v-if="message.requestId"
-              class="mt-1 font-mono text-[10px] uppercase tracking-[0.2em] text-accent/70"
+              class="chat-error-request mt-1 font-mono text-[10px] uppercase tracking-[0.2em] text-accent/70"
             >
               req {{ message.requestId.slice(0, 12) }}
             </p>
@@ -350,6 +351,7 @@ function isImageReady(image: GeneratedImage, index: number) {
               type="button"
               class="chat-image-card__surface"
               :class="previewFrameClass"
+              :data-size="message.meta.size"
               :aria-label="t('chat.imageZoom', { n: index + 1 })"
               @click="openImage(index)"
             >
@@ -410,7 +412,7 @@ function isImageReady(image: GeneratedImage, index: number) {
           </div>
         </div>
 
-        <div class="mt-3 flex flex-wrap items-center gap-1.5 px-1">
+        <div class="chat-result-actions mt-3">
           <button
             type="button"
             class="chat-action-chip"
@@ -451,7 +453,7 @@ function isImageReady(image: GeneratedImage, index: number) {
             <Icon name="upload" :size="12" />
             <span>{{ t('chat.actionImportPrompt') }}</span>
           </button>
-          <span class="ml-auto font-mono text-[10px] uppercase tracking-[0.18em] text-muted">
+          <span class="chat-result-stamp font-mono text-[10px] uppercase tracking-[0.18em] text-muted">
             <span v-if="typeof message.elapsedSeconds === 'number'">{{ message.elapsedSeconds }}s</span>
             <span v-if="message.requestId" class="ml-1.5">· {{ message.requestId.slice(0, 8) }}</span>
           </span>
@@ -502,6 +504,34 @@ function isImageReady(image: GeneratedImage, index: number) {
 .chat-bubble-assistant--pending {
   border-color: rgb(var(--color-accent) / 0.25);
   box-shadow: var(--shadow-glass), var(--shadow-glow-accent), var(--shadow-inner-glass);
+}
+
+.chat-message-stack {
+  min-width: 0;
+}
+
+.chat-result-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  padding-inline: 0.25rem;
+}
+
+.chat-result-stamp {
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.chat-bubble-assistant--error {
+  overflow-wrap: anywhere;
+}
+
+.chat-error-request {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .chat-meta-row {
@@ -1173,6 +1203,332 @@ function isImageReady(image: GeneratedImage, index: number) {
   .chat-mosaic--4 > .chat-mosaic__cell:nth-child(4) {
     grid-column: 2 / 3;
     grid-row: 2 / 3;
+  }
+}
+
+@media (max-width: 640px) {
+  .chat-bubble-row[data-role='assistant'] {
+    justify-content: stretch;
+  }
+
+  .chat-message-stack--assistant {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .chat-message-stack--user {
+    max-width: min(92%, calc(100vw - 1.5rem));
+  }
+
+  .chat-bubble-assistant {
+    border-radius: 16px;
+    border-bottom-left-radius: 6px;
+    background: rgb(var(--color-surface) / 0.96);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    box-shadow: var(--shadow-glass-sm), var(--shadow-inner-glass);
+  }
+
+  .chat-bubble-user {
+    border-radius: 18px;
+    border-bottom-right-radius: 6px;
+  }
+
+  .chat-meta-row {
+    max-width: 100%;
+    gap: 0.25rem 0.4rem;
+    padding-inline: 0.15rem;
+    font-size: 9.5px;
+    letter-spacing: 0.08em;
+  }
+
+  .chat-meta-row--assistant {
+    letter-spacing: 0.1em;
+  }
+
+  .chat-meta-row__chunk {
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .chat-meta-row__chunk + .chat-meta-row__chunk::before {
+    margin-right: 0.4rem;
+  }
+
+  .chat-reference-grid {
+    gap: 0.45rem;
+  }
+
+  .chat-reference-thumb {
+    border-radius: 12px;
+  }
+
+  .chat-reference-thumb--user {
+    max-width: min(148px, 42vw);
+  }
+
+  .chat-continuation-chip {
+    max-width: min(100%, calc(100vw - 1.5rem));
+    min-height: 44px;
+    border-radius: 12px;
+  }
+
+  .chat-continuation-chip__sub {
+    max-width: min(48vw, 180px);
+  }
+
+  .chat-bubble-assistant--pending {
+    min-height: 260px;
+    max-height: min(72dvh, 520px);
+  }
+
+  .chat-bubble-assistant--pending[data-size='1536x1024'] {
+    min-height: 236px;
+  }
+
+  .chat-bubble-assistant--pending :deep(.epulse__top) {
+    inset: 0.55rem 0.6rem auto;
+    gap: 0.5rem;
+  }
+
+  .chat-bubble-assistant--pending :deep(.epulse__tag) {
+    max-width: 52%;
+    overflow: hidden;
+    letter-spacing: 0.12em;
+    white-space: nowrap;
+  }
+
+  .chat-bubble-assistant--pending :deep(.epulse__cancel) {
+    min-height: 38px;
+    padding: 0.35rem 0.6rem;
+  }
+
+  .chat-bubble-assistant--pending :deep(.epulse__center) {
+    width: 104px;
+    min-width: 104px;
+    height: 104px;
+    min-height: 104px;
+  }
+
+  .chat-bubble-assistant--pending :deep(.epulse__stage) {
+    max-width: calc(100% - 1.5rem);
+    overflow: hidden;
+    text-align: center;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    letter-spacing: 0.12em;
+    line-height: 1.35;
+  }
+
+  .chat-bubble-assistant--pending :deep(.epulse__bottom) {
+    inset: auto 0.7rem 0.65rem;
+  }
+
+  .chat-bubble-assistant--pending :deep(.epulse__meta-row) {
+    align-items: flex-start;
+    gap: 0.45rem;
+  }
+
+  .chat-bubble-assistant--pending :deep(.epulse__prompt) {
+    max-width: min(68%, 34ch);
+    font-size: 10.5px;
+    -webkit-line-clamp: 2;
+  }
+
+  .chat-bubble-assistant--pending :deep(.epulse__remain) {
+    white-space: nowrap;
+  }
+
+  .chat-bubble-assistant--error {
+    padding: 0.8rem 0.85rem;
+    font-size: 13px;
+    line-height: 1.55;
+  }
+
+  .chat-error-request {
+    letter-spacing: 0.08em;
+  }
+
+  .chat-retry-chip,
+  .chat-action-chip,
+  .chat-image-action {
+    min-height: 44px;
+  }
+
+  .chat-retry-chip::before,
+  .chat-action-chip::before,
+  .chat-image-action::before {
+    inset: 0;
+  }
+
+  .chat-mosaic-wrap {
+    gap: 0.75rem;
+  }
+
+  .chat-mosaic--2,
+  .chat-mosaic--3,
+  .chat-mosaic--4 {
+    grid-template-columns: 1fr;
+    grid-template-rows: none;
+    aspect-ratio: auto;
+  }
+
+  .chat-mosaic--3 > .chat-mosaic__cell:nth-child(n),
+  .chat-mosaic--4 > .chat-mosaic__cell:nth-child(n) {
+    grid-column: auto;
+    grid-row: auto;
+  }
+
+  .chat-mosaic--2 > .chat-mosaic__cell,
+  .chat-mosaic--3 > .chat-mosaic__cell,
+  .chat-mosaic--4 > .chat-mosaic__cell {
+    height: auto;
+    min-height: 0;
+    aspect-ratio: auto;
+  }
+
+  .chat-mosaic--2 > .chat-mosaic__cell .chat-image-card__surface,
+  .chat-mosaic--3 > .chat-mosaic__cell .chat-image-card__surface,
+  .chat-mosaic--4 > .chat-mosaic__cell .chat-image-card__surface {
+    height: auto;
+    aspect-ratio: 1;
+  }
+
+  .chat-image-card__surface[data-size='1024x1536'] {
+    aspect-ratio: 2 / 3;
+  }
+
+  .chat-image-card__surface[data-size='1536x1024'] {
+    aspect-ratio: 3 / 2;
+  }
+
+  .chat-mosaic--2 > .chat-mosaic__cell .chat-image-card__surface[data-size='1024x1536'],
+  .chat-mosaic--3 > .chat-mosaic__cell .chat-image-card__surface[data-size='1024x1536'],
+  .chat-mosaic--4 > .chat-mosaic__cell .chat-image-card__surface[data-size='1024x1536'] {
+    aspect-ratio: 2 / 3;
+  }
+
+  .chat-mosaic--2 > .chat-mosaic__cell .chat-image-card__surface[data-size='1536x1024'],
+  .chat-mosaic--3 > .chat-mosaic__cell .chat-image-card__surface[data-size='1536x1024'],
+  .chat-mosaic--4 > .chat-mosaic__cell .chat-image-card__surface[data-size='1536x1024'] {
+    aspect-ratio: 3 / 2;
+  }
+
+  .chat-image-card__surface[data-size='1024x1024'] {
+    aspect-ratio: 1;
+  }
+
+  .chat-mosaic--3 > .chat-mosaic__cell .chat-image-card__surface img,
+  .chat-mosaic--4 > .chat-mosaic__cell .chat-image-card__surface img,
+  .chat-mosaic--2 > .chat-mosaic__cell .chat-image-card__surface img {
+    object-fit: contain;
+  }
+
+  .chat-image-card {
+    border-radius: 14px;
+    transform: none;
+  }
+
+  .chat-image-card:hover {
+    transform: none;
+    box-shadow: var(--shadow-glass-sm);
+  }
+
+  .chat-image-card__surface {
+    border-radius: 13px 13px 0 0;
+    background: rgb(var(--color-paper) / 0.34);
+  }
+
+  .chat-image-card__index {
+    top: 0.5rem;
+    left: 0.5rem;
+    opacity: 1;
+    background: rgb(var(--color-ink) / 0.66);
+  }
+
+  .chat-image-card__overlay {
+    position: static;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.45rem;
+    padding: 0.5rem;
+    border-top: 1px solid rgb(var(--color-line) / 0.62);
+    background: rgb(var(--color-surface-muted) / 0.9);
+    opacity: 1;
+    transform: none;
+    pointer-events: auto;
+  }
+
+  .chat-image-action {
+    flex: 1 1 auto;
+    height: 44px;
+    min-width: 44px;
+    padding: 0 0.75rem;
+    border-color: rgb(var(--color-line) / 0.72);
+    background: rgb(var(--color-surface-raised));
+    color: rgb(var(--color-ink));
+    box-shadow: var(--shadow-inner-glass);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  .chat-image-action--primary {
+    background: var(--gradient-primary);
+    border-color: transparent;
+    color: #fff;
+  }
+
+  .chat-image-action span,
+  .chat-action-chip span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .chat-result-actions {
+    gap: 0.45rem;
+    padding-inline: 0;
+  }
+
+  .chat-action-chip {
+    max-width: 100%;
+    padding: 0 0.75rem;
+  }
+
+  .chat-result-stamp {
+    flex-basis: 100%;
+    margin-left: 0;
+    padding-inline: 0.2rem;
+    text-align: right;
+    letter-spacing: 0.08em;
+  }
+}
+
+@media (max-width: 420px) {
+  .chat-message-stack--user {
+    max-width: 94%;
+  }
+
+  .chat-action-chip {
+    flex: 1 1 calc(50% - 0.45rem);
+    justify-content: center;
+  }
+
+  .chat-image-action--primary {
+    flex: 1 1 0;
+  }
+
+  .chat-image-action:not(.chat-image-action--primary) {
+    flex: 0 0 44px;
+    padding: 0;
+  }
+
+  .chat-bubble-assistant--pending :deep(.epulse__tag) {
+    max-width: 44%;
   }
 }
 </style>

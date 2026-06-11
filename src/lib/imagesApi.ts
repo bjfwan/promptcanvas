@@ -1189,6 +1189,24 @@ export function resolveOpenAIError(error: {
     }
   }
 
+  if (
+    status === 520
+    || status === 521
+    || status === 522
+    || status === 523
+    || status === 524
+    || upstreamCode === 'PROXY_FETCH_FAILED'
+    || upstreamMessage.includes('cloudflare')
+    || upstreamMessage.includes('web server returned an unknown error')
+    || upstreamMessage.includes('error code: 520')
+  ) {
+    return {
+      status: status ?? 502,
+      code: 'PROXY_GATEWAY_ERROR',
+      message: `代理或网关在等待上游图片生成时断开了连接${status ? `（HTTP ${status}）` : ''}。这通常不是 Key、baseUrl、CORS 或检测模式错误；当前仍按检测到的 Responses tool 模式调用。请求可能已经被中转站接收并计费，请先用 request ID 到中转站后台核对。随后可稍后重试，或关闭「实时等待进度/阶段预览」，或换用更能撑长请求的 Node 代理。`,
+    }
+  }
+
   if (status === 401 || status === 403 || upstreamCode === 'invalid_api_key') {
     return {
       status: 401,

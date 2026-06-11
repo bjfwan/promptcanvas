@@ -3,11 +3,14 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import Icon from './Icon.vue'
 import Select, { type SelectOption } from './Select.vue'
 import { maxReferenceImages } from '../lib/imagesApi'
+import { qualityOptions, sizeOptions } from '../presets'
 import { useDiscoveredModels } from '../composables/useDiscoveredModels'
 import { useVibration } from '../composables/useVibration'
 import { rafThrottle } from '../lib/rafThrottle'
 import { useI18n } from '../lib/i18n'
-import type { ContinuationContext, ReferenceImageAttachment } from '../types'
+import type { ContinuationContext, GenerateImageRequest, ImageQuality, ImageSize, ReferenceImageAttachment } from '../types'
+
+type OutputFormat = GenerateImageRequest['outputFormat']
 
 interface Props {
   isGenerating: boolean
@@ -31,6 +34,10 @@ const props = withDefaults(defineProps<Props>(), {
 const prompt = defineModel<string>('prompt', { required: true })
 const modelChoice = defineModel<string>('modelChoice', { required: true })
 defineModel<string>('customModel', { required: true })
+const size = defineModel<ImageSize>('size', { required: true })
+const count = defineModel<number>('count', { required: true })
+const outputFormat = defineModel<OutputFormat>('outputFormat', { required: true })
+const quality = defineModel<ImageQuality>('quality', { required: true })
 
 const emit = defineEmits<{
   (e: 'send'): void
@@ -46,6 +53,9 @@ const dockRef = ref<HTMLDivElement | null>(null)
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
 const referenceInputRef = ref<HTMLInputElement | null>(null)
 const focused = ref(false)
+const quickSettingsOpen = ref(false)
+const isComposing = ref(false)
+const quickSettingsPanelId = 'chat-dock-quick-settings'
 let dockResizeObserver: ResizeObserver | null = null
 let lastReportedHeight = 0
 let layoutFrame = 0
@@ -72,6 +82,44 @@ const modelSelectOptions = computed<SelectOption<string>[]>(() =>
       disabled: option.disabled,
       kind: option.kind,
     })),
+)
+
+const sizeSelectOptions = computed<SelectOption<ImageSize>[]>(() =>
+  sizeOptions.map((option) => ({
+    value: option.value,
+    label: t(`size.${option.value}.label`),
+    hint: option.value,
+  })),
+)
+
+const qualitySelectOptions = computed<SelectOption<ImageQuality>[]>(() =>
+  qualityOptions.map((option) => ({
+    value: option.value,
+    label: t(`settings.quality.${option.value}`),
+  })),
+)
+
+const formatSelectOptions = computed<SelectOption<OutputFormat>[]>(() => [
+  { value: 'png', label: 'PNG', hint: t('settings.format.pngHint') },
+  { value: 'jpeg', label: 'JPEG', hint: t('settings.format.jpegHint') },
+  { value: 'webp', label: 'WEBP', hint: t('settings.format.webpHint') },
+])
+
+function compactSizeLabel(value: ImageSize) {
+  const [width, height] = value.split('x').map((part) => Number(part))
+  const ratio = width === height ? '1:1' : width < height ? '2:3' : '3:2'
+  const tier = Math.max(width, height) >= 4096 ? '4K' : Math.max(width, height) >= 2048 ? '2K' : '1K'
+  return `${ratio} ${tier}`
+}
+
+const selectedQualityLabel = computed(() => t(`settings.quality.${quality.value}`))
+const quickSettingsSummary = computed(() =>
+  [
+    compactSizeLabel(size.value),
+    outputFormat.value.toUpperCase(),
+    selectedQualityLabel.value,
+    `${count.value}x`,
+  ].join(' / '),
 )
 
 const promptCount = computed(() => prompt.value.length)
@@ -130,6 +178,8 @@ const dockOuterStyle = computed(() => {
 
 function openReferencePicker() {
   vibrate('tap')
+  closeQuickSettings()
+  closeKeyboard()
   referenceInputRef.value?.click()
 }
 
@@ -207,7 +257,41 @@ function ensureCaretVisible() {
   el.scrollTop = el.scrollHeight
 }
 
+function closeKeyboard() {
+  textareaRef.value?.blur()
+  focused.value = false
+}
+
+function closeQuickSettings() {
+  if (!quickSettingsOpen.value) return
+  quickSettingsOpen.value = false
+  syncLayoutSoon()
+}
+
+function toggleQuickSettings() {
+  vibrate('tap')
+  quickSettingsOpen.value = !quickSettingsOpen.value
+  if (quickSettingsOpen.value) closeKeyboard()
+  nextTick(syncLayoutSoon)
+}
+
+function prepareToolbarPopover() {
+  closeQuickSettings()
+  closeKeyboard()
+}
+
+function adjustCount(delta: number) {
+  const next = Math.min(4, Math.max(1, count.value + delta))
+  if (next === count.value) {
+    vibrate('error')
+    return
+  }
+  count.value = next
+  vibrate('tap')
+}
+
 function focusInput() {
+  closeQuickSettings()
   nextTick(() => {
     textareaRef.value?.focus()
     autosize()
@@ -224,11 +308,26 @@ function send() {
     vibrate('error')
     return
   }
+  closeQuickSettings()
+  closeKeyboard()
   emit('send')
 }
 
 function onKeydown(event: KeyboardEvent) {
   if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+    event.preventDefault()
+    send()
+    return
+  }
+  if (
+    event.key === 'Enter'
+    && !event.shiftKey
+    && !event.altKey
+    && !event.metaKey
+    && !event.ctrlKey
+    && !event.isComposing
+    && !isComposing.value
+  ) {
     event.preventDefault()
     send()
   }
@@ -247,13 +346,19 @@ watch(
 
 watch(focused, (isFocused) => {
   autosize()
-  if (isFocused) ensureCaretVisible()
+  if (isFocused) {
+    closeQuickSettings()
+    ensureCaretVisible()
+  }
 })
 
 watch(() => props.referenceImages.length, syncLayoutSoon)
 watch(() => props.continuation?.fromMessageId, syncLayoutSoon)
 watch(() => props.healthOffline, syncLayoutSoon)
 watch(() => props.modelWarning, syncLayoutSoon)
+watch(quickSettingsOpen, () => {
+  syncLayoutSoon()
+})
 watch(
   () => [props.keyboardInset, props.viewportHeight] as const,
   () => {
@@ -356,6 +461,100 @@ defineExpose({ focusInput })
 
       <!-- reference images strip — placed ABOVE the input (key fix) -->
       <Transition name="dock-fade">
+        <section
+          v-if="quickSettingsOpen"
+          :id="quickSettingsPanelId"
+          class="chat-dock__quick-settings"
+          :aria-label="t('desktop.render.settings')"
+        >
+          <div class="chat-dock__quick-head">
+            <span>
+              <Icon name="sliders" :size="13" />
+              <span>{{ t('desktop.render.settings') }}</span>
+            </span>
+            <button
+              type="button"
+              class="chat-dock__quick-close"
+              :aria-label="t('settings.close')"
+              @click.stop="closeQuickSettings"
+            >
+              <Icon name="close" :size="12" />
+            </button>
+          </div>
+
+          <div class="chat-dock__quick-grid">
+            <label class="chat-dock__quick-field">
+              <span class="chat-dock__quick-label">
+                <Icon name="ratio" :size="12" />
+                <span>{{ t('settings.size') }}</span>
+              </span>
+              <Select
+                v-model="size"
+                :options="sizeSelectOptions"
+                size="sm"
+                :aria-label="t('settings.size.label')"
+                :show-hints="false"
+              />
+            </label>
+
+            <label class="chat-dock__quick-field">
+              <span class="chat-dock__quick-label">
+                <Icon name="image" :size="12" />
+                <span>{{ t('settings.format') }}</span>
+              </span>
+              <Select
+                v-model="outputFormat"
+                :options="formatSelectOptions"
+                size="sm"
+                :aria-label="t('settings.format.label')"
+                :show-hints="false"
+              />
+            </label>
+
+            <label class="chat-dock__quick-field">
+              <span class="chat-dock__quick-label">
+                <Icon name="star" :size="12" />
+                <span>{{ t('settings.quality') }}</span>
+              </span>
+              <Select
+                v-model="quality"
+                :options="qualitySelectOptions"
+                size="sm"
+                :aria-label="t('settings.quality.label')"
+                :show-hints="false"
+              />
+            </label>
+
+            <div class="chat-dock__quick-field">
+              <span class="chat-dock__quick-label">
+                <Icon name="layers" :size="12" />
+                <span>{{ t('settings.count') }}</span>
+              </span>
+              <div class="chat-dock__count-stepper" role="group" :aria-label="t('settings.count')">
+                <button
+                  type="button"
+                  :disabled="count <= 1"
+                  :aria-label="t('settings.count.decrease')"
+                  @click.stop="adjustCount(-1)"
+                >
+                  <Icon name="minus" :size="13" />
+                </button>
+                <span aria-live="polite">{{ count }}</span>
+                <button
+                  type="button"
+                  :disabled="count >= 4"
+                  :aria-label="t('settings.count.increase')"
+                  @click.stop="adjustCount(1)"
+                >
+                  <Icon name="plus" :size="13" />
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+      </Transition>
+
+      <Transition name="dock-fade">
         <div
           v-if="hasReferenceImages"
           class="chat-dock__refs"
@@ -412,6 +611,8 @@ defineExpose({ focusInput })
           @blur="focused = false"
           @input="autosize"
           @keydown="onKeydown"
+          @compositionstart="isComposing = true"
+          @compositionend="isComposing = false"
         ></textarea>
 
         <!-- inline counter / elapsed indicator (only when relevant, never blocks input) -->
@@ -458,7 +659,7 @@ defineExpose({ focusInput })
               </span>
             </button>
 
-            <div class="chat-dock__model-chip">
+            <div class="chat-dock__model-chip" @pointerdown.capture="prepareToolbarPopover">
               <Select
                 v-model="modelChoice"
                 :options="modelSelectOptions"
@@ -468,6 +669,20 @@ defineExpose({ focusInput })
                 :show-hints="true"
               />
             </div>
+
+            <button
+              type="button"
+              class="chat-dock__chip chat-dock__chip--settings"
+              :class="{ 'is-open': quickSettingsOpen }"
+              :aria-label="t('desktop.render.settings')"
+              :aria-expanded="quickSettingsOpen"
+              :aria-controls="quickSettingsPanelId"
+              :title="quickSettingsSummary"
+              @click.stop="toggleQuickSettings"
+            >
+              <Icon name="sliders" :size="15" :stroke-width="1.7" />
+              <span class="chat-dock__chip-label chat-dock__chip-current">{{ quickSettingsSummary }}</span>
+            </button>
 
           </div>
 

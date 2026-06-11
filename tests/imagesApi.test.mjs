@@ -228,6 +228,15 @@ test('error resolver classifies common relay failures for UI handling', () => {
     status: 503,
     message: 'no available upstream',
   }).code, 'UPSTREAM_UNAVAILABLE')
+
+  const gatewayError = resolveOpenAIError({
+    status: 520,
+    message: 'error code: 520',
+    model: 'gpt-image-2-chat',
+  })
+  assert.equal(gatewayError.code, 'PROXY_GATEWAY_ERROR')
+  assert.match(gatewayError.message, /代理|网关/)
+  assert.match(gatewayError.message, /Responses tool/)
 })
 
 test('priority quota errors are distinct from generic invalid key failures', () => {
