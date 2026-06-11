@@ -100,7 +100,7 @@ useBodyLock(() => props.open)
     <Transition name="sk-fade">
       <div
         v-if="open"
-        class="fixed inset-0 z-sheet flex items-end justify-center px-0 py-0 sm:items-center sm:px-4 sm:py-6"
+        class="mobile-sheet fixed inset-0 z-sheet flex items-end justify-center px-0 py-0 sm:items-center sm:px-4 sm:py-6"
         role="dialog"
         aria-modal="true"
         aria-label="键盘快捷键"
@@ -112,9 +112,9 @@ useBodyLock(() => props.open)
           <div
             v-if="open"
             ref="dialogRef"
-            class="shortcuts-shell relative flex max-h-[88dvh] w-full max-w-lg flex-col overflow-hidden text-ink sm:max-h-[78dvh]"
+            class="shortcuts-shell relative flex w-full max-w-lg flex-col overflow-hidden text-ink"
           >
-            <header class="flex items-start justify-between border-b border-line/40 px-5 py-4 sm:px-6 sm:py-5">
+            <header class="shortcuts-shell__header flex items-start justify-between border-b border-line/40 px-5 py-4 sm:px-6 sm:py-5">
               <div>
                 <p class="display-eyebrow">{{ t('shortcuts.eyebrow') }}</p>
                 <h2 class="mt-1 inline-flex items-center gap-2 font-display text-2xl tracking-tightish">
@@ -127,7 +127,7 @@ useBodyLock(() => props.open)
               </button>
             </header>
 
-            <div class="touch-scroll-y flex-1 overflow-y-auto px-5 py-5 sm:px-6">
+            <div class="shortcuts-shell__body touch-scroll-y flex-1 overflow-y-auto px-5 py-5 sm:px-6">
               <section v-for="group in groups" :key="group.title" class="shortcuts-group">
                 <h3 class="shortcuts-group__title">{{ group.title }}</h3>
                 <ul class="shortcuts-group__list">
@@ -150,7 +150,7 @@ useBodyLock(() => props.open)
               </section>
             </div>
 
-            <footer class="border-t border-line/40 bg-ivory/30 px-5 py-3 text-[11px] leading-snug text-muted backdrop-blur-sm sm:px-6">
+            <footer class="shortcuts-shell__footer border-t border-line/40 bg-ivory/30 px-5 py-3 text-[11px] leading-snug text-muted backdrop-blur-sm sm:px-6">
               <span>{{ t('shortcuts.note') }}</span>
             </footer>
           </div>
@@ -162,6 +162,7 @@ useBodyLock(() => props.open)
 
 <style scoped>
 .shortcuts-shell {
+  max-height: min(88dvh, calc(100svh - env(safe-area-inset-top, 0px) - 0.75rem));
   border: 1px solid rgb(var(--color-line) / 0.3);
   border-radius: var(--radius-card);
   background: var(--gradient-surface);
@@ -170,13 +171,41 @@ useBodyLock(() => props.open)
   box-shadow: var(--shadow-glass-xl), var(--shadow-inner-glass);
 }
 
+.shortcuts-shell__header,
+.shortcuts-shell__footer {
+  flex: 0 0 auto;
+}
+
+.shortcuts-shell__body {
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-gutter: stable;
+}
+
 @media (max-width: 639px) {
+  .mobile-sheet {
+    padding-top: max(env(safe-area-inset-top, 0px), 0.5rem);
+  }
+
   .shortcuts-shell {
+    max-height: calc(var(--mobile-viewport-height, 100dvh) - max(env(safe-area-inset-top, 0px), 0.5rem));
     border-bottom: 0;
-    border-top-left-radius: 28px;
-    border-top-right-radius: 28px;
+    border-top-left-radius: 18px;
+    border-top-right-radius: 18px;
     border-bottom-left-radius: 0;
     border-bottom-right-radius: 0;
+  }
+
+  .shortcuts-shell__header {
+    padding: 1rem 1rem 0.85rem;
+  }
+
+  .shortcuts-shell__body {
+    padding: 1rem;
+  }
+
+  .shortcuts-shell__footer {
+    padding: 0.85rem 1rem calc(env(safe-area-inset-bottom, 0px) + 0.85rem);
   }
 }
 
@@ -233,6 +262,8 @@ useBodyLock(() => props.open)
   align-items: center;
   gap: 0.25rem;
   flex-shrink: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .shortcuts-row__plus {
@@ -293,6 +324,16 @@ useBodyLock(() => props.open)
 }
 
 @media (max-width: 639px) {
+  .shortcuts-row {
+    align-items: flex-start;
+    gap: 0.65rem;
+    padding: 0.7rem 0.55rem;
+  }
+
+  .shortcuts-row__keys {
+    max-width: 46%;
+  }
+
   .sk-zoom-enter-from,
   .sk-zoom-leave-to {
     opacity: 0;

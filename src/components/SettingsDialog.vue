@@ -4,7 +4,7 @@ import Icon from './Icon.vue'
 import Select, { type SelectOption } from './Select.vue'
 import { customModelSentinel, qualityOptions } from '../presets'
 import { useProviderConfig } from '../composables/useProviderConfig'
-import { useDiscoveredModels } from '../composables/useDiscoveredModels'
+import { useDiscoveredModels, detectCapabilities } from '../composables/useDiscoveredModels'
 import { useResolutionSupport } from '../composables/useResolutionSupport'
 import { useFocusTrap } from '../composables/useFocusTrap'
 import { useBodyLock } from '../composables/useBodyLock'
@@ -50,6 +50,32 @@ const provider = useProviderConfig()
 const discoveredModels = useDiscoveredModels()
 const resolutionSupport = useResolutionSupport()
 const i18n = useI18n()
+
+// 单档状态标签：锁定 > 已解锁(真实生成) > 已检测(能力表) > 手动开启 > 关闭
+function tierLabel(tier: '2k' | '4k'): string {
+  const s = resolutionSupport.state
+  if (tier === '2k') {
+    if (s.blocked2k) return '已锁定'
+    if (s.learned2k) return '已解锁'
+    if (s.detected2k) return '已检测'
+    return s.manual2k === 'on' ? '手动开启' : '关闭'
+  }
+  if (s.blocked4k) return '已锁定'
+  if (s.learned4k) return '已解锁'
+  if (s.detected4k) return '已检测'
+  return s.manual4k === 'on' ? '手动开启' : '关闭'
+}
+
+// 其它能力维度的徽章（图生图 / 蒙版 / quality / 输出格式）
+const capabilityBadges = computed<string[]>(() => {
+  const s = resolutionSupport.state
+  const badges: string[] = []
+  if (s.supportsEdits) badges.push('图生图')
+  if (s.supportsMask) badges.push('蒙版重绘')
+  if (s.supportsQuality) badges.push('quality 分级')
+  if (s.outputFormats?.length) badges.push(s.outputFormats.join(' / ').toUpperCase())
+  return badges
+})
 const showApiKey = ref(false)
 const dialogRef = ref<HTMLElement | null>(null)
 
@@ -150,7 +176,11 @@ async function handleTestProvider() {
     if (result.models?.length) {
       discoveredModels.setModels(result.models)
     }
-    resolutionSupport.setDetected(result.resolution)
+    // 先把 reactive 状态切到当前 provider 的桶，再写入这次检测到的能力，
+    // 避免把 A 站的能力误记到 B 站。
+    resolutionSupport.selectProvider(baseUrl)
+    const capability = detectCapabilities(result.models ?? [])
+    resolutionSupport.setCapabilities(capability)
     testMessage.value = result.message
     const imageCount = discoveredModels.imageOnly.value.length
     if (!result.generationsCorsOk) {
@@ -163,15 +193,19 @@ async function handleTestProvider() {
       })
     } else {
       testStatus.value = 'success'
-      const resHint = result.resolution.supports4k
+      const resHint = capability.supports4k
         ? '检测到支持 2K/4K'
-        : result.resolution.supports2k
+        : capability.supports2k
           ? '检测到支持 2K'
-          : ''
+          : '仅检测到 1024px'
+      const capBits: string[] = []
+      if (capability.supportsEdits) capBits.push('图生图')
+      if (capability.supportsMask) capBits.push('蒙版重绘')
+      const capHint = capBits.length ? `支持 ${capBits.join('、')}` : ''
       const imageHint = imageCount > 0
         ? `已从中转站拉取 ${imageCount} 个图片模型`
         : '未识别到明显的图片模型名，可选「自定义…」手动填写'
-      testHint.value = [imageHint, resHint, '生成路径 CORS 检测正常'].filter(Boolean).join('；')
+      testHint.value = [imageHint, resHint, capHint, '生成路径 CORS 检测正常'].filter(Boolean).join('；')
       emit('test-result', { ok: true, message: result.message })
     }
   } catch (error) {
@@ -287,7 +321,7 @@ onBeforeUnmount(() => {
     <Transition name="dlg-fade">
       <div
         v-if="open"
-        class="fixed inset-0 z-sheet flex items-end justify-center px-0 py-0 sm:items-center sm:px-4 sm:py-6"
+        class="mobile-sheet fixed inset-0 z-sheet flex items-end justify-center px-0 py-0 sm:items-center sm:px-4 sm:py-6"
         role="dialog"
         aria-modal="true"
         :aria-label="i18n.t('settings.title')"
@@ -298,9 +332,9 @@ onBeforeUnmount(() => {
           <div
             ref="dialogRef"
             v-if="open"
-            class="dialog-shell relative flex max-h-[92dvh] w-full max-w-xl flex-col overflow-hidden text-ink sm:max-h-none"
+            class="dialog-shell relative flex w-full max-w-xl flex-col overflow-hidden text-ink"
           >
-            <header class="flex items-start justify-between gap-3 border-b border-line/40 px-5 py-4 sm:px-6 sm:py-5">
+            <header class="dialog-shell__header flex items-start justify-between gap-3 border-b border-line/40 px-5 py-4 sm:px-6 sm:py-5">
               <div>
                 <p class="display-eyebrow">{{ i18n.t('settings.eyebrow') }}</p>
                 <h2 class="mt-1.5 font-display text-2xl tracking-tightish gradient-text">{{ i18n.t('settings.title') }}</h2>
@@ -310,7 +344,7 @@ onBeforeUnmount(() => {
               </button>
             </header>
 
-            <div class="touch-scroll-y max-h-[calc(92dvh-8.5rem)] space-y-5 overflow-y-auto px-5 py-5 sm:max-h-[70dvh] sm:px-6">
+            <div class="dialog-shell__body touch-scroll-y space-y-5 overflow-y-auto px-5 py-5 sm:px-6">
               <section
                 class="surface-1 p-4"
                 :class="!provider.isConfigured.value && 'ring-1 ring-ochre/30'"
@@ -468,7 +502,7 @@ onBeforeUnmount(() => {
                 </div>
 
                 <p class="mb-3 text-[11px] leading-[1.6] text-muted">
-                  连接测试会自动检测中转站是否支持 2K（2048px）和 4K（4096px）尺寸。也可手动强制开启。
+                  连接测试会按模型能力表推断中转站支持的尺寸；真实生成成功后会自动永久解锁、被上游拒绝则自动锁定。也可手动强制开启。
                 </p>
 
                 <div class="space-y-2">
@@ -484,7 +518,7 @@ onBeforeUnmount(() => {
                         @change="(e) => resolutionSupport.setManual2k((e.target as HTMLInputElement).checked ? 'on' : 'auto')"
                       />
                       <span class="font-mono text-[10px] uppercase tracking-[0.16em]">
-                        {{ resolutionSupport.state.detected2k ? '已检测' : resolutionSupport.state.manual2k === 'on' ? '手动开启' : '关闭' }}
+                        {{ tierLabel('2k') }}
                       </span>
                     </label>
                   </div>
@@ -501,14 +535,24 @@ onBeforeUnmount(() => {
                         @change="(e) => resolutionSupport.setManual4k((e.target as HTMLInputElement).checked ? 'on' : 'auto')"
                       />
                       <span class="font-mono text-[10px] uppercase tracking-[0.16em]">
-                        {{ resolutionSupport.state.detected4k ? '已检测' : resolutionSupport.state.manual4k === 'on' ? '手动开启' : '关闭' }}
+                        {{ tierLabel('4k') }}
                       </span>
                     </label>
                   </div>
                 </div>
 
+                <div v-if="capabilityBadges.length" class="mt-3 flex flex-wrap gap-1.5">
+                  <span
+                    v-for="badge in capabilityBadges"
+                    :key="badge"
+                    class="rounded-full border border-line/50 bg-ivory/60 px-2 py-0.5 font-mono text-[10px] tracking-[0.08em] text-muted"
+                  >
+                    {{ badge }}
+                  </span>
+                </div>
+
                 <p class="mt-2 text-[10px] text-muted">
-                  若手动开启但中转站实际不支持，生成会被上游拒绝（4xx 错误）
+                  能力表是启发式推断；以「已检测」标注。真实生成的结果（已解锁 / 已锁定）始终优先。手动开启后若上游实际不支持，生成会被拒绝（4xx）。
                 </p>
               </section>
 
@@ -913,7 +957,7 @@ onBeforeUnmount(() => {
             </div>
 
             <footer
-              class="flex flex-col-reverse items-stretch gap-2 border-t border-line/40 bg-ivory/30 px-5 py-4 backdrop-blur-sm sm:flex-row sm:items-center sm:justify-between sm:px-6"
+              class="dialog-shell__footer flex flex-col-reverse items-stretch gap-2 border-t border-line/40 bg-ivory/30 px-5 py-4 backdrop-blur-sm sm:flex-row sm:items-center sm:justify-between sm:px-6"
             >
               <button
                 type="button"
@@ -941,21 +985,95 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .dialog-shell {
-  border: 1px solid rgb(var(--color-line) / 0.3);
+  max-height: min(92dvh, calc(100svh - env(safe-area-inset-top, 0px) - 0.75rem));
+  border: 1px solid rgb(var(--color-line) / 0.82);
   border-radius: var(--radius-card);
-  background: var(--gradient-surface);
-  backdrop-filter: blur(calc(var(--glass-blur) * 1.4)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 1.4)) saturate(var(--glass-saturate));
-  box-shadow: var(--shadow-glass-xl), var(--shadow-inner-glass);
+  background: rgb(var(--color-surface) / 0.98);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: var(--shadow-glass-lg), var(--shadow-inner-glass);
+}
+
+.dialog-shell__header,
+.dialog-shell__footer {
+  flex: 0 0 auto;
+}
+
+.dialog-shell__body {
+  max-height: calc(min(92dvh, 100svh) - 9rem);
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-gutter: stable;
 }
 
 @media (max-width: 639px) {
+  .mobile-sheet {
+    padding-top: max(env(safe-area-inset-top, 0px), 0.5rem);
+  }
+
   .dialog-shell {
+    max-height: calc(var(--mobile-viewport-height, 100dvh) - max(env(safe-area-inset-top, 0px), 0.5rem));
     border-bottom: 0;
-    border-top-left-radius: 28px;
-    border-top-right-radius: 28px;
+    border-top-left-radius: 16px;
+    border-top-right-radius: 16px;
     border-bottom-left-radius: 0;
     border-bottom-right-radius: 0;
+  }
+
+  .dialog-shell__header {
+    padding: 1rem 1rem 0.85rem;
+  }
+
+  .dialog-shell__body {
+    max-height: none;
+    flex: 1 1 auto;
+    padding: 1rem;
+  }
+
+  .dialog-shell__footer {
+    padding: 0.85rem 1rem calc(env(safe-area-inset-bottom, 0px) + 0.85rem);
+  }
+
+  .dialog-shell__footer .btn-quiet,
+  .dialog-shell__footer .btn-secondary {
+    min-height: 44px;
+    justify-content: center;
+  }
+
+  .rewrite-segmented {
+    grid-template-columns: 1fr;
+  }
+
+  .rewrite-seg {
+    min-height: 52px;
+  }
+
+  .learned-row {
+    grid-template-columns: 1fr;
+    gap: 0.35rem;
+  }
+
+  .settings-range {
+    height: 40px;
+  }
+
+  .settings-range::-webkit-slider-runnable-track {
+    height: 6px;
+  }
+
+  .settings-range::-webkit-slider-thumb {
+    width: 26px;
+    height: 26px;
+    margin-top: -10px;
+  }
+
+  .settings-range::-moz-range-track {
+    height: 6px;
+  }
+
+  .settings-range::-moz-range-thumb {
+    width: 26px;
+    height: 26px;
   }
 }
 
@@ -964,11 +1082,11 @@ onBeforeUnmount(() => {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
   padding: 4px;
-  border-radius: 14px;
-  background: rgb(var(--color-ivory) / 0.4);
-  border: 1px solid rgb(var(--color-line) / 0.4);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  border-radius: var(--radius-panel);
+  background: rgb(var(--color-surface-muted) / 0.92);
+  border: 1px solid rgb(var(--color-line) / 0.75);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   box-shadow: var(--shadow-inner-glass);
 }
 
@@ -986,11 +1104,21 @@ onBeforeUnmount(() => {
   transition:
     background-color 200ms var(--motion-soft),
     color 200ms var(--motion-soft),
-    box-shadow 200ms var(--motion-soft);
+    box-shadow 200ms var(--motion-soft),
+    transform 160ms var(--motion-press);
 }
 
 .rewrite-seg:hover {
   color: rgb(var(--color-ink));
+}
+
+.rewrite-seg:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.rewrite-seg:active {
+  transform: translateY(1px);
 }
 
 .rewrite-seg.is-active {

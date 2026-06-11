@@ -1,17 +1,13 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, nextTick, ref, watch } from 'vue'
 import Icon from './Icon.vue'
-import StyleSwatch from './StyleSwatch.vue'
 import Select, { type SelectOption } from './Select.vue'
 import PromptInsightChips from './PromptInsightChips.vue'
 import AiRewriteRibbon from './AiRewriteRibbon.vue'
 import { useInlineRewrite } from '../composables/useInlineRewrite'
-import { REWRITE_MODEL_LIST, REWRITE_MODELS, type RewriteModelId } from '../lib/rewriteService'
 import { maxReferenceImages } from '../lib/imagesApi'
-import { customModelSentinel, qualityOptions, sizeOptions, styleOptions } from '../presets'
-import { stylePrompts } from '../lib/imagesApi'
+import { customModelSentinel } from '../presets'
 import { useDiscoveredModels } from '../composables/useDiscoveredModels'
-import { useResolutionSupport } from '../composables/useResolutionSupport'
 import type { ContinuationContext, ImageQuality, ImageSize, ImageStyle, ReferenceImageAttachment } from '../types'
 import type { EnhanceResult } from '../lib/magicEnhance'
 import { inferEnhanceIntent } from '../lib/magicEnhance'
@@ -22,42 +18,6 @@ import { reverseParseRevisedPrompt, docToPlainPrompt } from '../lib/revisedParse
 const PromptTreeline = defineAsyncComponent(() => import('./PromptTreeline.vue'))
 
 const MagicEnhanceMenu = defineAsyncComponent(() => import('./MagicEnhanceMenu.vue'))
-
-const resolutionSupport = useResolutionSupport()
-
-const sizeSelectOptions = computed<SelectOption<ImageSize>[]>(() =>
-  sizeOptions.map((option) => {
-    const unlocked = resolutionSupport.isTierUnlocked(option.tier)
-    return {
-      value: option.value,
-      label: option.label,
-      hint: unlocked ? option.hint : '需在设置中开启',
-      disabled: !unlocked,
-    }
-  }),
-)
-
-const countSelectOptions: SelectOption<number>[] = [
-  { value: 1, label: '1 张', hint: '单张专注' },
-  { value: 2, label: '2 张', hint: '快速对比' },
-  { value: 3, label: '3 张', hint: '一组方案' },
-  { value: 4, label: '4 张', hint: '广泛探索' },
-]
-
-const qualityHints: Record<ImageQuality, string> = {
-  auto: '模型自选',
-  low: '最快最省',
-  medium: '速度/画质平衡',
-  high: '最清晰最贵',
-}
-
-const qualitySelectOptions = computed<SelectOption<ImageQuality>[]>(() =>
-  qualityOptions.map((option) => ({
-    value: option.value,
-    label: option.label,
-    hint: qualityHints[option.value],
-  })),
-)
 
 const discoveredModels = useDiscoveredModels()
 
@@ -75,7 +35,7 @@ interface Props {
   canGenerate: boolean
   healthOffline: boolean
   referenceImages: ReferenceImageAttachment[]
-  layout?: 'panel' | 'sheet'
+  layout?: 'panel' | 'sheet' | 'draft'
   continuation?: ContinuationContext | null
   canUndoEnhance?: boolean
   modelName?: string
@@ -128,13 +88,10 @@ const emit = defineEmits<{
 
 const promptRef = ref<HTMLTextAreaElement | null>(null)
 const referenceInputRef = ref<HTMLInputElement | null>(null)
-const previewOpen = ref(false)
 const dragActive = ref(false)
 const magicMenuOpen = ref(false)
 let dragDepth = 0
 
-const activeStylePrompt = computed(() => stylePrompts[imageStyle.value] ?? '')
-const isRawStyle = computed(() => imageStyle.value === 'raw')
 const hasReferenceImages = computed(() => props.referenceImages.length > 0)
 const canAddReferenceImages = computed(() => props.referenceImages.length < maxReferenceImages)
 
@@ -361,8 +318,11 @@ watch(prompt, () => {
 
 <template>
   <form
-    class="relative flex flex-col gap-7"
-    :class="{ 'pb-2': layout === 'sheet' }"
+    class="prompt-composer relative flex flex-col gap-7"
+    :class="{
+      'pb-2': layout === 'sheet',
+      'prompt-composer--draft': layout === 'draft',
+    }"
     @submit.prevent="emit('generate')"
     @dragenter="handleDragEnter"
     @dragover="handleDragOver"
@@ -394,7 +354,7 @@ watch(prompt, () => {
     </header>
 
     <div
-      v-if="healthOffline"
+      v-if="healthOffline && layout !== 'draft'"
       class="composer-alert flex items-start gap-3 px-4 py-3 text-[13px] leading-6 text-accent"
       role="alert"
     >
@@ -454,7 +414,7 @@ watch(prompt, () => {
           id="prompt-input"
           ref="promptRef"
           v-model="prompt"
-          :rows="layout === 'sheet' ? 5 : 6"
+          :rows="layout === 'draft' ? 4 : layout === 'sheet' ? 5 : 6"
           class="prompt-field-textarea"
           :placeholder="promptPlaceholder"
           :readonly="inlineRewrite.isStreaming.value"
@@ -479,15 +439,6 @@ watch(prompt, () => {
             />
           </span>
           <span class="prompt-action-strip" aria-label="提示词操作">
-            <button
-              type="button"
-              class="prompt-tool-btn"
-              :disabled="props.referenceImages.length >= maxReferenceImages"
-              @click.stop="openReferencePicker"
-            >
-              <Icon :name="hasReferenceImages ? 'image' : 'upload'" :size="12" />
-              <span>{{ hasReferenceImages ? `参考 ${props.referenceImages.length}` : '参考图' }}</span>
-            </button>
             <button
               v-if="prompt.length"
               type="button"
@@ -577,7 +528,7 @@ watch(prompt, () => {
         @dismiss="dismissAiRibbon"
       />
       <div
-        v-if="hasReferenceImages"
+        v-if="hasReferenceImages && layout !== 'draft'"
         class="surface-1 reveal p-3"
       >
         <div class="mb-2 flex items-center justify-between gap-2">
@@ -585,15 +536,6 @@ watch(prompt, () => {
             <Icon name="image" :size="10" />
             <span>参考图 {{ props.referenceImages.length }} / {{ maxReferenceImages }}</span>
           </p>
-          <button
-            type="button"
-            class="btn-quiet"
-            :disabled="props.referenceImages.length >= maxReferenceImages"
-            @click="openReferencePicker"
-          >
-            <Icon name="upload" :size="11" />
-            <span>继续添加</span>
-          </button>
         </div>
 
         <div class="flex flex-wrap gap-2">
@@ -623,7 +565,7 @@ watch(prompt, () => {
           </div>
         </div>
       </div>
-      <div class="flex items-center justify-between text-[11px]">
+      <div v-if="layout !== 'draft'" class="flex items-center justify-between text-[11px]">
         <p class="flex items-center gap-2">
           <span class="font-mono uppercase tracking-[0.2em]" :class="promptTone.tone">{{ promptTone.label }}</span>
           <span class="font-mono text-muted/70">~{{ promptTokens }} tokens</span>
@@ -644,11 +586,12 @@ watch(prompt, () => {
       />
 
       <PromptInsightChips
+        v-if="layout !== 'draft'"
         :prompt="prompt"
         @pick="magicMenuOpen = true"
       />
 
-      <p class="text-[10px] leading-snug text-muted">
+      <p v-if="layout !== 'draft'" class="text-[10px] leading-snug text-muted">
         需要负面提示词、Seed 等高级参数？
         <button
           type="button"
@@ -661,121 +604,8 @@ watch(prompt, () => {
       </p>
     </section>
 
-    <section class="space-y-3">
-      <div class="flex items-center justify-between">
-        <label class="label inline-flex items-center gap-1.5">
-          <Icon name="swatch" :size="12" />
-          <span>提示词模板</span>
-        </label>
-        <span class="font-mono text-[10px] uppercase tracking-[0.18em] text-muted">{{ styleOptions.length }} 预设</span>
-      </div>
-      <div class="style-grid">
-        <button
-          v-for="item in styleOptions"
-          :key="item.value"
-          type="button"
-          class="style-card"
-          :class="{ 'style-card--active': imageStyle === item.value }"
-          :aria-pressed="imageStyle === item.value"
-          @click="imageStyle = item.value"
-        >
-          <span class="style-card__rail" aria-hidden="true"></span>
-          <StyleSwatch :variant="item.value" :active="imageStyle === item.value" :size="40" />
-          <span class="style-card__body">
-            <span class="style-card__top">
-              <span class="style-card__title">{{ item.label }}</span>
-              <Icon v-if="imageStyle === item.value" name="check" :size="12" />
-            </span>
-            <span class="style-card__accent">{{ item.accent }}</span>
-            <span class="style-card__desc">{{ item.description }}</span>
-          </span>
-        </button>
-      </div>
-
-      <button
-        type="button"
-        class="surface-1 flex w-full items-center justify-between px-3.5 py-2.5 text-left text-[12px] transition-all duration-200 hover:-translate-y-px hover:shadow-[var(--shadow-glass-sm)]"
-        :aria-expanded="previewOpen"
-        @click="previewOpen = !previewOpen"
-      >
-        <span class="flex items-center gap-2">
-          <Icon name="info" :size="12" class="text-muted" />
-          <span class="text-ink">
-            <span v-if="isRawStyle">已选 「不套模板」：原样发送</span>
-            <span v-else>生图时会拼接的「风格指引」</span>
-          </span>
-        </span>
-        <Icon
-          name="chevronDown"
-          :size="12"
-          class="text-muted transition"
-          :class="previewOpen ? 'rotate-180' : ''"
-        />
-      </button>
-      <Transition name="acc">
-        <div
-          v-if="previewOpen"
-          class="surface-1 p-3.5 text-[12px] leading-[1.7]"
-        >
-          <p v-if="isRawStyle" class="flex items-center gap-2 text-forest">
-            <Icon name="check" :size="12" />
-            <span>不附加任何风格指引。你输入什么就发什么。</span>
-          </p>
-          <template v-else>
-            <p class="mb-2 inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.18em] text-muted">
-              <Icon name="sparkle" :size="10" />
-              <span>被并到提示词后的原文</span>
-            </p>
-            <p class="whitespace-pre-wrap break-words text-ink/85">{{ activeStylePrompt }}</p>
-            <p class="mt-2 text-[10px] leading-snug text-muted">
-              不满意？选「不套模板」跳过这一段，或直接在上方提示词里写你自己的镜头/光位/材质。
-            </p>
-          </template>
-        </div>
-      </Transition>
-    </section>
-
-    <section class="grid gap-4 sm:grid-cols-3">
-      <div>
-        <label class="label mb-2 inline-flex items-center gap-1.5" for="comp-size">
-          <Icon name="ratio" :size="12" />
-          <span>尺寸</span>
-        </label>
-        <Select
-          id="comp-size"
-          v-model="size"
-          :options="sizeSelectOptions"
-          aria-label="选择图片尺寸"
-        />
-      </div>
-      <div>
-        <label class="label mb-2 inline-flex items-center gap-1.5" for="comp-quality">
-          <Icon name="star" :size="12" />
-          <span>画质</span>
-        </label>
-        <Select
-          id="comp-quality"
-          v-model="quality"
-          :options="qualitySelectOptions"
-          aria-label="选择图片画质"
-        />
-      </div>
-      <div>
-        <label class="label mb-2 inline-flex items-center gap-1.5" for="comp-count">
-          <Icon name="layers" :size="12" />
-          <span>数量</span>
-        </label>
-        <Select
-          id="comp-count"
-          v-model="count"
-          :options="countSelectOptions"
-          aria-label="选择生成数量"
-        />
-      </div>
-    </section>
-
     <div
-      v-if="layout === 'panel'"
+      v-if="layout !== 'sheet'"
       class="composer-cta sticky bottom-0 z-[5]"
       data-tour="composer-cta"
     >
@@ -873,6 +703,83 @@ watch(prompt, () => {
   inset: -28px 0 100% 0;
   pointer-events: none;
   background: linear-gradient(180deg, rgb(var(--color-ivory) / 0) 0%, rgb(var(--color-vellum) / 0.6) 100%);
+}
+
+.prompt-composer--draft {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(150px, 210px);
+  align-items: end;
+  gap: 0.65rem;
+}
+
+.prompt-composer--draft > section {
+  min-width: 0;
+}
+
+.prompt-composer--draft .prompt-field-shell {
+  border-radius: var(--radius-panel);
+  background: rgb(var(--color-surface-raised) / 0.94);
+  box-shadow: var(--shadow-inner-glass);
+}
+
+.prompt-composer--draft .prompt-field-textarea {
+  min-height: 70px;
+  height: 70px;
+  padding-block: 0.72rem 0.58rem;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.prompt-composer--draft .prompt-field-tools {
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+  padding: 0.48rem 0.55rem;
+  background: rgb(var(--color-surface-muted) / 0.6);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.prompt-composer--draft .prompt-tool-btn {
+  min-height: 28px;
+  box-shadow: none;
+}
+
+.prompt-composer--draft .prompt-action-strip {
+  flex-wrap: nowrap;
+  gap: 0.35rem;
+}
+
+.prompt-composer--draft .prompt-model-chip > span {
+  display: none;
+}
+
+.prompt-composer--draft .composer-cta {
+  position: static;
+  margin-inline: 0;
+  padding: 0;
+  border-top: 0;
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.prompt-composer--draft .composer-cta::before {
+  display: none;
+}
+
+.prompt-composer--draft .composer-cta .btn-primary {
+  min-height: 86px;
+  height: 100%;
+  padding-block: 0.74rem;
+}
+
+@media (max-width: 1180px) {
+  .prompt-composer--draft {
+    grid-template-columns: 1fr;
+  }
+
+  .prompt-composer--draft .composer-cta .btn-primary {
+    min-height: 44px;
+  }
 }
 
 @supports (-webkit-backdrop-filter: blur(1px)) {
@@ -980,6 +887,17 @@ watch(prompt, () => {
   cursor: not-allowed;
 }
 
+.prompt-tool-btn--reference {
+  border-style: dashed;
+  background: rgb(var(--color-ivory) / 0.28);
+  color: rgb(var(--color-muted));
+  font-weight: 620;
+}
+
+.prompt-tool-btn--reference:hover:not(:disabled) {
+  color: rgb(var(--color-ink));
+}
+
 .prompt-tool-btn--accent {
   border-color: rgb(var(--color-forest) / 0.36);
   background: rgb(var(--color-forest) / 0.12);
@@ -1063,139 +981,6 @@ watch(prompt, () => {
 
 .prompt-tool-btn--icon span {
   display: none;
-}
-
-.style-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.55rem;
-}
-
-.style-card {
-  position: relative;
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: center;
-  gap: 0.65rem;
-  min-height: 82px;
-  overflow: hidden;
-  border-radius: var(--radius-card);
-  border: 1px solid rgb(var(--color-line) / 0.45);
-  background: rgb(var(--color-ivory) / 0.45);
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  padding: 0.62rem 0.7rem 0.62rem 0.82rem;
-  color: rgb(var(--color-ink));
-  text-align: left;
-  box-shadow: var(--shadow-inner-glass);
-  transition: transform 170ms var(--motion-press), border-color 170ms var(--motion-soft), background-color 170ms var(--motion-soft), box-shadow 190ms var(--motion-soft), color 170ms var(--motion-soft);
-}
-
-.style-card:hover {
-  transform: translateY(-1px);
-  border-color: rgb(var(--color-line-strong) / 0.7);
-  background: rgb(var(--color-ivory) / 0.65);
-  box-shadow: var(--shadow-glass-sm), var(--shadow-inner-glass);
-}
-
-.style-card--active {
-  border-color: transparent;
-  background: var(--gradient-primary);
-  color: #fff;
-  box-shadow: var(--shadow-glass), var(--shadow-glow-accent);
-}
-
-.style-card__rail {
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 3px;
-  background: rgb(var(--color-forest));
-  opacity: 0.72;
-}
-
-.style-card:nth-child(2n) .style-card__rail {
-  background: rgb(var(--color-accent));
-}
-
-.style-card:nth-child(3n) .style-card__rail {
-  background: rgb(var(--color-ochre));
-}
-
-.style-card:nth-child(4n) .style-card__rail {
-  background: rgb(var(--color-blueprint));
-}
-
-.style-card--active .style-card__rail {
-  width: 4px;
-  background: rgb(var(--color-ochre));
-  opacity: 1;
-}
-
-.style-card__body {
-  display: grid;
-  min-width: 0;
-  gap: 0.16rem;
-}
-
-.style-card__top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  min-width: 0;
-  gap: 0.35rem;
-}
-
-.style-card__title {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 13px;
-  font-weight: 720;
-  line-height: 1.15;
-}
-
-.style-card__accent {
-  font-family: 'JetBrains Mono', ui-monospace, monospace;
-  font-size: 9px;
-  font-weight: 620;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: rgb(var(--color-muted));
-}
-
-.style-card--active .style-card__accent {
-  color: rgb(255 255 255 / 0.66);
-}
-
-.style-card__desc {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 11px;
-  line-height: 1.35;
-  color: rgb(var(--color-muted));
-}
-
-.style-card--active .style-card__desc {
-  color: rgb(255 255 255 / 0.78);
-}
-
-.acc-enter-from,
-.acc-leave-to {
-  opacity: 0;
-  transform: translateY(-4px);
-  max-height: 0;
-}
-.acc-enter-to,
-.acc-leave-from {
-  opacity: 1;
-  transform: translateY(0);
-  max-height: 1000px;
-}
-.acc-enter-active,
-.acc-leave-active {
-  transition: opacity 0.24s ease-out, transform 0.24s ease-out, max-height 0.32s cubic-bezier(0.2, 0.8, 0.2, 1);
-  overflow: hidden;
 }
 
 .composer-continuation {
@@ -1315,4 +1100,47 @@ watch(prompt, () => {
 }
 
 .composer-continuation-enter-active,
-.compos
+.composer-continuation-leave-active {
+  transition: opacity 0.22s ease, transform 0.22s ease, max-height 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
+  overflow: hidden;
+}
+
+.btn-primary--busy {
+  background: linear-gradient(135deg, rgb(var(--color-ink)), rgb(var(--color-ink) / 0.88));
+  cursor: pointer;
+}
+
+.btn-primary--busy:hover {
+  background: linear-gradient(135deg, rgb(var(--color-accent)), rgb(var(--color-accent) / 0.88));
+}
+
+.composer-alert {
+  border-radius: var(--radius-panel);
+  border: 1px solid rgb(var(--color-clay) / 0.4);
+  background:
+    linear-gradient(135deg, rgb(var(--color-clay) / 0.12), rgb(var(--color-accent) / 0.08)),
+    rgb(var(--color-ivory) / 0.4);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  box-shadow: var(--shadow-inner-glass);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .prompt-tool-btn,
+  .composer-continuation-enter-active,
+  .composer-continuation-leave-active,
+  .composer-continuation__cancel {
+    transition: none;
+  }
+}
+
+@media (max-width: 720px) {
+  .prompt-field-tools {
+    grid-template-columns: 1fr;
+  }
+
+  .prompt-action-strip {
+    justify-content: flex-start;
+  }
+}
+</style>

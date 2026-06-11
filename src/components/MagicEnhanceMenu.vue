@@ -797,9 +797,9 @@ useFocusTrap(() => true, dialogRef)
   display: grid;
   place-items: start center;
   padding: calc(env(safe-area-inset-top, 0px) + 4.75rem) 1rem 1rem;
-  background: rgb(var(--color-shadow) / 0.28);
-  backdrop-filter: blur(12px) saturate(1.2);
-  -webkit-backdrop-filter: blur(12px) saturate(1.2);
+  background: rgb(var(--color-paper) / 0.82);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 .magic-layer--compact {
@@ -814,17 +814,13 @@ useFocusTrap(() => true, dialogRef)
   overscroll-behavior: contain;
   padding: 0.85rem;
   border-radius: var(--radius-card);
-  border: 1px solid rgb(var(--color-line) / 0.4);
-  background:
-    var(--gradient-surface),
-    radial-gradient(circle at 16% 0%, rgb(var(--color-accent) / 0.14), transparent 38%),
-    radial-gradient(circle at 92% 14%, rgb(var(--color-blueprint) / 0.12), transparent 34%),
-    radial-gradient(circle at 78% 96%, rgb(var(--color-forest) / 0.1), transparent 36%);
-  backdrop-filter: blur(calc(var(--glass-blur) * 1.4)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 1.4)) saturate(var(--glass-saturate));
+  border: 1px solid rgb(var(--color-line) / 0.82);
+  background: rgb(var(--color-surface) / 0.98);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   color: rgb(var(--color-ink));
   box-shadow:
-    var(--shadow-glass-xl),
+    var(--shadow-glass-lg),
     var(--shadow-inner-glass);
   scrollbar-width: thin;
   scrollbar-color: rgb(var(--color-line-strong) / 0.55) transparent;
@@ -889,10 +885,10 @@ useFocusTrap(() => true, dialogRef)
   gap: 0.65rem;
   margin: -0.85rem -0.85rem 0;
   padding: 0.85rem;
-  border-bottom: 1px solid rgb(var(--color-line) / 0.4);
-  background: rgb(var(--color-ivory) / 0.72);
-  backdrop-filter: blur(calc(var(--glass-blur) * 1.4)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 1.4)) saturate(var(--glass-saturate));
+  border-bottom: 1px solid rgb(var(--color-line) / 0.72);
+  background: rgb(var(--color-surface) / 0.98);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 .magic-menu__brand {
@@ -943,11 +939,11 @@ useFocusTrap(() => true, dialogRef)
   width: 50px;
   height: 50px;
   flex-shrink: 0;
-  border-radius: 16px;
-  border: 1px solid rgb(var(--color-line) / 0.5);
-  background: rgb(var(--color-ivory) / 0.5);
-  backdrop-filter: blur(12px) saturate(1.4);
-  -webkit-backdrop-filter: blur(12px) saturate(1.4);
+  border-radius: var(--radius-panel);
+  border: 1px solid rgb(var(--color-line) / 0.72);
+  background: rgb(var(--color-surface-raised) / 0.92);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   box-shadow: var(--shadow-inner-glass);
 }
 
@@ -989,10 +985,10 @@ useFocusTrap(() => true, dialogRef)
   width: 38px;
   height: 38px;
   border-radius: 999px;
-  border: 1px solid rgb(var(--color-line) / 0.4);
-  background: rgb(var(--color-ivory) / 0.45);
-  backdrop-filter: blur(12px) saturate(1.4);
-  -webkit-backdrop-filter: blur(12px) saturate(1.4);
+  border: 1px solid rgb(var(--color-line) / 0.72);
+  background: rgb(var(--color-surface) / 0.96);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   box-shadow: var(--shadow-inner-glass);
   color: rgb(var(--color-muted));
   cursor: pointer;
@@ -1000,7 +996,7 @@ useFocusTrap(() => true, dialogRef)
 }
 
 .magic-menu__close:hover {
-  background: rgb(var(--color-ivory) / 0.65);
+  background: rgb(var(--color-surface-raised) / 1);
   color: rgb(var(--color-ink));
   box-shadow: var(--shadow-glass-sm);
 }
@@ -1029,10 +1025,10 @@ useFocusTrap(() => true, dialogRef)
   justify-content: space-between;
   gap: 0.75rem;
   border-radius: var(--radius-card);
-  border: 1px solid rgb(var(--color-line) / 0.4);
-  background: rgb(var(--color-ivory) / 0.4);
-  backdrop-filter: blur(12px) saturate(1.4);
-  -webkit-backdrop-filter: blur(12px) saturate(1.4);
+  border: 1px solid rgb(var(--color-line) / 0.72);
+  background: rgb(var(--color-surface-raised) / 0.86);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   box-shadow: var(--shadow-inner-glass);
   padding: 0.7rem 0.75rem;
 }
@@ -1235,10 +1231,10 @@ useFocusTrap(() => true, dialogRef)
 .magic-menu__seg-btn,
 .magic-menu__dim-chip,
 .magic-menu__variant {
-  border: 1px solid rgb(var(--color-line) / 0.45);
-  background: rgb(var(--color-ivory) / 0.45);
-  backdrop-filter: blur(12px) saturate(1.4);
-  -webkit-backdrop-filter: blur(12px) saturate(1.4);
+  border: 1px solid rgb(var(--color-line) / 0.72);
+  background: rgb(var(--color-surface-raised) / 0.88);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   box-shadow: var(--shadow-inner-glass);
   color: rgb(var(--color-ink));
   cursor: pointer;
@@ -1292,7 +1288,7 @@ useFocusTrap(() => true, dialogRef)
 .magic-menu__dim-chip:hover,
 .magic-menu__variant:hover {
   border-color: rgb(var(--color-line-strong) / 0.7);
-  background: rgb(var(--color-ivory) / 0.7);
+  background: rgb(var(--color-surface-raised) / 1);
   transform: translateY(-1px);
   box-shadow: var(--shadow-glass-sm);
 }
@@ -1318,10 +1314,10 @@ useFocusTrap(() => true, dialogRef)
 .magic-menu__metric {
   min-width: 0;
   border-radius: var(--radius-panel);
-  border: 1px solid rgb(var(--color-line) / 0.4);
-  background: rgb(var(--color-ivory) / 0.4);
-  backdrop-filter: blur(10px) saturate(1.4);
-  -webkit-backdrop-filter: blur(10px) saturate(1.4);
+  border: 1px solid rgb(var(--color-line) / 0.72);
+  background: rgb(var(--color-surface-raised) / 0.86);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   box-shadow: var(--shadow-inner-glass);
   padding: 0.55rem;
 }
@@ -1436,10 +1432,10 @@ useFocusTrap(() => true, dialogRef)
   max-height: 190px;
   overflow: auto;
   border-radius: var(--radius-card);
-  border: 1px solid rgb(var(--color-line) / 0.4);
-  background: rgb(var(--color-ivory) / 0.4);
-  backdrop-filter: blur(12px) saturate(1.4);
-  -webkit-backdrop-filter: blur(12px) saturate(1.4);
+  border: 1px solid rgb(var(--color-line) / 0.72);
+  background: rgb(var(--color-surface-raised) / 0.86);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   box-shadow: var(--shadow-inner-glass);
   padding: 0.65rem;
 }
@@ -1478,8 +1474,23 @@ useFocusTrap(() => true, dialogRef)
 
 .magic-menu__apply:hover:not(:disabled) {
   filter: brightness(1.06);
-  box-shadow: var(--shadow-glass-xl), 0 0 28px -6px rgb(var(--color-accent) / 0.45);
+  box-shadow: var(--shadow-glass), inset 0 1px 0 rgb(255 255 255 / 0.18);
   transform: translateY(-1px);
+}
+
+.magic-menu__close:focus-visible,
+.magic-menu__intent:focus-visible,
+.magic-menu__mode:focus-visible,
+.magic-menu__seg-btn:focus-visible,
+.magic-menu__dim-chip:focus-visible,
+.magic-menu__variant:focus-visible,
+.magic-menu__apply:focus-visible,
+.magic-menu__lint-fix:focus-visible,
+.magic-menu__lookbook-item:focus-visible,
+.magic-menu__slot-btn:focus-visible,
+.magic-menu__variant-tab:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 
 .magic-menu__apply:active:not(:disabled),
@@ -1587,10 +1598,10 @@ useFocusTrap(() => true, dialogRef)
   min-width: 0;
   padding: 0.55rem 0.6rem;
   border-radius: var(--radius-card);
-  border: 1px solid rgb(var(--color-line) / 0.4);
-  background: rgb(var(--color-ivory) / 0.45);
-  backdrop-filter: blur(12px) saturate(1.4);
-  -webkit-backdrop-filter: blur(12px) saturate(1.4);
+  border: 1px solid rgb(var(--color-line) / 0.72);
+  background: rgb(var(--color-surface-raised) / 0.86);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   box-shadow: var(--shadow-inner-glass);
 }
 
@@ -1660,10 +1671,10 @@ useFocusTrap(() => true, dialogRef)
   gap: 0.4rem;
   padding: 0.5rem 0.65rem;
   border-radius: var(--radius-panel);
-  border: 1px solid rgb(var(--color-line) / 0.4);
-  background: rgb(var(--color-ivory) / 0.4);
-  backdrop-filter: blur(10px) saturate(1.4);
-  -webkit-backdrop-filter: blur(10px) saturate(1.4);
+  border: 1px solid rgb(var(--color-line) / 0.72);
+  background: rgb(var(--color-surface-raised) / 0.86);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   box-shadow: var(--shadow-inner-glass);
   font-size: 11px;
 }
@@ -1712,9 +1723,9 @@ useFocusTrap(() => true, dialogRef)
   padding: 0.24rem 0.6rem;
   border-radius: 999px;
   border: 1px solid currentColor;
-  background: rgb(var(--color-ivory) / 0.5);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  background: rgb(var(--color-surface) / 0.96);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   color: inherit;
   font-size: 10px;
   font-weight: 700;
@@ -1723,7 +1734,7 @@ useFocusTrap(() => true, dialogRef)
 }
 
 .magic-menu__lint-fix:hover {
-  background: rgb(var(--color-ivory) / 0.7);
+  background: rgb(var(--color-surface-raised) / 1);
   transform: translateY(-1px);
   box-shadow: var(--shadow-glass-sm);
 }
@@ -1750,9 +1761,9 @@ useFocusTrap(() => true, dialogRef)
   padding: 0.4rem;
   border-radius: var(--radius-card);
   border: 1px solid rgb(var(--color-line) / 0.4);
-  background: var(--gradient-surface);
-  backdrop-filter: blur(calc(var(--glass-blur) * 1.2)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 1.2)) saturate(var(--glass-saturate));
+  background: rgb(var(--color-surface) / 0.99);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   box-shadow: var(--shadow-glass-lg), var(--shadow-inner-glass);
 }
 
@@ -1762,7 +1773,7 @@ useFocusTrap(() => true, dialogRef)
   padding: 0.45rem 0.55rem;
   border-radius: var(--radius-field);
   border: 1px solid transparent;
-  background: rgb(var(--color-ivory) / 0.4);
+  background: rgb(var(--color-surface-raised) / 0.86);
   text-align: left;
   cursor: pointer;
   transition: background 160ms var(--motion-soft), border-color 160ms var(--motion-soft);
@@ -1770,7 +1781,7 @@ useFocusTrap(() => true, dialogRef)
 
 .magic-menu__lookbook-item:hover {
   border-color: rgb(var(--color-line-strong) / 0.5);
-  background: rgb(var(--color-ivory) / 0.65);
+  background: rgb(var(--color-surface-raised) / 1);
 }
 
 .magic-menu__lookbook-item strong {
@@ -1813,10 +1824,10 @@ useFocusTrap(() => true, dialogRef)
   gap: 0.26rem;
   padding: 0.2rem 0.55rem;
   border-radius: 999px;
-  border: 1px solid rgb(var(--color-line) / 0.5);
-  background: rgb(var(--color-ivory) / 0.45);
-  backdrop-filter: blur(8px) saturate(1.4);
-  -webkit-backdrop-filter: blur(8px) saturate(1.4);
+  border: 1px solid rgb(var(--color-line) / 0.72);
+  background: rgb(var(--color-surface) / 0.96);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   box-shadow: var(--shadow-inner-glass);
   color: rgb(var(--color-muted));
   font-size: 10px;
@@ -1827,7 +1838,7 @@ useFocusTrap(() => true, dialogRef)
 
 .magic-menu__slot-btn:hover {
   border-color: rgb(var(--color-line-strong) / 0.7);
-  background: rgb(var(--color-ivory) / 0.65);
+  background: rgb(var(--color-surface-raised) / 1);
   color: rgb(var(--color-ink));
   transform: translateY(-1px);
   box-shadow: var(--shadow-glass-sm);
@@ -1862,9 +1873,9 @@ useFocusTrap(() => true, dialogRef)
   padding: 0.4rem 0.5rem;
   border-radius: var(--radius-field);
   border: 1px solid rgb(var(--color-line) / 0.6);
-  background: rgb(var(--color-ivory) / 0.5);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  background: rgb(var(--color-surface) / 0.98);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   box-shadow: var(--shadow-inner-glass);
   color: rgb(var(--color-ink));
   font-size: 11px;
@@ -1894,10 +1905,10 @@ useFocusTrap(() => true, dialogRef)
 .magic-menu__variant-tab {
   padding: 0.32rem 0.7rem;
   border-radius: 999px;
-  border: 1px solid rgb(var(--color-line) / 0.5);
-  background: rgb(var(--color-ivory) / 0.45);
-  backdrop-filter: blur(8px) saturate(1.4);
-  -webkit-backdrop-filter: blur(8px) saturate(1.4);
+  border: 1px solid rgb(var(--color-line) / 0.72);
+  background: rgb(var(--color-surface) / 0.96);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   box-shadow: var(--shadow-inner-glass);
   color: rgb(var(--color-muted));
   font-size: 11px;
@@ -1908,7 +1919,7 @@ useFocusTrap(() => true, dialogRef)
 
 .magic-menu__variant-tab:hover {
   border-color: rgb(var(--color-line-strong) / 0.7);
-  background: rgb(var(--color-ivory) / 0.65);
+  background: rgb(var(--color-surface-raised) / 1);
   color: rgb(var(--color-ink));
   transform: translateY(-1px);
 }
@@ -1924,10 +1935,10 @@ useFocusTrap(() => true, dialogRef)
   margin-top: 0.7rem;
   padding: 0.55rem 0.65rem;
   border-radius: var(--radius-panel);
-  border: 1px solid rgb(var(--color-line) / 0.4);
-  background: rgb(var(--color-ivory) / 0.4);
-  backdrop-filter: blur(10px) saturate(1.4);
-  -webkit-backdrop-filter: blur(10px) saturate(1.4);
+  border: 1px solid rgb(var(--color-line) / 0.72);
+  background: rgb(var(--color-surface-raised) / 0.86);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   box-shadow: var(--shadow-inner-glass);
 }
 

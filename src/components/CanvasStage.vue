@@ -19,11 +19,6 @@ import type {
   ImageSize,
 } from '../types'
 
-interface QuickPromptCard {
-  title: string
-  prompt: string
-}
-
 interface Props {
   images: GeneratedImage[]
   activeImageIndex: number
@@ -40,7 +35,6 @@ interface Props {
   quality?: ImageQuality
   count?: number
   history?: GenerationHistoryItem[]
-  quickPrompts?: QuickPromptCard[]
   providerConfigured?: boolean
   canAcceptDrop?: boolean
 }
@@ -62,7 +56,7 @@ const emit = defineEmits<{
   (e: 'copy', text: string, message: string): void
   (e: 'export'): void
   (e: 'go-compose'): void
-  (e: 'pick-prompt', prompt: string): void
+  (e: 'open-inpaint', index: number): void
   (e: 'remix', image: GeneratedImage, index: number): void
   (e: 'generate'): void
   (e: 'abort'): void
@@ -217,7 +211,7 @@ function isImageReady(image: GeneratedImage, index: number) {
 
     <header class="flex items-end justify-between gap-4">
       <div class="space-y-2">
-        <p class="display-eyebrow">02 · Canvas</p>
+        <p class="display-eyebrow">Canvas</p>
         <h2 class="display-h2">制版画布</h2>
       </div>
       <div class="flex flex-wrap items-center justify-end gap-1.5">
@@ -419,9 +413,9 @@ function isImageReady(image: GeneratedImage, index: number) {
       </div>
 
       <div class="canvas-action-grid">
-        <button type="button" class="canvas-action canvas-action--primary" @click="emit('remix', activeImage, activeImageIndex)">
-          <Icon name="sparkle" :size="14" />
-          {{ t('canvas.action.continue') }}
+        <button type="button" class="canvas-action canvas-action--primary" @click="emit('open-inpaint', activeImageIndex)">
+          <Icon name="brush" :size="14" />
+          局部编辑
         </button>
         <button type="button" class="canvas-action" @click="emit('download', activeImage, activeImageIndex)">
           <Icon name="download" :size="14" />
@@ -519,22 +513,6 @@ function isImageReady(image: GeneratedImage, index: number) {
               <kbd class="canvas-hero__kbd">⌘K</kbd> 唤出命令面板。
             </p>
 
-            <div
-              v-if="quickPrompts?.length"
-              class="mt-6 grid gap-2 text-left sm:grid-cols-3"
-            >
-              <button
-                v-for="item in quickPrompts"
-                :key="item.title"
-                type="button"
-                class="canvas-prompt-card"
-                @click="emit('pick-prompt', item.prompt)"
-              >
-                <span class="block font-mono text-[10px] uppercase tracking-[0.18em] text-muted">{{ item.title }}</span>
-                <span class="mt-1 block truncate-2 text-[12px] leading-5 text-ink/75">{{ item.prompt }}</span>
-              </button>
-            </div>
-
             <div class="mt-6 flex flex-col items-center gap-2.5 sm:flex-row sm:justify-center">
               <button
                 v-if="hasPrompt"
@@ -572,7 +550,7 @@ function isImageReady(image: GeneratedImage, index: number) {
 
 @media (min-width: 640px) {
   .canvas-action-grid {
-    grid-template-columns: minmax(8rem, 1.25fr) repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(7.25rem, 1fr));
   }
 }
 
@@ -584,10 +562,10 @@ function isImageReady(image: GeneratedImage, index: number) {
   gap: 0.45rem;
   min-height: 44px;
   border-radius: var(--radius-field);
-  border: 1px solid rgb(var(--color-line) / 0.5);
-  background: rgb(var(--color-ivory) / 0.45);
-  backdrop-filter: blur(12px) saturate(1.4);
-  -webkit-backdrop-filter: blur(12px) saturate(1.4);
+  border: 1px solid rgb(var(--color-line) / 0.82);
+  background: rgb(var(--color-surface) / 0.98);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   color: rgb(var(--color-ink));
   font-size: 12px;
   font-weight: 720;
@@ -637,18 +615,18 @@ function isImageReady(image: GeneratedImage, index: number) {
   height: 36px;
   border-radius: 9px;
   border: 1px solid rgb(var(--color-paper) / 0.18);
-  background: rgb(18 20 30 / 0.42);
+  background: rgb(18 24 25 / 0.72);
   color: rgb(255 255 255 / 0.94);
-  box-shadow: 0 10px 28px -16px rgb(0 0 0 / 0.6), inset 0 1px 0 rgb(255 255 255 / 0.18);
-  backdrop-filter: blur(14px) saturate(1.6);
-  -webkit-backdrop-filter: blur(14px) saturate(1.6);
+  box-shadow: 0 8px 18px -14px rgb(0 0 0 / 0.65), inset 0 1px 0 rgb(255 255 255 / 0.14);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   transition: transform 160ms var(--motion-press), background-color 160ms var(--motion-soft), border-color 160ms ease, box-shadow 180ms var(--motion-soft);
 }
 
 .canvas-tool-btn:hover {
-  background: linear-gradient(135deg, rgb(102 126 234 / 0.55), rgb(118 75 162 / 0.55));
+  background: rgb(var(--color-action) / 0.9);
   border-color: rgb(255 255 255 / 0.34);
-  box-shadow: 0 12px 30px -14px rgb(0 0 0 / 0.6), 0 0 18px -4px rgb(var(--color-accent) / 0.45), inset 0 1px 0 rgb(255 255 255 / 0.22);
+  box-shadow: 0 10px 22px -16px rgb(0 0 0 / 0.72), inset 0 1px 0 rgb(255 255 255 / 0.18);
   transform: translateY(-1px);
 }
 
@@ -666,7 +644,7 @@ function isImageReady(image: GeneratedImage, index: number) {
 .canvas-action:hover {
   transform: translateY(-1px);
   border-color: rgb(var(--color-line-strong) / 0.7);
-  background: rgb(var(--color-ivory) / 0.65);
+  background: rgb(var(--color-surface-raised) / 1);
   box-shadow: var(--shadow-glass-sm), var(--shadow-inner-glass);
 }
 
@@ -678,49 +656,16 @@ function isImageReady(image: GeneratedImage, index: number) {
   border: none;
   background: var(--gradient-primary);
   color: #fff;
-  box-shadow: var(--shadow-glass), var(--shadow-glow-accent);
+  box-shadow: var(--shadow-glass-sm), inset 0 1px 0 rgb(255 255 255 / 0.16);
 }
 
 .canvas-action--primary:hover {
   background: var(--gradient-primary);
-  box-shadow: var(--shadow-glass-lg), 0 0 28px -6px rgb(var(--color-accent) / 0.4);
-}
-
-.canvas-prompt-card {
-  position: relative;
-  display: block;
-  min-height: 128px;
-  overflow: hidden;
-  border-radius: var(--radius-card);
-  border: 1px solid rgb(var(--color-line) / 0.4);
-  background: rgb(var(--color-ivory) / 0.45);
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  padding: 0.85rem;
-  text-align: left;
-  box-shadow: var(--shadow-inner-glass);
-  transition: transform 180ms var(--motion-press), background-color 180ms var(--motion-soft), border-color 180ms var(--motion-soft), box-shadow 200ms var(--motion-soft);
-}
-
-.canvas-prompt-card::before {
-  content: '';
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 3px;
-  background: var(--gradient-primary);
-  opacity: 0.85;
-}
-
-.canvas-prompt-card:hover {
-  transform: translateY(-2px);
-  border-color: rgb(var(--color-accent) / 0.4);
-  background: rgb(var(--color-ivory) / 0.62);
-  box-shadow: var(--shadow-glass), 0 0 20px -6px rgb(var(--color-accent) / 0.3);
+  box-shadow: var(--shadow-glass), inset 0 1px 0 rgb(255 255 255 / 0.18);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .canvas-action,
-  .canvas-prompt-card {
+  .canvas-action {
     transition: none;
   }
 }
@@ -730,10 +675,10 @@ function isImageReady(image: GeneratedImage, index: number) {
   place-items: center;
   pointer-events: none;
   background:
-    radial-gradient(120% 90% at 30% 10%, rgb(var(--color-accent) / 0.07), transparent 60%),
-    linear-gradient(180deg, rgb(var(--color-ivory) / 0.6), rgb(var(--color-vellum) / 0.45));
-  backdrop-filter: blur(calc(var(--glass-blur) * 0.6)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 0.6)) saturate(var(--glass-saturate));
+    radial-gradient(120% 90% at 30% 10%, rgb(var(--color-accent) / 0.055), transparent 60%),
+    linear-gradient(180deg, rgb(var(--color-surface-muted) / 0.96), rgb(var(--color-paper-soft) / 0.86));
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 .canvas-image-placeholder__glow {
@@ -741,8 +686,8 @@ function isImageReady(image: GeneratedImage, index: number) {
   width: min(44%, 220px);
   height: min(44%, 220px);
   border-radius: 999px;
-  background: radial-gradient(circle, rgb(var(--color-accent) / 0.16), rgb(var(--color-blueprint) / 0) 70%);
-  filter: blur(14px);
+  background: radial-gradient(circle, rgb(var(--color-accent) / 0.1), rgb(var(--color-accent) / 0) 70%);
+  filter: blur(10px);
 }
 
 .canvas-image-placeholder__loader {
@@ -752,11 +697,11 @@ function isImageReady(image: GeneratedImage, index: number) {
   gap: 7px;
   padding: 0.7rem 0.95rem;
   border-radius: 999px;
-  border: 1px solid rgb(var(--color-line) / 0.4);
-  background: rgb(var(--color-ivory) / 0.55);
-  backdrop-filter: blur(12px) saturate(1.5);
-  -webkit-backdrop-filter: blur(12px) saturate(1.5);
-  box-shadow: var(--shadow-glass), var(--shadow-inner-glass);
+  border: 1px solid rgb(var(--color-line) / 0.8);
+  background: rgb(var(--color-surface-raised) / 0.98);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: var(--shadow-glass-sm), var(--shadow-inner-glass);
 }
 
 .canvas-image-placeholder__loader span {
@@ -781,7 +726,7 @@ function isImageReady(image: GeneratedImage, index: number) {
   width: var(--progress, 0%);
   border-radius: inherit;
   background: var(--gradient-primary);
-  box-shadow: 0 0 18px rgb(var(--color-accent) / 0.3);
+  box-shadow: none;
   transition: width 0.7s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
@@ -856,19 +801,18 @@ function isImageReady(image: GeneratedImage, index: number) {
   overflow: hidden;
   border-style: solid;
   background:
-    radial-gradient(120% 80% at 20% 0%, rgb(var(--color-accent) / 0.1), transparent 55%),
-    radial-gradient(110% 90% at 90% 100%, rgb(var(--color-blueprint) / 0.08), transparent 60%),
-    rgb(var(--color-ivory) / 0.45);
+    radial-gradient(120% 80% at 20% 0%, rgb(var(--color-accent) / 0.055), transparent 55%),
+    linear-gradient(180deg, rgb(var(--color-surface) / 0.98), rgb(var(--color-surface-muted) / 0.94));
 }
 
 .canvas-hero__badge {
-  border: 1px solid rgb(var(--color-line) / 0.4);
+  border: 1px solid rgb(var(--color-line) / 0.8);
   border-radius: var(--radius-card);
   background: var(--gradient-glass);
   color: rgb(var(--color-ink));
-  box-shadow: var(--shadow-glass), var(--shadow-inner-glass), var(--shadow-glow-accent);
-  backdrop-filter: blur(12px) saturate(1.5);
-  -webkit-backdrop-filter: blur(12px) saturate(1.5);
+  box-shadow: var(--shadow-glass), var(--shadow-inner-glass);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   overflow: hidden;
 }
 
@@ -884,9 +828,9 @@ function isImageReady(image: GeneratedImage, index: number) {
   padding: 0.08rem 0.42rem;
   border-radius: 5px;
   border: 1px solid rgb(var(--color-line) / 0.6);
-  background: rgb(var(--color-ivory) / 0.5);
-  backdrop-filter: blur(8px) saturate(1.4);
-  -webkit-backdrop-filter: blur(8px) saturate(1.4);
+  background: rgb(var(--color-surface-muted) / 0.95);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   box-shadow: var(--shadow-inner-glass);
   color: rgb(var(--color-muted));
   font-family: 'JetBrains Mono', ui-monospace, monospace;
@@ -900,6 +844,23 @@ function isImageReady(image: GeneratedImage, index: number) {
   position: relative;
 }
 
+@media (max-height: 760px) and (min-width: 1024px) {
+  .canvas-stage-root .canvas-frame[data-orient="portrait"] {
+    max-height: 42vh;
+    max-width: calc(42vh * 2 / 3);
+  }
+
+  .canvas-stage-root .canvas-frame[data-orient="landscape"] {
+    max-height: 36vh;
+    max-width: calc(36vh * 3 / 2);
+  }
+
+  .canvas-stage-root .canvas-frame[data-orient="square"] {
+    max-height: 40vh;
+    max-width: 40vh;
+  }
+}
+
 /* ---------- Canvas mosaic (multi-image desktop) ---------- */
 
 .canvas-mosaic {
@@ -909,10 +870,10 @@ function isImageReady(image: GeneratedImage, index: number) {
   gap: 0.6rem;
   padding: 0.7rem;
   border-radius: var(--radius-card);
-  border: 1px solid rgb(var(--color-line) / 0.35);
+  border: 1px solid rgb(var(--color-line) / 0.78);
   background: var(--gradient-surface);
-  backdrop-filter: blur(calc(var(--glass-blur) * 1.2)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 1.2)) saturate(var(--glass-saturate));
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   box-shadow: var(--shadow-glass), var(--shadow-inner-glass);
 }
 
@@ -959,8 +920,8 @@ function isImageReady(image: GeneratedImage, index: number) {
   position: relative;
   overflow: hidden;
   border-radius: var(--radius-panel);
-  border: 1px solid rgb(var(--color-line) / 0.4);
-  background: rgb(var(--color-ivory) / 0.4);
+  border: 1px solid rgb(var(--color-line) / 0.72);
+  background: rgb(var(--color-surface-muted) / 0.92);
   box-shadow: var(--shadow-inner-glass);
   transition: border-color 200ms var(--motion-soft), box-shadow 220ms var(--motion-soft), transform 200ms var(--motion-press);
 }
@@ -972,8 +933,8 @@ function isImageReady(image: GeneratedImage, index: number) {
 }
 
 .canvas-mosaic__cell--active {
-  border-color: rgb(var(--color-accent) / 0.5);
-  box-shadow: 0 0 0 2px rgb(var(--color-accent) / 0.25), var(--shadow-glow-accent), var(--shadow-glass);
+  border-color: rgb(var(--color-accent) / 0.58);
+  box-shadow: 0 0 0 2px rgb(var(--color-accent) / 0.18), var(--shadow-glass);
 }
 
 .canvas-mosaic__cell--active:hover {
@@ -1034,14 +995,14 @@ function isImageReady(image: GeneratedImage, index: number) {
   align-items: center;
   padding: 0.18rem 0.5rem;
   border-radius: 6px;
-  border: 1px solid rgb(var(--color-ivory) / 0.18);
-  background: rgb(var(--color-ink) / 0.5);
+  border: 1px solid rgb(var(--color-surface-raised) / 0.2);
+  background: rgb(var(--color-ink) / 0.62);
   color: rgb(var(--color-paper));
   font-family: 'JetBrains Mono', ui-monospace, monospace;
   font-size: 10px;
   letter-spacing: 0.04em;
-  backdrop-filter: blur(10px) saturate(1.4);
-  -webkit-backdrop-filter: blur(10px) saturate(1.4);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   pointer-events: none;
 }
 
@@ -1056,7 +1017,7 @@ function isImageReady(image: GeneratedImage, index: number) {
   border-radius: 999px;
   background: var(--gradient-primary);
   color: #fff;
-  box-shadow: var(--shadow-glow-accent), 0 8px 18px -10px rgb(var(--color-accent) / 0.6);
+  box-shadow: 0 8px 18px -14px rgb(0 0 0 / 0.6);
   pointer-events: none;
   animation: canvas-mosaic-mark 320ms var(--motion-snap);
 }
@@ -1096,19 +1057,19 @@ function isImageReady(image: GeneratedImage, index: number) {
   width: 30px;
   height: 30px;
   border-radius: 8px;
-  border: 1px solid rgb(var(--color-ivory) / 0.22);
+  border: 1px solid rgb(var(--color-surface-raised) / 0.22);
   background: rgb(var(--color-ink) / 0.55);
   color: rgb(var(--color-paper));
   box-shadow: 0 8px 18px -12px rgb(0 0 0 / 0.5);
-  backdrop-filter: blur(10px) saturate(1.5);
-  -webkit-backdrop-filter: blur(10px) saturate(1.5);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   cursor: pointer;
   transition: background-color 140ms var(--motion-soft), border-color 140ms var(--motion-soft), transform 140ms var(--motion-press);
 }
 
 .canvas-mosaic__tool:hover {
   background: rgb(var(--color-accent) / 0.78);
-  border-color: rgb(var(--color-ivory) / 0.4);
+  border-color: rgb(var(--color-surface-raised) / 0.4);
   transform: translateY(-1px);
 }
 
@@ -1141,9 +1102,9 @@ function isImageReady(image: GeneratedImage, index: number) {
   border-radius: var(--radius-card);
   border: 2px dashed rgb(var(--color-forest) / 0.55);
   background:
-    radial-gradient(circle at 50% 50%, rgb(var(--color-forest) / 0.14), rgb(var(--color-ivory) / 0.4) 60%);
-  backdrop-filter: blur(10px) saturate(1.4);
-  -webkit-backdrop-filter: blur(10px) saturate(1.4);
+    radial-gradient(circle at 50% 50%, rgb(var(--color-forest) / 0.12), rgb(var(--color-paper) / 0.82) 62%);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   pointer-events: none;
 }
 
@@ -1153,10 +1114,10 @@ function isImageReady(image: GeneratedImage, index: number) {
   gap: 0.5rem;
   padding: 1rem 1.5rem;
   border-radius: var(--radius-panel);
-  background: rgb(var(--color-ivory) / 0.7);
+  background: rgb(var(--color-surface-raised) / 0.98);
   border: 1px solid rgb(var(--color-forest) / 0.32);
   color: rgb(var(--color-forest));
-  backdrop-filter: blur(10px) saturate(1.4);
-  -webkit-backdrop-filter: blur(10px) saturate(1.4);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 </style>

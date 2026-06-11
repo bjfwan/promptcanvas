@@ -213,11 +213,11 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .app-header {
-  border-bottom: 1px solid rgb(var(--color-line) / 0.35);
-  background: rgb(var(--color-paper) / 0.55);
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  box-shadow: var(--shadow-glass-sm), var(--shadow-inner-glass);
+  border-bottom: 1px solid rgb(var(--color-line) / 0.8);
+  background: rgb(var(--color-surface) / 0.96);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: var(--shadow-glass-sm);
 }
 
 .brand-mark {
@@ -227,10 +227,10 @@ onBeforeUnmount(() => {
   height: 42px;
   flex-shrink: 0;
   border-radius: 14px;
-  border: 1px solid rgb(var(--color-line) / 0.4);
-  background: var(--gradient-surface);
-  backdrop-filter: blur(12px) saturate(1.5);
-  -webkit-backdrop-filter: blur(12px) saturate(1.5);
+  border: 1px solid rgb(var(--color-line) / 0.75);
+  background: rgb(var(--color-surface-raised) / 1);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   box-shadow: var(--shadow-inner-glass), var(--shadow-glass-sm);
   overflow: hidden;
   transition: transform 220ms var(--motion-press), box-shadow 220ms var(--motion-soft);
@@ -243,10 +243,10 @@ onBeforeUnmount(() => {
   height: 36px;
   padding: 0 0.65rem 0 0.85rem;
   border-radius: 999px;
-  border: 1px solid rgb(var(--color-line) / 0.45);
-  background: rgb(var(--color-ivory) / 0.45);
-  backdrop-filter: blur(12px) saturate(1.5);
-  -webkit-backdrop-filter: blur(12px) saturate(1.5);
+  border: 1px solid rgb(var(--color-line) / 0.8);
+  background: rgb(var(--color-surface-muted) / 0.96);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   box-shadow: var(--shadow-inner-glass);
   color: rgb(var(--color-muted));
   font-size: 12px;
@@ -259,7 +259,7 @@ onBeforeUnmount(() => {
 
 .cmdk-hint:hover {
   border-color: rgb(var(--color-line-strong) / 0.6);
-  background: rgb(var(--color-ivory) / 0.65);
+  background: rgb(var(--color-surface-raised) / 1);
   box-shadow: var(--shadow-glass-sm);
   color: rgb(var(--color-ink));
   transform: translateY(-1px);
@@ -269,13 +269,21 @@ onBeforeUnmount(() => {
   transform: translateY(0);
 }
 
+.cmdk-hint:focus-visible,
+.health-pill:focus-visible,
+.reset-pill:focus-visible,
+.header-menu-item:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
 .cmdk-hint kbd {
   font-family: 'JetBrains Mono', ui-monospace, monospace;
   font-size: 10px;
   padding: 0.16rem 0.4rem;
   border-radius: 5px;
   border: 1px solid rgb(var(--color-line-strong) / 0.4);
-  background: rgb(var(--color-ivory) / 0.6);
+  background: rgb(var(--color-surface-raised) / 1);
   color: rgb(var(--color-ink));
   letter-spacing: 0.04em;
 }
@@ -338,16 +346,16 @@ onBeforeUnmount(() => {
   width: 100%;
   align-items: center;
   gap: 0.55rem;
-  border-radius: 0.875rem;
+  border-radius: var(--radius-field);
   padding: 0.65rem 0.75rem;
   font-size: 13px;
   font-weight: 500;
   color: rgb(var(--color-ink));
-  transition: background-color 140ms ease, transform 140ms ease;
+  transition: background-color 160ms var(--motion-soft), color 160ms var(--motion-soft), transform 140ms var(--motion-press);
 }
 
 .header-menu-item:hover {
-  background: rgb(var(--color-paper-soft) / 0.85);
+  background: rgb(var(--color-surface-muted) / 0.95);
 }
 
 .header-menu-item:active {

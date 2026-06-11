@@ -127,7 +127,7 @@ onBeforeUnmount(() => {
     <Transition name="dlg-fade">
       <div
         v-if="open"
-        class="fixed inset-0 z-sheet flex items-end justify-center px-0 py-0 sm:items-center sm:px-4 sm:py-6"
+        class="mobile-sheet fixed inset-0 z-sheet flex items-end justify-center px-0 py-0 sm:items-center sm:px-4 sm:py-6"
         role="dialog"
         aria-modal="true"
         :aria-label="t('history.title')"
@@ -139,9 +139,9 @@ onBeforeUnmount(() => {
           <div
             v-if="open"
             ref="dialogRef"
-            class="dialog-shell relative flex max-h-[92dvh] w-full max-w-2xl flex-col overflow-hidden text-ink sm:max-h-[86dvh]"
+            class="dialog-shell relative flex w-full max-w-2xl flex-col overflow-hidden text-ink"
           >
-            <header class="relative flex items-start justify-between gap-3 border-b border-line/40 px-5 py-4 sm:px-6 sm:py-5">
+            <header class="dialog-shell__header relative flex items-start justify-between gap-3 border-b border-line/40 px-5 py-4 sm:px-6 sm:py-5">
               <div class="absolute inset-x-0 top-2 grid place-items-center sm:hidden">
                 <span class="h-1.5 w-10 rounded-full bg-line-strong/60"></span>
               </div>
@@ -169,7 +169,7 @@ onBeforeUnmount(() => {
               </div>
             </header>
 
-            <div class="touch-scroll-y max-h-[calc(92dvh-5.5rem)] flex-1 overflow-y-auto px-5 py-4 sm:max-h-[70dvh] sm:px-6 sm:py-5">
+            <div class="dialog-shell__body touch-scroll-y flex-1 overflow-y-auto px-5 py-4 sm:px-6 sm:py-5">
               <ul v-if="history.length" class="space-y-3">
                 <li
                   v-for="item in history"
@@ -301,21 +301,48 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .dialog-shell {
-  border: 1px solid rgb(var(--color-line) / 0.3);
+  max-height: min(92dvh, calc(100svh - env(safe-area-inset-top, 0px) - 0.75rem));
+  border: 1px solid rgb(var(--color-line) / 0.82);
   border-radius: var(--radius-card);
-  background: var(--gradient-surface);
-  backdrop-filter: blur(calc(var(--glass-blur) * 1.4)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 1.4)) saturate(var(--glass-saturate));
-  box-shadow: var(--shadow-glass-xl), var(--shadow-inner-glass);
+  background: rgb(var(--color-surface) / 0.98);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: var(--shadow-glass-lg), var(--shadow-inner-glass);
+}
+
+.dialog-shell__header {
+  flex: 0 0 auto;
+}
+
+.dialog-shell__body {
+  max-height: calc(min(92dvh, 100svh) - 5.5rem);
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-gutter: stable;
 }
 
 @media (max-width: 639px) {
+  .mobile-sheet {
+    padding-top: max(env(safe-area-inset-top, 0px), 0.5rem);
+  }
+
   .dialog-shell {
+    max-height: calc(var(--mobile-viewport-height, 100dvh) - max(env(safe-area-inset-top, 0px), 0.5rem));
     border-bottom: 0;
-    border-top-left-radius: 28px;
-    border-top-right-radius: 28px;
+    border-top-left-radius: 18px;
+    border-top-right-radius: 18px;
     border-bottom-left-radius: 0;
     border-bottom-right-radius: 0;
+  }
+
+  .dialog-shell__header {
+    padding: 1.1rem 1rem 0.85rem;
+  }
+
+  .dialog-shell__body {
+    max-height: none;
+    flex: 1 1 auto;
+    padding: 0.85rem 1rem calc(env(safe-area-inset-bottom, 0px) + 1rem);
   }
 }
 
@@ -325,10 +352,10 @@ onBeforeUnmount(() => {
   gap: 8px;
   padding: 12px;
   border-radius: var(--radius-card);
-  border: 1px solid rgb(var(--color-line) / 0.4);
-  background: rgb(var(--color-ivory) / 0.4);
-  backdrop-filter: blur(10px) saturate(1.3);
-  -webkit-backdrop-filter: blur(10px) saturate(1.3);
+  border: 1px solid rgb(var(--color-line) / 0.72);
+  background: rgb(var(--color-surface-raised) / 0.82);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   box-shadow: var(--shadow-inner-glass);
   transition: border-color 160ms var(--motion-soft), background-color 160ms var(--motion-soft), box-shadow 200ms var(--motion-soft), transform 200ms var(--motion-soft);
 }
@@ -413,10 +440,10 @@ onBeforeUnmount(() => {
   height: 30px;
   padding: 0 11px;
   border-radius: 999px;
-  border: 1px solid rgb(var(--color-line) / 0.5);
-  background: rgb(var(--color-ivory) / 0.5);
-  backdrop-filter: blur(8px) saturate(1.4);
-  -webkit-backdrop-filter: blur(8px) saturate(1.4);
+  border: 1px solid rgb(var(--color-line) / 0.72);
+  background: rgb(var(--color-surface) / 0.96);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   box-shadow: var(--shadow-inner-glass);
   color: rgb(var(--color-ink));
   font-size: 11px;
@@ -439,9 +466,14 @@ onBeforeUnmount(() => {
 }
 
 .history-card__chip:hover {
-  background: rgb(var(--color-ivory) / 0.7);
+  background: rgb(var(--color-surface-raised) / 1);
   border-color: rgb(var(--color-line-strong) / 0.6);
   box-shadow: var(--shadow-glass-sm);
+}
+
+.history-card__chip:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 
 .history-card__chip:active {
@@ -462,9 +494,31 @@ onBeforeUnmount(() => {
   box-shadow: var(--shadow-glass), 0 0 24px -6px rgb(var(--color-accent) / 0.4);
 }
 
-@media (max-width: 380px) {
+@media (max-width: 430px) {
+  .history-card {
+    padding: 10px;
+  }
+
+  .history-card__main {
+    gap: 10px;
+  }
+
+  .history-card__actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .history-card__chip {
+    justify-content: center;
+    min-width: 0;
+    height: 38px;
     padding: 0 9px;
+  }
+
+  .history-card__chip span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .history-card__chip--primary {

@@ -790,4 +790,31 @@ function handleInpaintSubmit(payload: { mask: Blob; prompt: string }) {
   margin: 0;
   font-size: 11px;
   line-height: 1.5;
-  co
+  color: rgb(var(--color-paper) / 0.6);
+}
+
+.lb-info-enter-from,
+.lb-info-leave-to {
+  opacity: 0;
+  transform: translateX(20px);
+}
+
+.lb-info-enter-active,
+.lb-info-leave-active {
+  transition: opacity 220ms ease-out, transform 280ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@media (max-width: 640px) {
+  .lb-info-enter-from,
+  .lb-info-leave-to {
+    transform: translateY(20px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lb-info-enter-active,
+  .lb-info-leave-active {
+    transition: none;
+  }
+}
+</style>

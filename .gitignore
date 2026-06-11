@@ -31,3 +31,9 @@ dist-verify/
 
 # FUSE leftover temp files
 .fuse_hidden*
+# Build verification output
+dist-verify/
+
+# FUSE leftover temp files
+.fuse_hidden*
+idden*

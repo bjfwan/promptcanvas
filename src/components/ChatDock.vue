@@ -114,6 +114,7 @@ const currentStyleMeta = computed(
 
 const isCustomModel = computed(() => modelChoice.value === customModelSentinel)
 const hasReferenceImages = computed(() => props.referenceImages.length > 0)
+const keyboardIsOpen = computed(() => props.keyboardInset > 0)
 
 const modelLabel = computed(() => {
   if (isCustomModel.value) {
@@ -137,9 +138,15 @@ const sendLabel = computed(() =>
 
 // GPU-only translate when the on-screen keyboard pushes the dock up.
 // Avoids `bottom` transitions which trigger layout work each frame.
-const dockOuterStyle = computed(() => ({
-  transform: props.keyboardInset ? `translate3d(0, -${props.keyboardInset}px, 0)` : 'translate3d(0,0,0)',
-}))
+const dockOuterStyle = computed(() => {
+  const visibleHeight = Math.max(0, Math.round(props.viewportHeight || 0))
+  const keyboardInset = Math.max(0, Math.round(props.keyboardInset || 0))
+
+  return {
+    transform: keyboardInset ? `translate3d(0, -${keyboardInset}px, 0)` : 'translate3d(0,0,0)',
+    '--chat-dock-visible-height': visibleHeight ? `${visibleHeight}px` : '100dvh',
+  }
+})
 
 function openReferencePicker() {
   vibrate('tap')
@@ -177,6 +184,13 @@ function syncLayoutSoon() {
   })
 }
 
+function getVisibleViewportHeight() {
+  const fromProps = Number(props.viewportHeight) || 0
+  if (fromProps > 0) return fromProps
+  if (typeof window === 'undefined') return 0
+  return Math.round(window.visualViewport?.height || window.innerHeight || 0)
+}
+
 // Textarea sizing — strictly content-driven, capped to a fraction of the
 // visible viewport so very long prompts never gobble the whole screen.
 function autosize() {
@@ -190,11 +204,18 @@ function autosize() {
     const lineHeight = parseFloat(cs.lineHeight) || 22
     const padY = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0)
     const minH = lineHeight + padY
-    // 6 lines when focused, 3 lines collapsed — chat bubbles already hold history
-    const maxLines = focused.value ? 6 : 3
-    const maxH = maxLines * lineHeight + padY
+    // Keep the dock compact while the keyboard is open; chat bubbles already
+    // hold long history, so the textarea should scroll before covering it.
+    const maxLines = keyboardIsOpen.value ? (focused.value ? 4 : 2) : (focused.value ? 6 : 3)
+    const lineCap = maxLines * lineHeight + padY
+    const visibleHeight = getVisibleViewportHeight()
+    const viewportCap = visibleHeight > 0
+      ? Math.max(minH, Math.floor(visibleHeight * (keyboardIsOpen.value ? 0.24 : 0.34)))
+      : lineCap
+    const maxH = Math.min(lineCap, viewportCap)
     const target = Math.min(Math.max(el.scrollHeight, minH), maxH)
     el.style.height = `${target}px`
+    if (focused.value) el.scrollTop = el.scrollHeight
     reportLayout()
   })
 }
@@ -326,6 +347,14 @@ watch(isCustomModel, (next) => {
 watch(() => props.referenceImages.length, syncLayoutSoon)
 watch(() => props.continuation?.fromMessageId, syncLayoutSoon)
 watch(() => props.healthOffline, syncLayoutSoon)
+watch(
+  () => [props.keyboardInset, props.viewportHeight] as const,
+  () => {
+    autosize()
+    syncLayoutSoon()
+    if (focused.value) ensureCaretVisible()
+  },
+)
 
 const throttledLayoutSync = rafThrottle(syncLayoutSoon)
 
@@ -358,6 +387,7 @@ defineExpose({ focusInput })
     class="chat-dock"
     :style="dockOuterStyle"
     :data-focused="focused ? 'true' : 'false'"
+    :data-keyboard-open="keyboardIsOpen ? 'true' : 'false'"
     data-tour="chat-dock"
   >
     <!-- soft fade above the dock so chat content doesn't bleed into the toolbar -->
@@ -535,7 +565,7 @@ defineExpose({ focusInput })
 
         <!-- toolbar row: scrollable chips on the left, send on the right -->
         <div class="chat-dock__toolbar">
-          <div class="chat-dock__toolbar-scroll" role="toolbar" aria-label="制版工具">
+          <div class="chat-dock__toolbar-scroll" role="toolbar" aria-label="提示词工具">
             <div class="chat-dock__model-chip">
               <Select
                 v-model="modelChoice"
@@ -604,27 +634,16 @@ defineExpose({ focusInput })
 
             <button
               type="button"
-              class="chat-dock__chip"
+              class="chat-dock__chip chat-dock__chip--style"
               :aria-label="`当前风格：${currentStyleMeta.label}，点击更换`"
               @click.stop="emit('open-style-sheet')"
             >
               <StyleSwatch :variant="currentStyleMeta.value" :size="18" />
-              <span class="chat-dock__chip-label">{{ currentStyleMeta.label }}</span>
-              <Icon name="chevronDown" :size="10" class="text-muted" />
-            </button>
-
-            <button
-              type="button"
-              class="chat-dock__chip"
-              :class="{ 'chat-dock__chip--active': hasReferenceImages }"
-              :disabled="props.referenceImages.length >= maxReferenceImages"
-              :aria-label="hasReferenceImages ? `参考图 ${props.referenceImages.length} 张，继续添加` : '添加参考图'"
-              @click.stop="openReferencePicker"
-            >
-              <Icon :name="hasReferenceImages ? 'image' : 'upload'" :size="13" />
               <span class="chat-dock__chip-label">
-                {{ hasReferenceImages ? `参考 ${props.referenceImages.length}` : '参考图' }}
+                <span class="chat-dock__chip-prefix">风格</span>
+                <span class="chat-dock__chip-current">{{ currentStyleMeta.label }}</span>
               </span>
+              <Icon name="chevronDown" :size="10" class="text-muted" />
             </button>
 
             <button
@@ -673,12 +692,17 @@ defineExpose({ focusInput })
   left: 0;
   right: 0;
   bottom: 0;
+  max-height: var(--chat-dock-visible-height, 100dvh);
   z-index: 45; /* matches Tailwind z-dock */
   pointer-events: none;
   /* GPU-only animation when the on-screen keyboard pushes the dock up */
   transition: transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
   will-change: transform;
   contain: layout paint style;
+}
+
+.chat-dock[data-focused="true"] {
+  transition-duration: 140ms;
 }
 
 .chat-dock__veil {
@@ -694,11 +718,13 @@ defineExpose({ focusInput })
 .chat-dock__inner {
   position: relative;
   pointer-events: auto;
-  padding: 8px 10px max(env(safe-area-inset-bottom, 0px), 8px);
+  padding: 8px max(10px, env(safe-area-inset-right, 0px)) max(env(safe-area-inset-bottom, 0px), 8px) max(10px, env(safe-area-inset-left, 0px));
+  max-height: var(--chat-dock-visible-height, 100dvh);
   display: flex;
   flex-direction: column;
   gap: 8px;
   background: linear-gradient(to top, rgb(var(--color-paper)) 60%, rgb(var(--color-paper) / 0));
+  overflow: hidden;
 }
 
 /* ------------------------------------------------------------------
@@ -872,8 +898,8 @@ defineExpose({ focusInput })
 .chat-dock__ref-card {
   position: relative;
   flex: 0 0 auto;
-  width: 56px;
-  height: 56px;
+  width: 48px;
+  height: 48px;
   border-radius: 12px;
   overflow: hidden;
   border: 1px solid rgb(var(--color-line-strong) / 0.6);
@@ -914,8 +940,8 @@ defineExpose({ focusInput })
   flex: 0 0 auto;
   display: inline-grid;
   place-items: center;
-  width: 56px;
-  height: 56px;
+  width: 48px;
+  height: 48px;
   border-radius: 12px;
   border: 1px dashed rgb(var(--color-line-strong));
   background: rgb(var(--color-paper) / 0.4);
@@ -993,7 +1019,7 @@ defineExpose({ focusInput })
   position: relative;
   display: flex;
   flex-direction: column;
-  border-radius: 24px;
+  border-radius: 20px;
   border: 1px solid rgb(var(--color-line) / 0.45);
   background: var(--gradient-surface);
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
@@ -1035,8 +1061,8 @@ defineExpose({ focusInput })
   z-index: 2;
   display: block;
   width: 100%;
-  min-height: 48px;
-  padding: 14px 16px 6px;
+  min-height: 46px;
+  padding: 13px 15px 6px;
   resize: none;
   background: transparent;
   border: 0;
@@ -1115,8 +1141,8 @@ defineExpose({ focusInput })
   z-index: 2;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 6px 8px;
+  gap: 6px;
+  padding: 5px 6px 7px;
   border-top: 1px solid rgb(var(--color-line) / 0.45);
   margin-top: 2px;
 }
@@ -1124,13 +1150,14 @@ defineExpose({ focusInput })
 .chat-dock__toolbar-scroll {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   flex: 1;
   min-width: 0;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
-  padding: 2px 2px;
+  padding: 2px 1px 2px 2px;
+  scroll-padding-inline: 12px;
   /* mask edges so chips fade into the toolbar instead of clipping abruptly */
   -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 12px, #000 calc(100% - 12px), transparent 100%);
           mask-image: linear-gradient(90deg, transparent 0, #000 12px, #000 calc(100% - 12px), transparent 100%);
@@ -1147,7 +1174,7 @@ defineExpose({ focusInput })
 }
 
 .chat-dock__model-chip :deep(.select-trigger) {
-  height: 36px;
+  height: 34px;
   max-width: clamp(6.5rem, 32vw, 10rem);
   border-radius: 999px;
   padding: 0 26px 0 12px;
@@ -1176,17 +1203,17 @@ defineExpose({ focusInput })
   position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   flex-shrink: 0;
-  height: 36px;
-  padding: 0 13px;
+  height: 34px;
+  padding: 0 11px;
   border-radius: 999px;
-  background: rgb(var(--color-ivory) / 0.55);
+  background: rgb(var(--color-ivory) / 0.68);
   backdrop-filter: blur(10px) saturate(1.4);
   -webkit-backdrop-filter: blur(10px) saturate(1.4);
   border: 1px solid rgb(var(--color-line) / 0.6);
   color: rgb(var(--color-ink));
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 500;
   cursor: pointer;
   box-shadow: var(--shadow-inner-glass);
@@ -1224,21 +1251,67 @@ defineExpose({ focusInput })
 }
 
 .chat-dock__chip-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
   white-space: nowrap;
   max-width: 8rem;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.chat-dock__chip--active {
-  background: rgb(var(--color-forest) / 0.1);
-  border-color: rgb(var(--color-forest) / 0.4);
-  color: rgb(var(--color-forest));
+.chat-dock[data-keyboard-open="true"] .chat-dock__inner {
+  gap: 6px;
+  padding-top: 6px;
+  padding-bottom: max(env(safe-area-inset-bottom, 0px), 6px);
+}
+
+.chat-dock[data-keyboard-open="true"] .chat-dock__veil {
+  height: 26px;
+}
+
+.chat-dock[data-keyboard-open="true"] .chat-dock__refs,
+.chat-dock[data-keyboard-open="true"] .chat-dock__custom,
+.chat-dock[data-keyboard-open="true"] .chat-dock__continuation,
+.chat-dock[data-keyboard-open="true"] .chat-dock__offline {
+  border-radius: 12px;
+  padding-block: 5px;
+}
+
+.chat-dock[data-keyboard-open="true"] .chat-dock__ref-card,
+.chat-dock[data-keyboard-open="true"] .chat-dock__ref-add {
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+}
+
+.chat-dock[data-keyboard-open="true"] .chat-dock__shell {
+  border-radius: 16px;
+}
+
+.chat-dock[data-keyboard-open="true"] .chat-dock__textarea {
+  min-height: 42px;
+  padding-top: 10px;
+}
+
+.chat-dock__chip-prefix {
+  color: rgb(var(--color-muted));
+}
+
+.chat-dock__chip-current {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .chat-dock__chip-wrap {
   position: relative;
   flex-shrink: 0;
+}
+
+.chat-dock__chip--style {
+  max-width: min(9rem, 34vw);
 }
 
 .chat-dock__chip--magic {
@@ -1336,8 +1409,8 @@ defineExpose({ focusInput })
   flex-shrink: 0;
   display: inline-grid;
   place-items: center;
-  width: 48px;
-  height: 48px;
+  width: 46px;
+  height: 46px;
   border-radius: 999px;
   background: rgb(var(--color-ink) / 0.05);
   color: rgb(var(--color-ink) / 0.3);
@@ -1420,6 +1493,27 @@ defineExpose({ focusInput })
  * Compact phones — keep chips legible without overflowing the screen
  * ------------------------------------------------------------------ */
 
+@media (max-width: 430px) {
+  .chat-dock__toolbar {
+    gap: 4px;
+    padding: 4px 5px 6px;
+  }
+
+  .chat-dock__send {
+    width: 44px;
+    height: 44px;
+  }
+
+  .chat-dock__chip {
+    min-width: 38px;
+    height: 36px;
+  }
+
+  .chat-dock__chip--style {
+    max-width: min(8rem, 30vw);
+  }
+}
+
 @media (max-width: 360px) {
   .chat-dock__inner {
     padding-left: 8px;
@@ -1427,7 +1521,7 @@ defineExpose({ focusInput })
   }
 
   .chat-dock__chip {
-    padding: 0 9px;
+    padding: 0 8px;
     gap: 4px;
   }
 
@@ -1439,6 +1533,10 @@ defineExpose({ focusInput })
   .chat-dock__chip--ai .chat-dock__chip-label,
   .chat-dock__chip--magic .chat-dock__chip-label {
     max-width: none;
+  }
+
+  .chat-dock__chip--style .chat-dock__chip-current {
+    display: none;
   }
 
   .chat-dock__model-chip :deep(.select-trigger) {

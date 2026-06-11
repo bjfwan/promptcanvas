@@ -50,9 +50,10 @@ export interface GenerateImageRequest {
   /**
    * PNG mask for inpainting. Black = keep, white = edit.
    * Sent as the `mask` field on /images/edits when present.
+   * Responses-based image models also accept a data URL or bare base64 string.
    * Requires exactly one referenceImage as the source image.
    */
-  inpaintMask?: Blob
+  inpaintMask?: Blob | string
   baseUrl?: string
   apiKey?: string
 }

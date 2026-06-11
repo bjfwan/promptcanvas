@@ -126,10 +126,10 @@ function timeLabel(createdAt: number): string {
   margin-top: 0.55rem;
   padding: 0.6rem 0.65rem 0.45rem;
   border-radius: var(--radius-panel);
-  border: 1px dashed rgb(var(--color-line) / 0.55);
-  background: rgb(var(--color-ivory) / 0.4);
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  border: 1px solid rgb(var(--color-line) / 0.72);
+  background: rgb(var(--color-surface) / 0.96);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   box-shadow: var(--shadow-inner-glass);
 }
 
@@ -170,10 +170,10 @@ function timeLabel(createdAt: number): string {
   gap: 0.26rem;
   padding: 0.2rem 0.58rem;
   border-radius: 999px;
-  border: 1px solid rgb(var(--color-line) / 0.5);
-  background: rgb(var(--color-ivory) / 0.45);
-  backdrop-filter: blur(10px) saturate(1.4);
-  -webkit-backdrop-filter: blur(10px) saturate(1.4);
+  border: 1px solid rgb(var(--color-line) / 0.72);
+  background: rgb(var(--color-surface-raised) / 0.9);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   box-shadow: var(--shadow-inner-glass);
   color: rgb(var(--color-muted));
   font-size: 10px;
@@ -184,7 +184,7 @@ function timeLabel(createdAt: number): string {
 
 .prompt-treeline__btn:not(:disabled):hover {
   border-color: rgb(var(--color-line-strong) / 0.7);
-  background: rgb(var(--color-ivory) / 0.65);
+  background: rgb(var(--color-surface-raised) / 1);
   color: rgb(var(--color-ink));
   transform: translateY(-1px);
   box-shadow: var(--shadow-glass-sm);
@@ -214,10 +214,10 @@ function timeLabel(createdAt: number): string {
   gap: 0.42rem;
   padding: 0.4rem 0.58rem;
   border-radius: var(--radius-panel);
-  border: 1px solid rgb(var(--color-line) / 0.45);
-  background: rgb(var(--color-ivory) / 0.45);
-  backdrop-filter: blur(12px) saturate(1.4);
-  -webkit-backdrop-filter: blur(12px) saturate(1.4);
+  border: 1px solid rgb(var(--color-line) / 0.72);
+  background: rgb(var(--color-surface-raised) / 0.9);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   box-shadow: var(--shadow-inner-glass);
   color: rgb(var(--color-ink));
   cursor: pointer;
@@ -227,7 +227,7 @@ function timeLabel(createdAt: number): string {
 
 .prompt-treeline__node:hover {
   border-color: rgb(var(--color-line-strong) / 0.7);
-  background: rgb(var(--color-ivory) / 0.65);
+  background: rgb(var(--color-surface-raised) / 1);
   transform: translateY(-1px);
   box-shadow: var(--shadow-glass-sm);
 }
@@ -249,9 +249,15 @@ function timeLabel(createdAt: number): string {
   width: 18px;
   height: 18px;
   border-radius: 999px;
-  background: rgb(var(--color-ivory) / 0.5);
+  background: rgb(var(--color-surface) / 0.95);
   box-shadow: var(--shadow-inner-glass);
   color: rgb(var(--color-ink));
+}
+
+.prompt-treeline__btn:focus-visible,
+.prompt-treeline__node:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 
 .prompt-treeline__node.is-current .prompt-treeline__node-icon {

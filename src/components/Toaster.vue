@@ -17,8 +17,7 @@ function iconFor(kind: 'info' | 'success' | 'error'): IconName {
 <template>
   <Teleport to="body">
     <div
-      class="pointer-events-none fixed inset-x-0 z-toast flex flex-col items-center gap-2 px-4"
-      :style="{ top: 'calc(env(safe-area-inset-top, 0px) + 4rem)' }"
+      class="toaster pointer-events-none fixed inset-x-0 z-toast flex flex-col items-center gap-2 px-4"
       aria-live="polite"
       aria-atomic="true"
     >
@@ -75,23 +74,19 @@ function iconFor(kind: 'info' | 'success' | 'error'): IconName {
 </template>
 
 <style scoped>
+.toaster {
+  top: calc(env(safe-area-inset-top, 0px) + 4rem);
+}
+
 .toast-card {
   position: relative;
   overflow: hidden;
   border-radius: var(--radius-card);
-  border: 1px solid rgb(var(--color-line) / 0.3);
-  background: rgb(var(--color-ivory) / 0.7);
-  backdrop-filter: blur(16px) saturate(1.6);
-  -webkit-backdrop-filter: blur(16px) saturate(1.6);
-  box-shadow: var(--shadow-glass-lg), var(--shadow-inner-glass);
-}
-
-.toast-card::before {
-  content: '';
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 3px;
-  background: rgb(var(--color-blueprint));
+  border: 1px solid rgb(var(--color-line) / 0.82);
+  background: rgb(var(--color-surface-raised) / 0.98);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: var(--shadow-glass), var(--shadow-inner-glass);
 }
 
 .toast-card::after {
@@ -108,10 +103,6 @@ function iconFor(kind: 'info' | 'success' | 'error'): IconName {
   border-color: rgb(var(--color-forest) / 0.36);
 }
 
-.toast-card--success::before {
-  background: rgb(var(--color-forest));
-}
-
 .toast-card--info {
   border-color: rgb(var(--color-line-strong) / 0.7);
 }
@@ -119,10 +110,6 @@ function iconFor(kind: 'info' | 'success' | 'error'): IconName {
 .toast-card--error {
   border-color: rgb(var(--color-accent) / 0.42);
   background: rgb(var(--color-accent) / 0.08);
-}
-
-.toast-card--error::before {
-  background: rgb(var(--color-accent));
 }
 
 .toast-card--error::after {
@@ -152,6 +139,12 @@ function iconFor(kind: 'info' | 'success' | 'error'): IconName {
   background: rgb(var(--color-ink) / 0.88);
 }
 
+.toast-card__action:focus-visible,
+.toast-card button:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
 .toast-card__action:active {
   transform: scale(0.95);
 }
@@ -166,6 +159,33 @@ function iconFor(kind: 'info' | 'success' | 'error'): IconName {
   background: rgb(var(--color-forest));
   border-color: rgb(var(--color-forest));
   color: rgb(var(--color-paper));
+}
+
+@media (max-width: 639px) {
+  .toaster {
+    top: auto;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + var(--keyboard-inset, 0px) + 0.75rem);
+    padding-inline: 0.75rem;
+  }
+
+  .toast-card {
+    width: min(100%, 26rem);
+    border-radius: 10px;
+    background: rgb(var(--color-surface-raised) / 0.98);
+  }
+
+  .toast-card__action {
+    min-height: 34px;
+    padding-inline: 0.8rem;
+  }
+
+  .toast-enter-from {
+    transform: translateY(10px) scale(0.985);
+  }
+
+  .toast-leave-to {
+    transform: translateY(8px) scale(0.985);
+  }
 }
 
 @keyframes toast-life {

@@ -107,10 +107,10 @@ function handlePick(dim: InsightDim, matched: boolean) {
   height: 28px;
   padding: 0 0.7rem 0 0.55rem;
   border-radius: 999px;
-  border: 1px solid rgb(var(--color-line) / 0.55);
-  background: rgb(var(--color-ivory) / 0.4);
-  backdrop-filter: blur(10px) saturate(1.4);
-  -webkit-backdrop-filter: blur(10px) saturate(1.4);
+  border: 1px solid rgb(var(--color-line) / 0.72);
+  background: rgb(var(--color-surface) / 0.96);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   box-shadow: var(--shadow-inner-glass);
   color: rgb(var(--color-muted));
   font-size: 11px;
@@ -126,7 +126,7 @@ function handlePick(dim: InsightDim, matched: boolean) {
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  background: var(--gradient-glass);
+  background: rgb(var(--color-surface-muted) / 0.95);
   opacity: 0;
   pointer-events: none;
   transition: opacity 180ms var(--motion-soft);
@@ -139,7 +139,7 @@ function handlePick(dim: InsightDim, matched: boolean) {
 
 .prompt-insights__chip--off:hover {
   border-color: rgb(var(--color-line-strong) / 0.7);
-  background: rgb(var(--color-ivory) / 0.6);
+  background: rgb(var(--color-surface-raised) / 1);
   color: rgb(var(--color-ink));
 }
 
@@ -170,8 +170,13 @@ function handlePick(dim: InsightDim, matched: boolean) {
   width: 16px;
   height: 16px;
   border-radius: 999px;
-  background: rgb(var(--color-ivory) / 0.5);
+  background: rgb(var(--color-surface-raised) / 0.95);
   box-shadow: var(--shadow-inner-glass);
+}
+
+.prompt-insights__chip:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 
 .prompt-insights__chip--on .prompt-insights__chip-icon {

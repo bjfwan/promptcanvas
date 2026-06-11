@@ -4,7 +4,9 @@ import { loadBrandKit } from './lib/brandKit'
 import { loadHistory } from './storage'
 import {
   buildPrompt,
+  buildResponsesImageRequest,
   ensurePngBlob,
+  isResponsesImageModel,
   normalizeImages,
   payloadToValidated,
   resolveOpenAIError,
@@ -150,6 +152,91 @@ function summarizeReferenceImages(
     mimeType: image.mimeType,
     sizeKb: Math.round(image.sizeBytes / 1024),
   }))
+}
+
+function summarizeResponsesRequestBody(body: Record<string, unknown>) {
+  const input = Array.isArray(body.input) ? body.input : []
+  const content = input.flatMap((entry) => {
+    if (!entry || typeof entry !== 'object') return []
+    const maybeContent = (entry as { content?: unknown }).content
+    return Array.isArray(maybeContent) ? maybeContent : []
+  })
+  const inputImages = content.filter((item) => {
+    return Boolean(item && typeof item === 'object' && (item as { type?: unknown }).type === 'input_image')
+  })
+  const inputText = content.find((item) => {
+    return Boolean(item && typeof item === 'object' && (item as { type?: unknown }).type === 'input_text')
+  }) as { text?: unknown } | undefined
+
+  return {
+    ...body,
+    input: [{
+      role: 'user',
+      content: [
+        {
+          type: 'input_text',
+          textPreview: typeof inputText?.text === 'string' ? inputText.text.slice(0, 240) : '',
+        },
+        ...inputImages.map((item, index) => {
+          const imageUrl = (item as { image_url?: unknown }).image_url
+          const url = typeof imageUrl === 'string' ? imageUrl : ''
+          return {
+            type: 'input_image',
+            index,
+            isDataUrl: /^data:/i.test(url),
+            isHttpUrl: /^https?:\/\//i.test(url),
+            length: url.length,
+            preview: url.slice(0, 48),
+          }
+        }),
+      ],
+    }],
+  }
+}
+
+function summarizeResponseImages(data: unknown) {
+  const imageData = Array.isArray((data as { data?: unknown })?.data)
+    ? ((data as { data: unknown[] }).data)
+    : []
+  if (imageData.length > 0) {
+    return {
+      responseShape: 'images',
+      itemCount: imageData.length,
+      firstItem: summarizeImageItem(imageData[0]),
+    }
+  }
+
+  const output = Array.isArray((data as { output?: unknown })?.output)
+    ? ((data as { output: unknown[] }).output)
+    : (Array.isArray((data as { response?: { output?: unknown } })?.response?.output)
+      ? ((data as { response: { output: unknown[] } }).response.output)
+      : [])
+  const imageCalls = output.filter((item) => {
+    return Boolean(item && typeof item === 'object' && (item as { type?: unknown }).type === 'image_generation_call')
+  })
+
+  return {
+    responseShape: 'responses',
+    itemCount: imageCalls.length,
+    firstItem: summarizeImageItem(imageCalls[0]),
+  }
+}
+
+function summarizeImageItem(item: unknown) {
+  if (!item || typeof item !== 'object') return null
+  const record = item as Record<string, unknown>
+  const b64 = typeof record.result === 'string'
+    ? record.result
+    : (typeof record.b64_json === 'string'
+      ? record.b64_json
+      : (typeof record.image_base64 === 'string' ? record.image_base64 : ''))
+  return {
+    hasUrl: typeof record.url === 'string' && record.url.length > 0,
+    hasB64: b64.length > 0,
+    urlPreview: typeof record.url === 'string' ? record.url.slice(0, 80) : null,
+    b64Bytes: b64.length,
+    keys: Object.keys(record),
+  }
 }
 
 async function buildEditFormData(payload: {
@@ -335,6 +422,7 @@ export async function generateImage(
       count: validated.count,
     })
     const hasReferenceImages = validated.referenceImages.length > 0
+    const useResponsesImageApi = isResponsesImageModel(validated.model)
     const upstreamRequest: Record<string, unknown> = {
       prompt: promptText,
       size: validated.size,
@@ -354,31 +442,58 @@ export async function generateImage(
       upstreamRequest.model = validated.model
     }
 
-    const built = hasReferenceImages
-      ? buildRequest(baseUrl, proxyUrl, '/images/edits', {
-          Authorization: `Bearer ${apiKey}`,
-          'X-Pc-Request-Id': requestId,
-        })
-      : buildRequest(baseUrl, proxyUrl, '/images/generations', {
-          Authorization: `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-          'X-Pc-Request-Id': requestId,
-        })
-    const requestBody = hasReferenceImages
-      ? await buildEditFormData(
-          {
-            prompt: promptText,
-            size: validated.size,
-            count: validated.count,
-            outputFormat: validated.outputFormat,
-            quality: validated.quality,
-            model: validated.model,
-            referenceImages: validated.referenceImages,
-            mask: validated.inpaintMask,
-          },
-          requestId,
-        )
-      : JSON.stringify(upstreamRequest)
+    let built: BuiltRequest
+    let requestBody: BodyInit
+    let requestMode: string
+    let responsesRequest: Record<string, unknown> | null = null
+
+    if (useResponsesImageApi) {
+      responsesRequest = await buildResponsesImageRequest({
+        prompt: promptText,
+        size: validated.size,
+        count: validated.count,
+        outputFormat: validated.outputFormat,
+        quality: validated.quality,
+        model: validated.model,
+        referenceImages: validated.referenceImages,
+        mask: validated.inpaintMask,
+      })
+      built = buildRequest(baseUrl, proxyUrl, '/responses', {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        'X-Pc-Request-Id': requestId,
+      })
+      requestBody = JSON.stringify(responsesRequest)
+      requestMode = hasReferenceImages ? 'responses-reference-edit' : 'responses-text-generate'
+    } else {
+      built = hasReferenceImages
+        ? buildRequest(baseUrl, proxyUrl, '/images/edits', {
+            Authorization: `Bearer ${apiKey}`,
+            'X-Pc-Request-Id': requestId,
+          })
+        : buildRequest(baseUrl, proxyUrl, '/images/generations', {
+            Authorization: `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+            'X-Pc-Request-Id': requestId,
+          })
+      requestBody = hasReferenceImages
+        ? await buildEditFormData(
+            {
+              prompt: promptText,
+              size: validated.size,
+              count: validated.count,
+              outputFormat: validated.outputFormat,
+              quality: validated.quality,
+              model: validated.model,
+              referenceImages: validated.referenceImages,
+              mask: typeof validated.inpaintMask === 'string' ? undefined : validated.inpaintMask,
+            },
+            requestId,
+          )
+        : JSON.stringify(upstreamRequest)
+      requestMode = hasReferenceImages ? 'reference-edit' : 'text-generate'
+    }
+
     group.log(`route via ${built.via}`)
     group.log('upstream targetUrl', built.url)
     group.log('upstream method', 'POST')
@@ -386,10 +501,13 @@ export async function generateImage(
       ...built.headers,
       Authorization: `Bearer ${maskKey(apiKey)}`,
     })
-    group.log('request mode', hasReferenceImages ? 'reference-edit' : 'text-generate')
-    if (hasReferenceImages) {
+    group.log('request mode', requestMode)
+    if (responsesRequest) {
+      group.log('upstream body (parsed)', summarizeResponsesRequestBody(responsesRequest))
+      group.log('upstream body (json)', JSON.stringify(summarizeResponsesRequestBody(responsesRequest)))
+    } else if (hasReferenceImages) {
       group.log('reference images', summarizeReferenceImages(validated.referenceImages))
-      group.log('inpaint mask', validated.inpaintMask ? `${Math.round(validated.inpaintMask.size / 1024)}KB` : 'none')
+      group.log('inpaint mask', validated.inpaintMask && typeof validated.inpaintMask !== 'string' ? `${Math.round(validated.inpaintMask.size / 1024)}KB` : 'none')
       group.log('upstream body (fields)', {
         prompt: promptText,
         size: validated.size,
@@ -504,23 +622,7 @@ export async function generateImage(
       options?.onProgress?.({ stage: 'downloading', bytesReceived, bytesTotal })
     })
     options?.onProgress?.({ stage: 'finalizing' })
-    const dataArray = Array.isArray((data as { data?: unknown })?.data)
-      ? ((data as { data: unknown[] }).data)
-      : []
-    group.log('response.body items', dataArray.length)
-    if (dataArray.length > 0) {
-      const sample = dataArray[0] as Record<string, unknown>
-      const summary = sample
-        ? {
-            hasUrl: typeof sample.url === 'string' && sample.url.length > 0,
-            hasB64: typeof sample.b64_json === 'string' && (sample.b64_json as string).length > 0,
-            urlPreview: typeof sample.url === 'string' ? (sample.url as string).slice(0, 80) : null,
-            b64Bytes: typeof sample.b64_json === 'string' ? (sample.b64_json as string).length : 0,
-            keys: Object.keys(sample),
-          }
-        : null
-      group.log('first item summary', summary)
-    }
+    group.log('response.body summary', summarizeResponseImages(data))
 
     const images = normalizeImages(data, validated.outputFormat)
     group.log('normalized images', images.length)

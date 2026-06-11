@@ -18,9 +18,14 @@ export function useMobileViewport() {
   let pendingInset = 0
   let stableTimer: ReturnType<typeof setTimeout> | undefined
 
-  function syncCssVar(value: number) {
+  function syncCssVars(keyboardValue: number, heightValue: number | null) {
     if (typeof document === 'undefined') return
-    document.documentElement.style.setProperty('--keyboard-inset', `${value}px`)
+    document.documentElement.style.setProperty('--keyboard-inset', `${keyboardValue}px`)
+    if (heightValue && heightValue > 0) {
+      document.documentElement.style.setProperty('--mobile-viewport-height', `${heightValue}px`)
+    } else {
+      document.documentElement.style.removeProperty('--mobile-viewport-height')
+    }
   }
 
   function commitNow() {
@@ -32,8 +37,8 @@ export function useMobileViewport() {
     if (pendingInset !== lastCommittedInset) {
       lastCommittedInset = pendingInset
       keyboardInset.value = pendingInset
-      syncCssVar(pendingInset)
     }
+    syncCssVars(lastCommittedInset, pendingHeight)
   }
 
   function scheduleCommit() {
@@ -104,6 +109,7 @@ export function useMobileViewport() {
     throttledSync.cancel()
     if (typeof document !== 'undefined') {
       document.documentElement.style.removeProperty('--keyboard-inset')
+      document.documentElement.style.removeProperty('--mobile-viewport-height')
     }
   })
 

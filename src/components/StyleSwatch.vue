@@ -155,14 +155,14 @@ const dimension = computed(() => `${props.size}px`)
 }
 
 .style-swatch:hover {
-  transform: translateY(-1px) scale(1.02);
-  box-shadow: var(--shadow-inner-glass), var(--shadow-glass);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-inner-glass), var(--shadow-glass-sm);
 }
 
 .style-swatch--active {
   border-color: rgb(var(--color-accent) / 0.55);
-  box-shadow: var(--shadow-inner-glass), var(--shadow-glow-accent);
-  transform: scale(1.05);
+  box-shadow: var(--shadow-inner-glass), 0 0 0 1px rgb(var(--color-accent) / 0.12);
+  transform: none;
 }
 
 .style-swatch__sheen {

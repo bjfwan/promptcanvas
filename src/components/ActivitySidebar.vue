@@ -73,7 +73,7 @@ function previewSrc(item: GenerationHistoryItem): string {
   <aside class="activity-sidebar reveal" style="--reveal-delay: 200ms;">
     <header class="activity-sidebar__head">
       <div>
-        <p class="display-eyebrow">03 · Activity</p>
+        <p class="activity-sidebar__label">Activity</p>
         <h2 class="font-display text-[22px] tracking-tightish">时间线</h2>
       </div>
       <button
@@ -240,18 +240,19 @@ function previewSrc(item: GenerationHistoryItem): string {
 
 <style scoped>
 .activity-sidebar {
-  align-self: start;
+  align-self: stretch;
   display: flex;
   flex-direction: column;
   gap: 1.1rem;
-  max-height: calc(100dvh - 8.25rem);
+  max-height: none;
+  min-height: 0;
   overflow-y: auto;
-  border: 1px solid rgb(var(--color-line) / 0.4);
-  border-radius: var(--radius-card);
-  background: var(--gradient-surface);
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  box-shadow: var(--shadow-glass), var(--shadow-inner-glass);
+  border: 1px solid rgb(var(--color-line) / 0.78);
+  border-radius: var(--radius-panel);
+  background: rgb(var(--color-surface) / 0.96);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: var(--shadow-inner-glass);
   padding: 1.1rem 1rem;
   scrollbar-gutter: stable;
 }
@@ -270,6 +271,15 @@ function previewSrc(item: GenerationHistoryItem): string {
   align-items: flex-end;
   justify-content: space-between;
   gap: 0.75rem;
+}
+
+.activity-sidebar__label {
+  margin: 0 0 0.35rem;
+  color: rgb(var(--color-muted));
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0;
 }
 
 .activity-sidebar__list {
@@ -566,4 +576,52 @@ function previewSrc(item: GenerationHistoryItem): string {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   word-break: break-word;
- 
+  scrollbar-width: thin;
+  scrollbar-color: rgb(var(--color-line-strong) / 0.55) transparent;
+  /* 仅在内容溢出时才把滚轮事件留给自己，否则交回给外层 sidebar */
+  overscroll-behavior: contain;
+}
+
+.activity-sidebar__prompt::-webkit-scrollbar {
+  width: 4px;
+}
+
+.activity-sidebar__prompt::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.activity-sidebar__prompt::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgb(var(--color-line-strong) / 0.45);
+}
+
+.activity-sidebar__card:hover .activity-sidebar__prompt::-webkit-scrollbar-thumb,
+.activity-sidebar__item--active .activity-sidebar__prompt::-webkit-scrollbar-thumb {
+  background: rgb(var(--color-ink) / 0.5);
+}
+
+@keyframes activity-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgb(var(--color-forest) / 0.5);
+    transform: scale(0.9);
+  }
+  50% {
+    box-shadow: 0 0 0 5px rgb(var(--color-forest) / 0);
+    transform: scale(1.05);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .activity-sidebar__live-dot,
+  .activity-sidebar__card,
+  .activity-sidebar__chip,
+  .activity-sidebar__chevron {
+    animation: none;
+    transition: none;
+  }
+
+  .activity-sidebar__actions {
+    animation: none;
+  }
+}
+</style>

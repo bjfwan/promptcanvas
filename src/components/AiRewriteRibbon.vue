@@ -161,15 +161,11 @@ const phaseLabel = computed(() => {
   gap: 0.65rem;
   padding: 0.5rem 0.75rem;
   border-radius: var(--radius-panel);
-  border: 1px solid rgb(var(--color-line) / 0.4);
-  background:
-    var(--gradient-surface),
-    radial-gradient(circle at 0% 0%, rgb(var(--color-ochre) / 0.16), transparent 60%);
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  box-shadow:
-    var(--shadow-glass),
-    var(--shadow-inner-glass);
+  border: 1px solid rgb(var(--color-line) / 0.82);
+  background: rgb(var(--color-surface) / 0.98);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: var(--shadow-inner-glass);
   font-size: 12.5px;
   color: rgb(var(--color-ink));
   contain: layout paint style;
@@ -181,9 +177,7 @@ const phaseLabel = computed(() => {
 
 .ribbon--phase-error {
   border-color: rgb(var(--color-clay) / 0.4);
-  background:
-    linear-gradient(135deg, rgb(var(--color-clay) / 0.12), rgb(var(--color-accent) / 0.08)),
-    var(--gradient-surface);
+  background: rgb(var(--color-clay) / 0.08);
 }
 
 .ribbon--phase-aborted {
@@ -225,10 +219,10 @@ const phaseLabel = computed(() => {
   align-items: center;
   padding: 1px 7px;
   border-radius: 999px;
-  border: 1px solid rgb(var(--color-line) / 0.5);
-  background: rgb(var(--color-ivory) / 0.5);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgb(var(--color-line) / 0.72);
+  background: rgb(var(--color-surface-raised) / 0.95);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   box-shadow: var(--shadow-inner-glass);
   color: rgb(var(--color-ink));
   font-weight: 700;
@@ -284,8 +278,6 @@ const phaseLabel = computed(() => {
   flex-shrink: 0;
   border-radius: 999px;
   background: rgb(var(--color-accent) / 0.16);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
   color: rgb(var(--color-accent));
 }
 
@@ -296,9 +288,9 @@ const phaseLabel = computed(() => {
   height: 24px;
   flex-shrink: 0;
   border-radius: 999px;
-  background: rgb(var(--color-ivory) / 0.5);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  background: rgb(var(--color-surface-muted) / 0.95);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   box-shadow: var(--shadow-inner-glass);
   color: rgb(var(--color-muted));
 }
@@ -318,10 +310,10 @@ const phaseLabel = computed(() => {
   height: 28px;
   padding: 0 0.6rem;
   border-radius: 999px;
-  border: 1px solid rgb(var(--color-line) / 0.5);
-  background: rgb(var(--color-ivory) / 0.5);
-  backdrop-filter: blur(10px) saturate(1.4);
-  -webkit-backdrop-filter: blur(10px) saturate(1.4);
+  border: 1px solid rgb(var(--color-line) / 0.72);
+  background: rgb(var(--color-surface) / 0.96);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   box-shadow: var(--shadow-inner-glass);
   color: rgb(var(--color-ink));
   font-size: 11.5px;
@@ -343,7 +335,7 @@ const phaseLabel = computed(() => {
 }
 
 .ribbon__btn:hover {
-  background: rgb(var(--color-ivory) / 0.7);
+  background: rgb(var(--color-surface-raised) / 1);
   border-color: rgb(var(--color-line-strong) / 0.6);
   box-shadow: var(--shadow-glass-sm);
   transform: translateY(-1px);
@@ -364,7 +356,7 @@ const phaseLabel = computed(() => {
 }
 
 .ribbon__btn--ghost {
-  background: rgb(var(--color-ivory) / 0.35);
+  background: rgb(var(--color-surface) / 0.9);
   border-color: rgb(var(--color-line) / 0.5);
   color: rgb(var(--color-muted));
 }
@@ -372,7 +364,12 @@ const phaseLabel = computed(() => {
 .ribbon__btn--ghost:hover {
   color: rgb(var(--color-ink));
   border-color: rgb(var(--color-line-strong) / 0.6);
-  background: rgb(var(--color-ivory) / 0.6);
+  background: rgb(var(--color-surface-raised) / 1);
+}
+
+.ribbon__btn:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 
 .ribbon-enter-from,

@@ -405,7 +405,7 @@ defineExpose({ scrollToBottom, scrollToMessage })
 
 .chat-stream__jump {
   position: absolute;
-  right: 14px;
+  right: max(14px, env(safe-area-inset-right, 0px));
   display: inline-grid;
   place-items: center;
   width: 48px;
@@ -429,6 +429,22 @@ defineExpose({ scrollToBottom, scrollToMessage })
 
 .chat-stream__jump:active {
   transform: scale(0.92);
+}
+
+@media (max-width: 639px) {
+  .chat-stream__scroller {
+    scrollbar-width: none;
+  }
+
+  .chat-stream__scroller::-webkit-scrollbar {
+    display: none;
+  }
+
+  .chat-stream__jump {
+    width: 46px;
+    height: 46px;
+    right: max(10px, env(safe-area-inset-right, 0px));
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

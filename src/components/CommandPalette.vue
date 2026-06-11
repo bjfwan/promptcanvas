@@ -273,7 +273,7 @@ function indexOfCommand(command: CommandItem) {
     <Transition name="cmd-fade">
       <div
         v-if="open"
-        class="fixed inset-0 z-sheet flex items-start justify-center px-3 pt-[16dvh] sm:pt-[18dvh]"
+        class="cmd-overlay fixed inset-0 z-sheet flex items-end justify-center px-0 sm:items-start sm:px-3"
         role="dialog"
         aria-modal="true"
         :aria-label="t('cmd.tip.palette')"
@@ -287,7 +287,7 @@ function indexOfCommand(command: CommandItem) {
             v-if="open"
             class="cmd-shell relative w-full max-w-xl overflow-hidden text-ink"
           >
-            <div class="flex items-center gap-2.5 border-b border-line/40 px-4 py-3">
+            <div class="cmd-shell__search flex items-center gap-2.5 border-b border-line/40 px-4 py-3">
               <Icon name="search" :size="16" class="text-accent" />
               <input
                 ref="inputRef"
@@ -302,7 +302,7 @@ function indexOfCommand(command: CommandItem) {
               <kbd class="hidden font-mono text-[10px] uppercase tracking-[0.18em] text-muted sm:inline-flex">esc</kbd>
             </div>
 
-            <div class="touch-scroll-y max-h-[60dvh] overflow-y-auto p-2">
+            <div class="cmd-shell__list touch-scroll-y overflow-y-auto p-2">
               <div v-if="!flatList.length" class="px-4 py-12 text-center text-[13px] text-muted">
                 {{ t('cmd.empty') }}
               </div>
@@ -343,7 +343,7 @@ function indexOfCommand(command: CommandItem) {
               </template>
             </div>
 
-            <footer class="flex items-center gap-3 border-t border-line/40 px-4 py-2 font-mono text-[10px] uppercase tracking-[0.18em] text-muted">
+            <footer class="cmd-shell__footer flex items-center gap-3 border-t border-line/40 px-4 py-2 font-mono text-[10px] uppercase tracking-[0.18em] text-muted">
               <span class="inline-flex items-center gap-1.5">
                 <kbd>↑</kbd><kbd>↓</kbd>
                 <span class="ml-1 normal-case tracking-normal">{{ t('cmd.tip.navigate') }}</span>
@@ -366,12 +366,28 @@ function indexOfCommand(command: CommandItem) {
 
 <style scoped>
 .cmd-shell {
-  border: 1px solid rgb(var(--color-line) / 0.3);
-  border-radius: 22px;
-  background: var(--gradient-surface);
-  backdrop-filter: blur(calc(var(--glass-blur) * 1.4)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 1.4)) saturate(var(--glass-saturate));
-  box-shadow: var(--shadow-glass-xl), var(--shadow-inner-glass);
+  border: 1px solid rgb(var(--color-line) / 0.82);
+  border-radius: var(--radius-card);
+  background: rgb(var(--color-surface) / 0.98);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: var(--shadow-glass-lg), var(--shadow-inner-glass);
+}
+
+.cmd-overlay {
+  padding-top: 16dvh;
+}
+
+.cmd-shell__search,
+.cmd-shell__footer {
+  flex: 0 0 auto;
+}
+
+.cmd-shell__list {
+  max-height: 60dvh;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-gutter: stable;
 }
 
 .cmd-item {
@@ -380,12 +396,21 @@ function indexOfCommand(command: CommandItem) {
   align-items: center;
   gap: 0.6rem;
   padding: 0.55rem 0.65rem;
-  border-radius: 12px;
+  border-radius: var(--radius-field);
   background: transparent;
   text-align: left;
   color: rgb(var(--color-ink));
   cursor: pointer;
-  transition: background-color 120ms ease, color 120ms ease, transform 120ms var(--motion-press);
+  transition: background-color 160ms var(--motion-soft), color 160ms var(--motion-soft), transform 140ms var(--motion-press);
+}
+
+.cmd-item:hover {
+  background: rgb(var(--color-surface-muted) / 0.95);
+}
+
+.cmd-item:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 
 .cmd-item:active {
@@ -407,11 +432,11 @@ function indexOfCommand(command: CommandItem) {
   place-items: center;
   width: 28px;
   height: 28px;
-  border-radius: 9px;
-  border: 1px solid rgb(var(--color-line) / 0.4);
-  background: rgb(var(--color-ivory) / 0.5);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  border-radius: var(--radius-field);
+  border: 1px solid rgb(var(--color-line) / 0.72);
+  background: rgb(var(--color-surface-raised) / 0.95);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   box-shadow: var(--shadow-inner-glass);
   color: rgb(var(--color-ink));
   flex-shrink: 0;
@@ -475,6 +500,54 @@ kbd {
 .cmd-zoom-enter-active,
 .cmd-zoom-leave-active {
   transition: opacity 0.22s ease-out, transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@media (max-width: 639px) {
+  .cmd-overlay {
+    padding-top: max(env(safe-area-inset-top, 0px), 0.5rem);
+  }
+
+  .cmd-shell {
+    display: flex;
+    max-height: calc(var(--mobile-viewport-height, 100dvh) - max(env(safe-area-inset-top, 0px), 0.5rem));
+    flex-direction: column;
+    border-bottom: 0;
+    border-radius: 18px 18px 0 0;
+  }
+
+  .cmd-shell__search {
+    padding: 0.85rem 1rem;
+  }
+
+  .cmd-shell__search input {
+    min-height: 32px;
+    font-size: 16px;
+  }
+
+  .cmd-shell__list {
+    max-height: none;
+    flex: 1 1 auto;
+    padding: 0.45rem 0.55rem;
+  }
+
+  .cmd-item {
+    min-height: 48px;
+    padding: 0.68rem 0.65rem;
+  }
+
+  .cmd-item__shortcut {
+    display: none;
+  }
+
+  .cmd-shell__footer {
+    display: none;
+  }
+
+  .cmd-zoom-enter-from,
+  .cmd-zoom-leave-to {
+    opacity: 0;
+    transform: translateY(100%);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

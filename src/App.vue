@@ -18,6 +18,7 @@ import type {
 import { createId } from './lib/id'
 import { payloadToMeta } from './lib/chatMessage'
 import AppHeader from './components/AppHeader.vue'
+import Icon from './components/Icon.vue'
 import Toaster from './components/Toaster.vue'
 import { useToast } from './composables/useToast'
 import { useTheme } from './composables/useTheme'
@@ -38,6 +39,7 @@ import { useCommandPalette } from './composables/useCommandPalette'
 import { useShortcutsDialog } from './composables/useShortcutsDialog'
 import { usePromptContext } from './composables/usePromptContext'
 import { usePromptTree } from './composables/usePromptTree'
+import { maxReferenceImages } from './lib/imagesApi'
 import { reverseParseRevisedPrompt, docToPlainPrompt } from './lib/revisedParser'
 import { useOnboarding } from './composables/useOnboarding'
 import { useServiceWorker } from './composables/useServiceWorker'
@@ -99,6 +101,14 @@ const lightbox = useLightbox()
 const provider = useProviderConfig()
 const discoveredModels = useDiscoveredModels()
 const resolutionSupport = useResolutionSupport()
+// Capability state is scoped per provider baseUrl. Re-point the active bucket
+// whenever the configured endpoint changes so a new relay never inherits the
+// previous one's unlocked tiers. `immediate` seeds the correct bucket on load.
+watch(
+  () => provider.state.baseUrl,
+  (baseUrl) => resolutionSupport.selectProvider(baseUrl),
+  { immediate: true },
+)
 const { vibrate } = useVibration()
 const settingsOpen = ref(false)
 const historyOpen = ref(false)
@@ -112,6 +122,7 @@ const { t } = useI18n()
 const composerRef = ref<{ focusPrompt?: () => void } | null>(null)
 const chatDockRef = ref<{ focusInput?: () => void } | null>(null)
 const chatStreamRef = ref<{ scrollToMessage?: (id: string) => void; scrollToBottom?: (smooth?: boolean) => void } | null>(null)
+const desktopReferenceInputRef = ref<HTMLInputElement | null>(null)
 const messages = shallowRef<ChatMessage[]>([])
 const pendingContinuation = ref<ContinuationContext | null>(null)
 const mobileDockHeight = ref(180)
@@ -161,20 +172,6 @@ let skipNextStyleSync = false
 
 const lastEnhanceResult = ref<EnhanceResult | null>(null)
 
-const quickPromptCards = [
-  {
-    title: '咖啡海报',
-    prompt: '精品咖啡品牌的竖版海报，米白背景，一杯冰拿铁居中，玻璃杯凝着水珠，焦糖棕与奶油白双色调，大面积留白，极简高级排版',
-  },
-  {
-    title: '夜雨街景',
-    prompt: '雨后夜晚的城市街角，霓虹灯映在湿润路面，一个穿风衣的人站在便利店门口，冷暖光对比，电影截图质感，35mm 镜头',
-  },
-  {
-    title: '产品棚拍',
-    prompt: '高端护肤精华液棚拍，琥珀色玻璃瓶居中，浅奶油色背景，柔光箱左侧布光，瓶身反光干净，商业杂志广告质感',
-  },
-]
 
 const restoredDraft = loadDraft()
 
@@ -208,6 +205,8 @@ useDraftAutoSave({
 
 const selectedStyle = computed(() => styleOptions.find((item) => item.value === style.value))
 const selectedStyleLabel = computed(() => selectedStyle.value?.label ?? style.value)
+const selectedQualityLabel = computed(() => qualityOptions.find((item) => item.value === quality.value)?.label ?? quality.value)
+const canAddReferenceImages = computed(() => referenceImages.value.length < maxReferenceImages)
 const selectedModelLabel = computed(() => {
   if (modelChoice.value === customModelSentinel) {
     const trimmed = customModel.value.trim()
@@ -222,9 +221,7 @@ const trimmedPrompt = computed(() => prompt.value.trim())
 const canGenerate = computed(
   () =>
     trimmedPrompt.value.length >= 4
-    && !isGenerating.value
-    && healthStatus.value !== 'offline'
-    && provider.isConfigured.value,
+    && !isGenerating.value,
 )
 const promptPreview = computed(() => trimmedPrompt.value.split('\n')[0]?.slice(0, 64) ?? '')
 
@@ -247,6 +244,17 @@ function buildPayload(): GenerateImageRequest {
     model: resolvedModel || undefined,
     referenceImages: referenceImages.value.length ? referenceImages.value.slice() : undefined,
   }
+}
+
+function openDesktopReferencePicker() {
+  desktopReferenceInputRef.value?.click()
+}
+
+function handleDesktopReferenceInputChange(event: Event) {
+  const input = event.target as HTMLInputElement | null
+  const files = input?.files ? Array.from(input.files) : []
+  if (files.length) addReferenceImages(files)
+  if (input) input.value = ''
 }
 
 const generation = useGenerationFlow({
@@ -632,30 +640,17 @@ function handleImportPrompt(text: string) {
   focusPrompt()
 }
 
-function handlePickQuickPrompt(value: string) {
-  if (value === prompt.value) {
-    toast.info('当前已是这条提示词')
-    focusPrompt()
-    return
-  }
-  vibrate('tap')
-  replacePromptWithUndo(value, {
-    treeAction: 'manual',
-    treeLabel: '快速提示',
-    successTitle: '已写入快速提示词',
-  })
-  focusPrompt()
-}
 
 async function handleGenerate(options?: { clearAfter?: boolean }) {
   lastEnhanceResult.value = null
-  if (!canGenerate.value) {
+  if (!canGenerate.value || !provider.isConfigured.value || healthStatus.value === 'offline') {
     if (!provider.isConfigured.value) {
       toast.error('请先配置 API 服务', '右上角「设置」→ 服务商', {
         label: '打开设置',
         ariaLabel: '打开设置弹窗配置服务商',
         handler: () => { settingsOpen.value = true },
       })
+      settingsOpen.value = true
       return
     }
     if (healthStatus.value === 'offline') {
@@ -1413,88 +1408,202 @@ watch(sw.updateAvailable, (available) => {
 
     <main
       v-if="isDesktop"
-      class="desktop-workbench relative z-[2] mx-auto grid w-full max-w-[1680px] flex-1 gap-5 px-6 pb-8 pt-5 xl:gap-6 2xl:px-8"
+      class="desktop-workbench desktop-workbench--tool relative z-[2] mx-auto grid w-full max-w-[1720px] flex-1 gap-4 px-5 pb-6 pt-4 xl:gap-5 xl:px-6 2xl:px-8"
       :class="isWideDesktop
-        ? 'grid-cols-[minmax(340px,420px)_minmax(0,1fr)_minmax(280px,340px)]'
-        : 'grid-cols-[minmax(360px,440px)_minmax(0,1fr)]'
+        ? 'grid-cols-[minmax(250px,300px)_minmax(0,1fr)_minmax(280px,320px)]'
+        : 'grid-cols-[minmax(240px,280px)_minmax(0,1fr)]'
       "
     >
-      <section class="glass-panel studio-panel reveal touch-scroll-y" style="--reveal-delay: 40ms;">
-        <PromptComposer
-          ref="composerRef"
-          v-model:prompt="prompt"
-          v-model:imageStyle="style"
-          v-model:size="size"
-          v-model:count="count"
-          v-model:quality="quality"
-          v-model:modelChoice="modelChoice"
-          v-model:customModel="customModel"
-          :reference-images="referenceImages"
-          :is-generating="isGenerating"
-          :elapsed-seconds="elapsedSeconds"
-          :can-generate="canGenerate"
-          :health-offline="healthStatus === 'offline'"
-          :continuation="pendingContinuation"
-          :can-undo-enhance="!!lastEnhanceResult"
-          :model-name="selectedModelLabel"
-          :prompt-context="promptContext"
-          :tree-nodes="promptTree.nodes.value"
-          :tree-current-id="promptTree.currentNode.value?.id ?? null"
-          :tree-can-undo="promptTree.canUndo.value"
-          :tree-can-redo="promptTree.canRedo.value"
-          @generate="handleGenerate"
-          @abort="handleAbortGeneration"
-          @copy="copyToClipboard"
-          @open-settings="settingsOpen = true"
-          @select-reference-images="addReferenceImages"
-          @remove-reference-image="removeReferenceImage"
-          @magic-enhance="handleMagicEnhance"
-          @magic-ab-test="handleMagicAbTest"
-          @toast-info="(title: string, message?: string) => toast.info(title, message)"
-          @undo-enhance="handleUndoEnhance"
-          @tree-undo="handleTreeUndo"
-          @tree-redo="handleTreeRedo"
-          @tree-jump="handleTreeJump"
-          @tree-branch="handleTreeBranch"
-          @tree-clear="handleTreeClear"
-          @clear="lastEnhanceResult = null"
-          @cancel-continuation="handleCancelContinuation"
+      <aside class="desktop-function-rail reveal" style="--reveal-delay: 40ms;" aria-label="桌面功能区">
+        <input
+          ref="desktopReferenceInputRef"
+          type="file"
+          class="sr-only"
+          accept="image/png,image/jpeg,image/webp,image/gif"
+          multiple
+          @change="handleDesktopReferenceInputChange"
         />
-      </section>
 
-      <section id="canvas" class="studio-stage reveal glass-stage" style="--reveal-delay: 120ms;">
-        <CanvasStage
-          :images="images"
-          :active-image-index="activeImageIndex"
-          :is-generating="isGenerating"
-          :elapsed-seconds="elapsedSeconds"
-          :error-message="errorMessage"
-          :last-request-id="lastRequestId"
-          :size="size"
-          :style-label="selectedStyleLabel"
-          :model-label="selectedModelLabel"
-          :model-name="modelChoice === customModelSentinel ? customModel : modelChoice"
-          :quality="quality"
-          :count="count"
-          :history="history"
-          :prompt-preview="promptPreview"
-          :has-prompt="trimmedPrompt.length >= 4"
-          :quick-prompts="quickPromptCards"
-          :provider-configured="provider.isConfigured.value"
-          @select="(index) => (activeImageIndex = index)"
-          @open-lightbox="(index) => lightbox.open(images, index)"
-          @download="downloadImage"
-          @open="openImage"
-          @copy="copyToClipboard"
-          @export="exportCurrentConfig"
-          @go-compose="focusPrompt"
-          @pick-prompt="handlePickQuickPrompt"
-          @remix="(image, index) => handleRemix(image, prompt, lastRequestId || 'canvas', index)"
-          @generate="handleGenerate"
-          @abort="handleAbortGeneration"
-          @open-settings="settingsOpen = true"
-          @drop-reference-images="addReferenceImages"
-        />
+        <section class="tool-section">
+          <p class="tool-section__label">Workspace</p>
+          <h2 class="tool-section__title">功能区</h2>
+          <p class="tool-section__note">
+            参数、参考图和状态放在侧边，画面描述留在中间底部。
+          </p>
+        </section>
+
+        <section class="tool-section">
+          <div class="tool-section__head">
+            <p class="tool-section__label">Render</p>
+            <button type="button" class="tool-section__link" @click="styleSheetOpen = true">
+              风格
+            </button>
+          </div>
+          <dl class="tool-meta-list">
+            <div>
+              <dt>风格</dt>
+              <dd>{{ selectedStyleLabel }}</dd>
+            </div>
+            <div>
+              <dt>尺寸</dt>
+              <dd>{{ size }}</dd>
+            </div>
+            <div>
+              <dt>质量</dt>
+              <dd>{{ selectedQualityLabel }}</dd>
+            </div>
+            <div>
+              <dt>数量</dt>
+              <dd>
+                <button type="button" class="tool-stepper" :disabled="count <= 1 || isGenerating" @click="count = Math.max(1, count - 1)">
+                  <Icon name="minus" :size="12" />
+                </button>
+                <span>{{ count }}</span>
+                <button type="button" class="tool-stepper" :disabled="count >= 4 || isGenerating" @click="count = Math.min(4, count + 1)">
+                  <Icon name="plus" :size="12" />
+                </button>
+              </dd>
+            </div>
+          </dl>
+          <button type="button" class="tool-button" @click="settingsOpen = true">
+            <Icon name="sliders" :size="14" />
+            <span>生成设置</span>
+          </button>
+        </section>
+
+        <section class="tool-section">
+          <div class="tool-section__head">
+            <p class="tool-section__label">References</p>
+            <span class="tool-count">{{ referenceImages.length }} / {{ maxReferenceImages }}</span>
+          </div>
+          <div v-if="referenceImages.length" class="reference-strip">
+            <figure
+              v-for="image in referenceImages"
+              :key="image.id"
+              class="reference-strip__item"
+            >
+              <img :src="image.previewUrl" :alt="image.name" loading="lazy" decoding="async" />
+              <button
+                type="button"
+                aria-label="移除参考图"
+                @click="removeReferenceImage(image.id)"
+              >
+                <Icon name="close" :size="10" />
+              </button>
+            </figure>
+          </div>
+          <p v-else class="tool-section__note">
+            参考图不再占据主入口，需要时从这里补充。
+          </p>
+          <button
+            type="button"
+            class="tool-button tool-button--quiet"
+            :disabled="!canAddReferenceImages"
+            @click="openDesktopReferencePicker"
+          >
+            <Icon name="image" :size="14" />
+            <span>{{ canAddReferenceImages ? '添加参考图' : '参考图已满' }}</span>
+          </button>
+        </section>
+
+        <section class="tool-section tool-section--status">
+          <div class="tool-section__head">
+            <p class="tool-section__label">Status</p>
+            <span class="tool-status-dot" :data-status="healthStatus"></span>
+          </div>
+          <p class="tool-status-text">{{ healthMessage || (provider.isConfigured.value ? healthStatus : '未配置 API') }}</p>
+          <button type="button" class="tool-button tool-button--quiet" @click="commandPalette.open.value = true">
+            <Icon name="command" :size="14" />
+            <span>命令面板</span>
+          </button>
+        </section>
+      </aside>
+
+      <section class="desktop-center-stack">
+        <section id="canvas" class="desktop-canvas-area reveal" style="--reveal-delay: 90ms;">
+          <CanvasStage
+            :images="images"
+            :active-image-index="activeImageIndex"
+            :is-generating="isGenerating"
+            :elapsed-seconds="elapsedSeconds"
+            :error-message="errorMessage"
+            :last-request-id="lastRequestId"
+            :size="size"
+            :style-label="selectedStyleLabel"
+            :model-label="selectedModelLabel"
+            :model-name="modelChoice === customModelSentinel ? customModel : modelChoice"
+            :quality="quality"
+            :count="count"
+            :history="history"
+            :prompt-preview="promptPreview"
+            :has-prompt="trimmedPrompt.length >= 4"
+            :provider-configured="provider.isConfigured.value"
+            @select="(index) => (activeImageIndex = index)"
+            @open-lightbox="(index) => lightbox.open(images, index)"
+            @open-inpaint="(index) => lightbox.openForEdit(images, index)"
+            @download="downloadImage"
+            @open="openImage"
+            @copy="copyToClipboard"
+            @export="exportCurrentConfig"
+            @go-compose="focusPrompt"
+            @remix="(image, index) => handleRemix(image, prompt, lastRequestId || 'canvas', index)"
+            @generate="handleGenerate"
+            @abort="handleAbortGeneration"
+            @open-settings="settingsOpen = true"
+            @drop-reference-images="addReferenceImages"
+          />
+        </section>
+
+        <section class="desktop-draft-panel reveal" style="--reveal-delay: 140ms;" aria-label="构图草案">
+          <div class="desktop-draft-panel__head">
+            <div>
+              <p class="tool-section__label">Draft</p>
+              <h2 class="desktop-draft-panel__title">构图草案</h2>
+            </div>
+            <span class="desktop-draft-panel__hint">中间底部</span>
+          </div>
+          <PromptComposer
+            ref="composerRef"
+            v-model:prompt="prompt"
+            v-model:imageStyle="style"
+            v-model:size="size"
+            v-model:count="count"
+            v-model:quality="quality"
+            v-model:modelChoice="modelChoice"
+            v-model:customModel="customModel"
+            layout="draft"
+            :reference-images="referenceImages"
+            :is-generating="isGenerating"
+            :elapsed-seconds="elapsedSeconds"
+            :can-generate="canGenerate"
+            :health-offline="healthStatus === 'offline'"
+            :continuation="pendingContinuation"
+            :can-undo-enhance="!!lastEnhanceResult"
+            :model-name="selectedModelLabel"
+            :prompt-context="promptContext"
+            :tree-nodes="promptTree.nodes.value"
+            :tree-current-id="promptTree.currentNode.value?.id ?? null"
+            :tree-can-undo="promptTree.canUndo.value"
+            :tree-can-redo="promptTree.canRedo.value"
+            @generate="handleGenerate"
+            @abort="handleAbortGeneration"
+            @copy="copyToClipboard"
+            @open-settings="settingsOpen = true"
+            @select-reference-images="addReferenceImages"
+            @remove-reference-image="removeReferenceImage"
+            @magic-enhance="handleMagicEnhance"
+            @magic-ab-test="handleMagicAbTest"
+            @toast-info="(title: string, message?: string) => toast.info(title, message)"
+            @undo-enhance="handleUndoEnhance"
+            @tree-undo="handleTreeUndo"
+            @tree-redo="handleTreeRedo"
+            @tree-jump="handleTreeJump"
+            @tree-branch="handleTreeBranch"
+            @tree-clear="handleTreeClear"
+            @clear="lastEnhanceResult = null"
+            @cancel-continuation="handleCancelContinuation"
+          />
+        </section>
       </section>
 
       <ActivitySidebar
@@ -1513,7 +1622,6 @@ watch(sw.updateAvailable, (available) => {
         @remix="remixFromHistory"
         @regenerate="regenerateFromHistory"
       />
-
     </main>
 
     <footer
@@ -1652,4 +1760,296 @@ watch(sw.updateAvailable, (available) => {
     <Toaster />
   </div>
 </template>
+
+<style scoped>
+.desktop-workbench--tool {
+  align-items: stretch;
+  height: calc(100vh - 72px);
+  max-height: calc(100vh - 72px);
+  min-height: 0;
+  overflow: hidden;
+}
+
+.desktop-function-rail {
+  align-self: stretch;
+  display: flex;
+  min-height: 0;
+  overflow-y: auto;
+  flex-direction: column;
+  border: 1px solid rgb(var(--color-line) / 0.78);
+  border-radius: var(--radius-panel);
+  background: rgb(var(--color-surface) / 0.96);
+  box-shadow: var(--shadow-inner-glass);
+  scrollbar-gutter: stable;
+}
+
+.desktop-function-rail::-webkit-scrollbar {
+  width: 6px;
+}
+
+.desktop-function-rail::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgb(var(--color-line-strong) / 0.4);
+}
+
+.tool-section {
+  display: grid;
+  gap: 0.75rem;
+  padding: 1rem;
+  border-bottom: 1px solid rgb(var(--color-line) / 0.68);
+}
+
+.tool-section:last-child {
+  border-bottom: 0;
+}
+
+.tool-section__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.tool-section__label {
+  margin: 0;
+  color: rgb(var(--color-muted));
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.tool-section__title,
+.desktop-draft-panel__title {
+  margin: 0;
+  color: rgb(var(--color-ink));
+  font-size: 16px;
+  font-weight: 760;
+  letter-spacing: 0;
+}
+
+.tool-section__note {
+  margin: 0;
+  color: rgb(var(--color-muted));
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.tool-section__link,
+.tool-count,
+.desktop-draft-panel__hint {
+  color: rgb(var(--color-muted));
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.tool-section__link {
+  border-radius: 6px;
+  padding: 0.2rem 0.35rem;
+  transition: background-color 140ms var(--motion-soft), color 140ms var(--motion-soft);
+}
+
+.tool-section__link:hover {
+  background: rgb(var(--color-line) / 0.18);
+  color: rgb(var(--color-ink));
+}
+
+.tool-meta-list {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0;
+}
+
+.tool-meta-list > div {
+  display: flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border-radius: 8px;
+  background: rgb(var(--color-surface-muted) / 0.66);
+  padding: 0.45rem 0.55rem;
+}
+
+.tool-meta-list dt {
+  color: rgb(var(--color-muted));
+  font-size: 11px;
+  font-weight: 640;
+}
+
+.tool-meta-list dd {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0;
+  color: rgb(var(--color-ink));
+  font-size: 12px;
+  font-weight: 720;
+  text-align: right;
+}
+
+.tool-button {
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  border: 1px solid rgb(var(--color-line) / 0.82);
+  border-radius: 8px;
+  background: rgb(var(--color-surface-raised) / 0.96);
+  color: rgb(var(--color-ink));
+  font-size: 12px;
+  font-weight: 720;
+  transition: transform 140ms var(--motion-press), border-color 140ms var(--motion-soft), background-color 140ms var(--motion-soft);
+}
+
+.tool-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  border-color: rgb(var(--color-line-strong) / 0.72);
+  background: rgb(var(--color-surface-raised));
+}
+
+.tool-button:disabled,
+.tool-stepper:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.tool-button--quiet {
+  background: rgb(var(--color-surface-muted) / 0.72);
+}
+
+.tool-stepper {
+  display: inline-grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border: 1px solid rgb(var(--color-line) / 0.72);
+  border-radius: 7px;
+  background: rgb(var(--color-surface-raised) / 0.94);
+  color: rgb(var(--color-ink));
+  transition: background-color 140ms var(--motion-soft), transform 120ms var(--motion-press);
+}
+
+.tool-stepper:hover:not(:disabled) {
+  background: rgb(var(--color-surface-raised));
+  transform: translateY(-1px);
+}
+
+.reference-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.reference-strip__item {
+  position: relative;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border: 1px solid rgb(var(--color-line) / 0.72);
+  border-radius: 8px;
+  background: rgb(var(--color-surface-muted) / 0.75);
+}
+
+.reference-strip__item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.reference-strip__item button {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border-radius: 6px;
+  background: rgb(var(--color-ink) / 0.68);
+  color: rgb(var(--color-paper));
+}
+
+.tool-section--status {
+  margin-top: auto;
+}
+
+.tool-status-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: rgb(var(--color-muted) / 0.62);
+}
+
+.tool-status-dot[data-status='online'] {
+  background: rgb(var(--color-forest));
+}
+
+.tool-status-dot[data-status='offline'] {
+  background: rgb(var(--color-clay));
+}
+
+.tool-status-text {
+  margin: 0;
+  color: rgb(var(--color-ink) / 0.78);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.desktop-center-stack {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 0.85rem;
+}
+
+.desktop-canvas-area {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0.15rem 0.1rem 0.25rem;
+}
+
+.desktop-canvas-area::-webkit-scrollbar {
+  width: 6px;
+}
+
+.desktop-canvas-area::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgb(var(--color-line-strong) / 0.35);
+}
+
+.desktop-draft-panel {
+  display: grid;
+  gap: 0.6rem;
+  border: 1px solid rgb(var(--color-line) / 0.82);
+  border-radius: var(--radius-panel);
+  background: rgb(var(--color-surface) / 0.98);
+  box-shadow: var(--shadow-inner-glass);
+  padding: 0.75rem;
+}
+
+.desktop-draft-panel__head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+@media (max-width: 1279px) {
+  .desktop-workbench--tool {
+    max-width: 1320px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tool-section__link,
+  .tool-button,
+  .tool-stepper {
+    transition: none;
+  }
+}
+</style>
 

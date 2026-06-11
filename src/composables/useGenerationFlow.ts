@@ -3,6 +3,7 @@ import { ApiRequestError, PROVIDER_NOT_CONFIGURED, generateImage } from '../api'
 import { payloadToMeta } from '../lib/chatMessage'
 import { createId } from '../lib/id'
 import { recordGenerationToPreference } from '../lib/preferenceLearner'
+import { useResolutionSupport } from './useResolutionSupport'
 import { prependHistory } from '../storage'
 import type {
   ChatAssistantMessage,
@@ -36,6 +37,7 @@ export interface GenerationFlowDeps {
 export function useGenerationFlow(deps: GenerationFlowDeps) {
   let timerId: number | undefined
   let activeAbortController: AbortController | null = null
+  const resolutionSupport = useResolutionSupport()
 
   function updateAssistantMessage(
     id: string,
@@ -129,6 +131,11 @@ export function useGenerationFlow(deps: GenerationFlowDeps) {
       deps.primeGeneratedImages(result.images)
       deps.images.value = result.images
       deps.lastRequestId.value = result.requestId || ''
+      // 真实生成成功 → 永久解锁该尺寸所属的分辨率档（最高可信度信号，
+      // 胜过能力表与关键词猜测，并清除可能的误锁）。
+      try {
+        resolutionSupport.learnSuccessfulSize(args.payload.size)
+      } catch {}
       const persistableImages: GeneratedImage[] = result.images
         .filter((image) => Boolean(image.url || image.b64Json))
         .map((image) => ({
@@ -228,6 +235,15 @@ export function useGenerationFlow(deps: GenerationFlowDeps) {
 
       if (code === PROVIDER_NOT_CONFIGURED) {
         deps.settingsOpen.value = true
+      }
+
+      // 上游明确拒绝了这个尺寸 → 把对应分辨率档锁掉并记住，下次不再让用户选。
+      // 这是"自学习"的负向信号：比能力表更可信，因为是真实上游的回答。
+      if (code === 'SIZE_NOT_SUPPORTED') {
+        const locked = resolutionSupport.learnBlockedSize(args.payload.size)
+        if (locked) {
+          deps.toast.info('已记住该尺寸不被支持', '已在当前中转站隐藏这一分辨率档，请改用更低分辨率')
+        }
       }
     } finally {
       deps.isGenerating.value = false

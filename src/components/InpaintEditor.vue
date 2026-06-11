@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch, nextTick } from 'vue'
-import { useMaskCanvas, type MaskTool } from '../composables/useMaskCanvas'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
+import { mapClientPointToCanvas, useMaskCanvas, type MaskTool } from '../composables/useMaskCanvas'
 import Icon from './Icon.vue'
 
 interface Props {
@@ -28,13 +28,16 @@ const canvasRef = ref<HTMLCanvasElement | null>(null)
 const imageEl = ref<HTMLImageElement | null>(null)
 const promptInput = ref<HTMLTextAreaElement | null>(null)
 
-const promptText = ref('')
-const isSubmitting = ref(false)
-const imageLoaded = ref(false)
+const promptText = shallowRef('')
+const isSubmitting = shallowRef(false)
+const imageLoaded = shallowRef(false)
+
+const sourceWidth = shallowRef(props.imageWidth)
+const sourceHeight = shallowRef(props.imageHeight)
 
 // Canvas display dimensions (CSS px, responsive to container)
-const displayWidth = ref(0)
-const displayHeight = ref(0)
+const displayWidth = shallowRef(0)
+const displayHeight = shallowRef(0)
 
 // ─── Mask canvas composable ────────────────────────────────────────────────
 const mask = useMaskCanvas()
@@ -44,6 +47,17 @@ const toolOptions: { value: MaskTool; icon: string; label: string }[] = [
   { value: 'rect', icon: 'rectSelect', label: '矩形选区' },
 ]
 
+const brushSizes = [16, 32, 48, 72, 100, 120]
+const brushSizeIndex = shallowRef(2) // default 48
+const sourceAspect = computed(() => (sourceHeight.value > 0 ? sourceWidth.value / sourceHeight.value : 1))
+const cursorPreview = ref({ x: 0, y: 0, visible: false })
+const cursorRingStyle = computed(() => ({
+  width: `${brushSizes[brushSizeIndex.value]}px`,
+  height: `${brushSizes[brushSizeIndex.value]}px`,
+  transform: `translate(${cursorPreview.value.x}px, ${cursorPreview.value.y}px) translate(-50%, -50%)`,
+  opacity: cursorPreview.value.visible ? 1 : 0,
+}))
+
 // ─── Responsively size the canvas to fit the container ─────────────────────
 let resizeObserver: ResizeObserver | null = null
 
@@ -51,16 +65,18 @@ function recalcLayout() {
   const container = containerRef.value
   if (!container) return
 
-  const maxW = container.clientWidth
-  const maxH = container.clientHeight
+  const rect = container.getBoundingClientRect()
+  const style = window.getComputedStyle(container)
+  const maxW = rect.width - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight)
+  const maxH = rect.height - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom)
 
   if (!maxW || !maxH) return
 
-  const aspect = props.imageWidth / props.imageHeight
+  const aspect = sourceAspect.value
   let w: number, h: number
 
   if (maxW / maxH > aspect) {
-    // Container is wider than image — height-constrained
+    // Container is wider than image, so height constrains the canvas.
     h = maxH
     w = h * aspect
   } else {
@@ -69,8 +85,8 @@ function recalcLayout() {
     h = w / aspect
   }
 
-  displayWidth.value = Math.round(w)
-  displayHeight.value = Math.round(h)
+  displayWidth.value = Math.max(1, Math.round(w))
+  displayHeight.value = Math.max(1, Math.round(h))
 }
 
 onMounted(() => {
@@ -86,18 +102,19 @@ onBeforeUnmount(() => {
   mask.destroy()
 })
 
+function setSourceSize(width: number, height: number) {
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return
+  sourceWidth.value = Math.round(width)
+  sourceHeight.value = Math.round(height)
+}
+
 // When image loads, update natural dimensions and layout
 function onImageLoad() {
-  imageLoaded.value = true
-  if (imageEl.value) {
-    // Override with actual natural dimensions for precision
-    const nw = imageEl.value.naturalWidth
-    const nh = imageEl.value.naturalHeight
-    if (nw && nh) {
-      ;(props as any).imageWidth = nw
-      ;(props as any).imageHeight = nh
-    }
+  const img = imageEl.value
+  if (img?.naturalWidth && img.naturalHeight) {
+    setSourceSize(img.naturalWidth, img.naturalHeight)
   }
+  imageLoaded.value = true
   nextTick(recalcLayout)
 }
 
@@ -106,6 +123,22 @@ watch([canvasRef, displayWidth, displayHeight], ([canvas, w, h]) => {
   if (canvas && w && h) {
     mask.attach(canvas, w, h)
   }
+}, { flush: 'post' })
+
+watch(() => [props.imageWidth, props.imageHeight] as const, ([w, h]) => {
+  if (!imageLoaded.value) {
+    setSourceSize(w, h)
+    nextTick(recalcLayout)
+  }
+})
+
+watch(() => props.imageSrc, () => {
+  activePointerId = null
+  imageLoaded.value = false
+  cursorPreview.value = { x: 0, y: 0, visible: false }
+  setSourceSize(props.imageWidth, props.imageHeight)
+  mask.clear()
+  nextTick(recalcLayout)
 })
 
 // ─── Pointer events (unified mouse + touch) ───────────────────────────────
@@ -113,38 +146,86 @@ function getCanvasCoords(event: PointerEvent): { x: number; y: number } {
   const canvas = canvasRef.value
   if (!canvas) return { x: 0, y: 0 }
   const rect = canvas.getBoundingClientRect()
-  return {
-    x: event.clientX - rect.left,
-    y: event.clientY - rect.top,
-  }
+  const size = mask.getCanvasSize()
+
+  return mapClientPointToCanvas(event, rect, {
+    width: size.width || displayWidth.value,
+    height: size.height || displayHeight.value,
+  })
 }
 
 let activePointerId: number | null = null
 
+function updateCursorPreview(coords: { x: number; y: number }, visible: boolean) {
+  cursorPreview.value = {
+    x: coords.x,
+    y: coords.y,
+    visible: visible && mask.activeTool.value === 'brush',
+  }
+}
+
+function hideCursorPreview() {
+  cursorPreview.value = { ...cursorPreview.value, visible: false }
+}
+
 function onPointerDown(event: PointerEvent) {
   if (activePointerId !== null) return // single-touch only
+  if (event.pointerType === 'mouse' && event.button !== 0) return
   const canvas = canvasRef.value
   if (!canvas) return
 
+  event.preventDefault()
   activePointerId = event.pointerId
   canvas.setPointerCapture(event.pointerId)
 
   const coords = getCanvasCoords(event)
+  updateCursorPreview(coords, event.pointerType !== 'touch')
   mask.startStroke(coords.x, coords.y)
 }
 
 function onPointerMove(event: PointerEvent) {
-  if (event.pointerId !== activePointerId) return
   const coords = getCanvasCoords(event)
+  updateCursorPreview(coords, activePointerId === null || event.pointerType !== 'touch')
+
+  if (event.pointerId !== activePointerId) return
+  event.preventDefault()
   mask.continueStroke(coords.x, coords.y)
 }
 
 function onPointerUp(event: PointerEvent) {
   if (event.pointerId !== activePointerId) return
   const canvas = canvasRef.value
-  if (canvas) canvas.releasePointerCapture(event.pointerId)
+  const coords = getCanvasCoords(event)
+
+  event.preventDefault()
+  mask.continueStroke(coords.x, coords.y)
+
+  if (canvas?.hasPointerCapture(event.pointerId)) {
+    canvas.releasePointerCapture(event.pointerId)
+  }
   activePointerId = null
   mask.endStroke()
+
+  if (event.pointerType === 'touch') {
+    hideCursorPreview()
+  } else {
+    updateCursorPreview(coords, true)
+  }
+}
+
+function onPointerLeave() {
+  if (activePointerId === null) hideCursorPreview()
+}
+
+function onPointerEnter(event: PointerEvent) {
+  updateCursorPreview(getCanvasCoords(event), true)
+}
+
+function onLostPointerCapture(event: PointerEvent) {
+  if (event.pointerId !== activePointerId) return
+  activePointerId = null
+  mask.endStroke()
+  hideCursorPreview()
 }
 
 // ─── Actions ──────────────────────────────────────────────────────────────
@@ -160,7 +241,7 @@ async function handleSubmit() {
   if (!promptText.value.trim() || !mask.hasContent.value) return
   isSubmitting.value = true
   try {
-    const maskBlob = await mask.exportMask(props.imageWidth, props.imageHeight)
+    const maskBlob = await mask.exportMask(sourceWidth.value, sourceHeight.value)
     emit('submit', { mask: maskBlob, prompt: promptText.value.trim() })
   } finally {
     isSubmitting.value = false
@@ -175,9 +256,6 @@ function handleKeydown(event: KeyboardEvent) {
 }
 
 // ─── Brush size slider ─────────────────────────────────────────────────────
-const brushSizes = [16, 32, 48, 72, 100, 120]
-const brushSizeIndex = ref(2) // default 48
-
 watch(brushSizeIndex, (index) => {
   mask.setBrushSize(brushSizes[index])
 }, { immediate: true })
@@ -198,6 +276,7 @@ const canSubmit = computed(() => promptText.value.trim().length > 0 && mask.hasC
           :class="{ 'inpaint-toolbar__btn--active': mask.activeTool.value === opt.value }"
           :aria-label="opt.label"
           :aria-pressed="mask.activeTool.value === opt.value"
+          :title="opt.label"
           @click="mask.setTool(opt.value)"
         >
           <Icon :name="(opt.icon as any)" :size="15" />
@@ -215,6 +294,7 @@ const canSubmit = computed(() => promptText.value.trim().length > 0 && mask.hasC
           :value="brushSizeIndex"
           class="inpaint-toolbar__slider"
           aria-label="画笔大小"
+          title="画笔大小"
           @input="brushSizeIndex = Number(($event.target as HTMLInputElement).value)"
         />
       </div>
@@ -225,6 +305,7 @@ const canSubmit = computed(() => promptText.value.trim().length > 0 && mask.hasC
           class="inpaint-toolbar__btn"
           :disabled="!mask.canUndo.value"
           aria-label="撤销"
+          title="撤销"
           @click="handleUndo"
         >
           <Icon name="undo" :size="14" />
@@ -234,6 +315,7 @@ const canSubmit = computed(() => promptText.value.trim().length > 0 && mask.hasC
           class="inpaint-toolbar__btn"
           :disabled="!mask.hasContent.value"
           aria-label="清除全部"
+          title="清除全部"
           @click="handleClear"
         >
           <Icon name="trash" :size="14" />
@@ -258,22 +340,21 @@ const canSubmit = computed(() => promptText.value.trim().length > 0 && mask.hasC
         <canvas
           ref="canvasRef"
           class="inpaint-canvas-wrap__canvas"
-          :width="displayWidth"
-          :height="displayHeight"
           @pointerdown="onPointerDown"
           @pointermove="onPointerMove"
           @pointerup="onPointerUp"
           @pointercancel="onPointerUp"
+          @pointerenter="onPointerEnter"
+          @pointerleave="onPointerLeave"
+          @lostpointercapture="onLostPointerCapture"
+          @contextmenu.prevent
         ></canvas>
 
         <!-- Visual cursor preview for brush mode (desktop only) -->
         <div
           v-if="mask.activeTool.value === 'brush'"
           class="inpaint-cursor-ring"
-          :style="{
-            width: brushSizes[brushSizeIndex] + 'px',
-            height: brushSizes[brushSizeIndex] + 'px',
-          }"
+          :style="cursorRingStyle"
           aria-hidden="true"
         ></div>
       </div>
@@ -294,6 +375,8 @@ const canSubmit = computed(() => promptText.value.trim().length > 0 && mask.hasC
           class="inpaint-prompt-bar__input"
           rows="1"
           placeholder="描述选中区域要变成什么…"
+          enterkeyhint="send"
+          autocomplete="off"
           @keydown="handleKeydown"
         ></textarea>
         <button
@@ -353,14 +436,16 @@ const canSubmit = computed(() => promptText.value.trim().length > 0 && mask.hasC
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
+  min-height: 36px;
   padding: 0.4rem 0.65rem;
-  border-radius: 9px;
+  border-radius: 8px;
   border: 1px solid rgb(var(--color-paper) / 0.15);
   background: transparent;
   color: rgb(var(--color-paper) / 0.75);
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
+  touch-action: manipulation;
   transition: background 140ms ease, border-color 140ms ease, color 140ms ease;
 }
 
@@ -406,20 +491,33 @@ const canSubmit = computed(() => promptText.value.trim().length > 0 && mask.hasC
 }
 
 .inpaint-toolbar__slider {
-  width: 80px;
-  height: 4px;
+  width: 96px;
+  height: 28px;
   appearance: none;
   -webkit-appearance: none;
-  background: rgb(var(--color-paper) / 0.18);
-  border-radius: 999px;
+  background: transparent;
   outline: none;
   cursor: pointer;
+  touch-action: pan-x;
+}
+
+.inpaint-toolbar__slider::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: rgb(var(--color-paper) / 0.18);
+}
+
+.inpaint-toolbar__slider::-moz-range-track {
+  height: 4px;
+  border-radius: 999px;
+  background: rgb(var(--color-paper) / 0.18);
 }
 
 .inpaint-toolbar__slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   width: 14px;
   height: 14px;
+  margin-top: -5px;
   border-radius: 999px;
   background: rgb(var(--color-paper));
   box-shadow: 0 2px 6px rgb(0 0 0 / 0.4);
@@ -467,7 +565,7 @@ const canSubmit = computed(() => promptText.value.trim().length > 0 && mask.hasC
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
   pointer-events: none;
 }
 
@@ -490,6 +588,7 @@ const canSubmit = computed(() => promptText.value.trim().length > 0 && mask.hasC
   transform: translate(-50%, -50%);
   opacity: 0;
   transition: opacity 120ms ease;
+  will-change: transform, opacity;
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -554,8 +653,12 @@ const canSubmit = computed(() => promptText.value.trim().length > 0 && mask.hasC
 }
 
 .inpaint-prompt-bar__cancel {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
   padding: 0.4rem 0.7rem;
-  border-radius: 9px;
+  border-radius: 8px;
   border: 1px solid rgb(var(--color-paper) / 0.2);
   background: transparent;
   color: rgb(var(--color-paper) / 0.7);
@@ -563,6 +666,7 @@ const canSubmit = computed(() => promptText.value.trim().length > 0 && mask.hasC
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
+  touch-action: manipulation;
   transition: background 120ms ease, color 120ms ease;
 }
 
@@ -574,9 +678,11 @@ const canSubmit = computed(() => promptText.value.trim().length > 0 && mask.hasC
 .inpaint-prompt-bar__submit {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 0.35rem;
+  min-height: 36px;
   padding: 0.45rem 0.85rem;
-  border-radius: 9px;
+  border-radius: 8px;
   border: none;
   background: rgb(var(--color-paper));
   color: rgb(14 17 16);
@@ -584,6 +690,7 @@ const canSubmit = computed(() => promptText.value.trim().length > 0 && mask.hasC
   font-weight: 700;
   cursor: pointer;
   white-space: nowrap;
+  touch-action: manipulation;
   transition: opacity 120ms ease, transform 120ms ease;
 }
 
@@ -615,27 +722,104 @@ const canSubmit = computed(() => promptText.value.trim().length > 0 && mask.hasC
 /* ─── Mobile adjustments ─────────────────────────────────────────────────── */
 @media (max-width: 640px) {
   .inpaint-toolbar {
-    padding: 0.5rem 0.6rem;
-    gap: 0.4rem;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    padding: 0.55rem 0.65rem;
+    gap: 0.45rem;
+  }
+
+  .inpaint-toolbar__tools {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.35rem;
+    min-width: 0;
+  }
+
+  .inpaint-toolbar__tools .inpaint-toolbar__btn-label {
+    display: inline;
+  }
+
+  .inpaint-toolbar__btn {
+    justify-content: center;
+    min-height: 44px;
+    padding: 0.5rem 0.55rem;
+    font-size: 13px;
+  }
+
+  .inpaint-toolbar__actions {
+    margin-left: 0;
+    gap: 0.35rem;
+  }
+
+  .inpaint-toolbar__actions .inpaint-toolbar__btn {
+    width: 44px;
+    padding: 0;
+  }
+
+  .inpaint-toolbar__size {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    width: 100%;
+    margin-left: 0;
+    gap: 0.65rem;
   }
 
   .inpaint-toolbar__slider {
-    width: 60px;
+    width: 100%;
+    height: 34px;
+  }
+
+  .inpaint-toolbar__slider::-webkit-slider-runnable-track,
+  .inpaint-toolbar__slider::-moz-range-track {
+    height: 6px;
+  }
+
+  .inpaint-toolbar__slider::-webkit-slider-thumb {
+    width: 22px;
+    height: 22px;
+    margin-top: -8px;
+  }
+
+  .inpaint-toolbar__slider::-moz-range-thumb {
+    width: 22px;
+    height: 22px;
+  }
+
+  .inpaint-canvas-area {
+    padding: 0.4rem;
+  }
+
+  .inpaint-hint {
+    bottom: 0.75rem;
+    max-width: calc(100% - 1rem);
+    border-radius: 8px;
+    text-align: center;
+    line-height: 1.35;
   }
 
   .inpaint-prompt-bar__inner {
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: stretch;
+    padding: 0.55rem;
+    border-radius: 12px;
   }
 
   .inpaint-prompt-bar__input {
+    grid-column: 1 / -1;
     width: 100%;
-    flex: unset;
+    min-height: 48px;
+    max-height: 120px;
+    font-size: 16px;
   }
 
   .inpaint-prompt-bar__cancel,
   .inpaint-prompt-bar__submit {
-    flex: 1;
-    justify-content: center;
+    min-height: 44px;
+    padding: 0 0.75rem;
+    font-size: 14px;
   }
 
   .inpaint-prompt-bar__hint {

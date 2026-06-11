@@ -115,7 +115,7 @@ export interface ValidatedPayload {
   model: string
   referenceImages: ReferenceImageAttachment[]
   /** PNG mask for inpainting. Black = keep, white = edit. */
-  inpaintMask?: Blob
+  inpaintMask?: Blob | string
 }
 
 export interface ValidationResult {
@@ -144,6 +144,7 @@ export function validatePayload(body: unknown): ValidationResult {
   const creativity = raw.creativity === undefined ? null : (raw.creativity as number | null)
   const seed = typeof raw.seed === 'string' ? raw.seed.trim() : ''
   const model = typeof raw.model === 'string' ? raw.model.trim() : ''
+  const allowResponsesImageInputs = isResponsesImageModel(model)
   const referenceImages = raw.referenceImages === undefined
     ? []
     : (Array.isArray(raw.referenceImages) ? raw.referenceImages : null)
@@ -211,18 +212,24 @@ export function validatePayload(body: unknown): ValidationResult {
       return { error: 'referenceImages 项格式不正确' }
     }
 
-    const attachment = entry as ReferenceImageAttachment
+    const attachment = entry as ReferenceImageAttachment & Record<string, unknown>
     const file = attachment.file
     const mimeType = typeof attachment.mimeType === 'string' ? attachment.mimeType.trim().toLowerCase() : ''
-    const previewUrl = typeof attachment.previewUrl === 'string' ? attachment.previewUrl.trim() : ''
+    const previewUrl = resolveReferenceImageInputUrl(attachment)
     const name = typeof attachment.name === 'string' ? attachment.name.trim() : ''
     const sizeBytes = typeof attachment.sizeBytes === 'number' ? attachment.sizeBytes : Number.NaN
+    const hasFile = typeof File !== 'undefined' && file instanceof File
+    const hasResponsesStringInput = allowResponsesImageInputs
+      && typeof previewUrl === 'string'
+      && isUsableImageInputString(previewUrl)
 
-    if (!(typeof File !== 'undefined' && file instanceof File)) {
+    if (!hasFile && !hasResponsesStringInput) {
       return { error: 'referenceImages 必须包含可上传的图片文件' }
     }
 
-    const resolvedMimeType = (file.type || mimeType).trim().toLowerCase()
+    const resolvedMimeType = hasFile
+      ? (file.type || mimeType).trim().toLowerCase()
+      : (mimeType || inferImageMimeTypeFromInput(previewUrl)).trim().toLowerCase()
     if (!allowedReferenceImageMimeTypes.has(resolvedMimeType)) {
       return { error: '参考图只支持 PNG、JPEG、WEBP、GIF' }
     }
@@ -235,21 +242,24 @@ export function validatePayload(body: unknown): ValidationResult {
       return { error: '参考图预览地址不能为空' }
     }
 
-    if (!Number.isFinite(sizeBytes) || sizeBytes <= 0) {
+    const resolvedSizeBytes = Number.isFinite(sizeBytes) && sizeBytes > 0
+      ? sizeBytes
+      : estimateImageInputSizeBytes(previewUrl)
+    if (!Number.isFinite(resolvedSizeBytes) || resolvedSizeBytes <= 0) {
       return { error: '参考图大小无效' }
     }
 
-    if (sizeBytes > maxReferenceImageSizeBytes) {
+    if (resolvedSizeBytes > maxReferenceImageSizeBytes) {
       return { error: `单张参考图不能超过 ${Math.round(maxReferenceImageSizeBytes / 1024 / 1024)}MB` }
     }
 
     normalizedReferenceImages.push({
       ...attachment,
-      file,
+      file: hasFile ? file : undefined,
       name,
       mimeType: resolvedMimeType,
       previewUrl,
-      sizeBytes,
+      sizeBytes: resolvedSizeBytes,
     })
   }
 
@@ -266,12 +276,18 @@ export function validatePayload(body: unknown): ValidationResult {
   }
 
   const inpaintMaskRaw = raw.inpaintMask
-  let inpaintMask: Blob | undefined
+  let inpaintMask: Blob | string | undefined
   if (inpaintMaskRaw !== undefined && inpaintMaskRaw !== null) {
     if (typeof Blob !== 'undefined' && inpaintMaskRaw instanceof Blob) {
       inpaintMask = inpaintMaskRaw
+    } else if (
+      allowResponsesImageInputs
+      && typeof inpaintMaskRaw === 'string'
+      && isUsableImageInputString(inpaintMaskRaw)
+    ) {
+      inpaintMask = inpaintMaskRaw.trim()
     } else {
-      return { error: 'inpaintMask 必须是 Blob' }
+      return { error: allowResponsesImageInputs ? 'inpaintMask 必须是 Blob、data URL 或 base64 字符串' : 'inpaintMask 必须是 Blob' }
     }
   }
 
@@ -341,6 +357,207 @@ export async function ensurePngBlob(file: File): Promise<Blob> {
     img.onerror = () => reject(new Error('图片加载失败，无法转换为 PNG'))
     img.src = URL.createObjectURL(file)
   })
+}
+
+export function isResponsesImageModel(model?: string | null): boolean {
+  return String(model || '').toLowerCase().includes('gpt-image-2-chat')
+}
+
+function firstString(...values: unknown[]): string {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) return value.trim()
+  }
+  return ''
+}
+
+function resolveReferenceImageInputUrl(
+  attachment: ReferenceImageAttachment & Record<string, unknown>,
+): string {
+  const imageUrl = attachment.image_url
+  const imageUrlString = typeof imageUrl === 'string' ? imageUrl : ''
+  const imageUrlObjectString = imageUrl && typeof imageUrl === 'object'
+    ? firstString((imageUrl as Record<string, unknown>).url)
+    : ''
+
+  return firstString(
+    attachment.previewUrl,
+    attachment.imageUrl,
+    imageUrlString,
+    imageUrlObjectString,
+    attachment.url,
+    attachment.b64Json,
+    attachment.b64_json,
+    attachment.b64,
+    attachment.data,
+  )
+}
+
+function cleanBase64Body(value: string): string {
+  return value.replace(/\s+/g, '')
+}
+
+function getBase64BodyFromImageInput(value: string): string | null {
+  const trimmed = value.trim()
+  const dataUrlMatch = trimmed.match(/^data:image\/[a-z0-9.+-]+;base64,([\s\S]+)$/i)
+  if (dataUrlMatch) return cleanBase64Body(dataUrlMatch[1])
+
+  const bare = trimmed.replace(/^base64,/i, '')
+  return looksLikeBase64ImageBody(bare) ? cleanBase64Body(bare) : null
+}
+
+function looksLikeBase64ImageBody(value: string): boolean {
+  const body = cleanBase64Body(value.replace(/^base64,/i, ''))
+  return body.length >= 32 && /^[A-Za-z0-9+/]+={0,2}$/.test(body)
+}
+
+function inferImageMimeTypeFromBase64(base64: string): string {
+  const body = cleanBase64Body(base64)
+  if (body.startsWith('iVBORw0KGgo')) return 'image/png'
+  if (body.startsWith('/9j/')) return 'image/jpeg'
+  if (body.startsWith('UklGR')) return 'image/webp'
+  if (body.startsWith('R0lGOD')) return 'image/gif'
+  return 'image/png'
+}
+
+function inferImageMimeTypeFromInput(value: string): string {
+  const dataUrlMime = value.trim().match(/^data:(image\/[a-z0-9.+-]+);base64,/i)?.[1]
+  if (dataUrlMime) return dataUrlMime.toLowerCase()
+
+  const base64Body = getBase64BodyFromImageInput(value)
+  return base64Body ? inferImageMimeTypeFromBase64(base64Body) : 'image/png'
+}
+
+function isUsableImageInputString(value: string): boolean {
+  const trimmed = value.trim()
+  return /^https?:\/\//i.test(trimmed)
+    || /^data:image\/[a-z0-9.+-]+;base64,/i.test(trimmed)
+    || looksLikeBase64ImageBody(trimmed)
+}
+
+function estimateImageInputSizeBytes(value: string): number {
+  if (/^https?:\/\//i.test(value.trim())) return 1
+
+  const base64Body = getBase64BodyFromImageInput(value)
+  if (!base64Body) return Number.NaN
+
+  const padding = (base64Body.match(/=+$/)?.[0].length ?? 0)
+  return Math.max(1, Math.floor((base64Body.length * 3) / 4) - padding)
+}
+
+export function normalizeImageInputUrl(input: string, fallbackMimeType = 'image/png'): string {
+  const trimmed = input.trim()
+  if (!trimmed) return ''
+
+  if (/^https?:\/\//i.test(trimmed)) return trimmed
+
+  const dataUrlMatch = trimmed.match(/^data:(image\/[a-z0-9.+-]+);base64,([\s\S]+)$/i)
+  if (dataUrlMatch) {
+    return `data:${dataUrlMatch[1].toLowerCase()};base64,${cleanBase64Body(dataUrlMatch[2])}`
+  }
+
+  const base64Body = getBase64BodyFromImageInput(trimmed)
+  if (base64Body) {
+    const mimeType = fallbackMimeType || inferImageMimeTypeFromBase64(base64Body)
+    return `data:${mimeType};base64,${base64Body}`
+  }
+
+  return trimmed
+}
+
+export async function blobToDataUrl(blob: Blob, fallbackMimeType = 'image/png'): Promise<string> {
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '')
+    reader.onerror = () => reject(reader.error ?? new Error('读取图片失败'))
+    reader.readAsDataURL(blob)
+  })
+
+  return normalizeImageInputUrl(dataUrl, blob.type || fallbackMimeType)
+}
+
+export async function resolveResponsesImageUrl(
+  input: Blob | string,
+  fallbackMimeType = 'image/png',
+): Promise<string> {
+  if (typeof input === 'string') {
+    return normalizeImageInputUrl(input, fallbackMimeType)
+  }
+
+  return blobToDataUrl(input, fallbackMimeType)
+}
+
+async function referenceImageToResponsesImageUrl(image: ReferenceImageAttachment): Promise<string> {
+  if (image.file) {
+    return resolveResponsesImageUrl(image.file, image.mimeType)
+  }
+
+  return resolveResponsesImageUrl(image.previewUrl, image.mimeType)
+}
+
+export interface BuildResponsesImageRequestPayload {
+  prompt: string
+  size: string
+  count: number
+  outputFormat: string
+  quality: string
+  model: string
+  referenceImages: ReferenceImageAttachment[]
+  mask?: Blob | string
+  partialImages?: number
+}
+
+export async function buildResponsesImageRequest(
+  payload: BuildResponsesImageRequestPayload,
+): Promise<Record<string, unknown>> {
+  const imageCount = Math.max(1, payload.count)
+  const content: Array<Record<string, string>> = []
+  const instructionLines = [
+    `Use the image_generation tool to generate exactly ${imageCount} ${imageCount === 1 ? 'image' : 'images'}.`,
+    'Do not answer with only text.',
+  ]
+
+  if (payload.prompt) {
+    instructionLines.push(`Prompt:\n${payload.prompt}`)
+  }
+  if (payload.referenceImages.length > 0) {
+    instructionLines.push('Use the attached input images as visual references for the generation.')
+  }
+  if (payload.mask) {
+    instructionLines.push('The final attached input image is an inpainting mask: black pixels keep the source image, white pixels mark the area to edit.')
+  }
+
+  content.push({ type: 'input_text', text: instructionLines.join('\n') })
+
+  for (const image of payload.referenceImages) {
+    content.push({
+      type: 'input_image',
+      image_url: await referenceImageToResponsesImageUrl(image),
+    })
+  }
+
+  if (payload.mask) {
+    content.push({
+      type: 'input_image',
+      image_url: await resolveResponsesImageUrl(payload.mask, 'image/png'),
+    })
+  }
+
+  return {
+    model: payload.model,
+    input: [{ role: 'user', content }],
+    tools: [{
+      type: 'image_generation',
+      model: 'gpt-image-2',
+      output_format: payload.outputFormat,
+      quality: payload.quality,
+      size: payload.size,
+      partial_images: payload.partialImages ?? 2,
+    }],
+    instructions: 'You are a helpful assistant. Always call image_generation when the user asks for an image.',
+    tool_choice: { type: 'image_generation' },
+    stream: false,
+    store: false,
+  }
 }
 
 export interface BuildPromptOptions {
@@ -447,18 +664,61 @@ interface RawUpstreamImage {
   revisedPrompt?: string
 }
 
+interface RawResponsesImageCall {
+  id?: string
+  type?: string
+  result?: string
+  b64_json?: string
+  b64Json?: string
+  image_base64?: string
+  imageBase64?: string
+  revised_prompt?: string
+  revisedPrompt?: string
+}
+
+function pickFirstString(...values: unknown[]): string | null {
+  for (const value of values) {
+    if (typeof value === 'string' && value.length > 0) return value
+  }
+  return null
+}
+
+function normalizeResponsesImages(response: unknown, outputFormat: string): GeneratedImage[] {
+  const root = response as { output?: unknown; response?: { output?: unknown } }
+  const output = Array.isArray(root?.output)
+    ? root.output
+    : (Array.isArray(root?.response?.output) ? root.response.output : [])
+
+  return output
+    .filter((item): item is RawResponsesImageCall => {
+      return Boolean(item && typeof item === 'object' && (item as RawResponsesImageCall).type === 'image_generation_call')
+    })
+    .map((item, index) => ({
+      id: item.id || `img_${index + 1}`,
+      url: null,
+      b64Json: pickFirstString(item.result, item.b64_json, item.b64Json, item.image_base64, item.imageBase64),
+      mimeType: mimeTypes[outputFormat] || 'image/png',
+      revisedPrompt: item.revised_prompt || item.revisedPrompt || null,
+    }))
+    .filter((image) => Boolean(image.b64Json))
+}
+
 export function normalizeImages(response: unknown, outputFormat: string): GeneratedImage[] {
   const data = Array.isArray((response as { data?: unknown })?.data)
     ? ((response as { data: RawUpstreamImage[] }).data)
     : []
 
-  return data.map((image, index) => ({
-    id: image.id || `img_${index + 1}`,
-    url: image.url || null,
-    b64Json: image.b64_json || image.b64Json || null,
-    mimeType: mimeTypes[outputFormat] || 'image/png',
-    revisedPrompt: image.revised_prompt || image.revisedPrompt || null,
-  }))
+  if (data.length > 0) {
+    return data.map((image, index) => ({
+      id: image.id || `img_${index + 1}`,
+      url: image.url || null,
+      b64Json: image.b64_json || image.b64Json || null,
+      mimeType: mimeTypes[outputFormat] || 'image/png',
+      revisedPrompt: image.revised_prompt || image.revisedPrompt || null,
+    }))
+  }
+
+  return normalizeResponsesImages(response, outputFormat)
 }
 
 export interface ResolvedError {
@@ -475,6 +735,23 @@ export function resolveOpenAIError(error: {
 }): ResolvedError {
   const status = error?.status
   const upstreamCode = error?.code
+  const upstreamMessage = (error?.message ?? '').toLowerCase()
+
+  // 上游中转站"背后真实供应商全部熔断/无可用线路"——常见于负载型中转站，
+  // 表现为 503 + "no available upstream"。这不是 key/url/CORS/分辨率问题，
+  // 而是该模型在中转站侧当前无货。给出可操作建议：换模型或稍后再试。
+  if (
+    status === 503
+    || upstreamCode === 'bad_response_status_code'
+    || upstreamMessage.includes('no available upstream')
+    || upstreamMessage.includes('all cooled')
+  ) {
+    return {
+      status: 503,
+      code: 'UPSTREAM_UNAVAILABLE',
+      message: '中转站暂时没有可用的上游线路（该模型线路全部熔断或冷却中）。这与你的 Key、地址、分辨率无关——请换一个模型，或稍后再试。',
+    }
+  }
 
   if (status === 401 || status === 403 || upstreamCode === 'invalid_api_key') {
     return {
@@ -484,11 +761,33 @@ export function resolveOpenAIError(error: {
     }
   }
 
-  if (upstreamCode === 'insufficient_quota' || upstreamCode === 'billing_hard_limit_reached') {
+  if (
+    upstreamCode === 'insufficient_quota'
+    || upstreamCode === 'billing_hard_limit_reached'
+    || upstreamCode === 'billing_limit_user_error'
+    || upstreamMessage.includes('billing hard limit')
+    || upstreamMessage.includes('insufficient')
+  ) {
     return {
       status: 429,
-      code: 'OPENAI_REQUEST_FAILED',
-      message: '上游额度不足或账单受限，请检查账户余额',
+      code: 'INSUFFICIENT_QUOTA',
+      message: '这个 Key 在中转站的余额或额度已用尽（账单上限已达到）。请到中转站后台充值或更换 Key。',
+    }
+  }
+
+  // 上游明确拒绝了请求尺寸（如 4096 不被该模型/中转站支持）。
+  // 交给调用方据此触发自学习：锁定对应分辨率档。
+  if (
+    upstreamMessage.includes('invalid size')
+    || upstreamMessage.includes('unsupported size')
+    || upstreamMessage.includes('size not supported')
+    || upstreamMessage.includes('size is not')
+    || (upstreamMessage.includes('size') && upstreamMessage.includes('not supported'))
+  ) {
+    return {
+      status: 400,
+      code: 'SIZE_NOT_SUPPORTED',
+      message: '上游不支持当前选择的尺寸，已为你记住并在该中转站下隐藏这一档。请换用更低的分辨率。',
     }
   }
 
@@ -562,5 +861,6 @@ export function payloadToValidated(payload: GenerateImageRequest): ValidationRes
     seed: payload.seed,
     model: payload.model,
     referenceImages: payload.referenceImages,
+    inpaintMask: payload.inpaintMask,
   })
 }

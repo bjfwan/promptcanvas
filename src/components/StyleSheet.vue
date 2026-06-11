@@ -306,12 +306,11 @@ onBeforeUnmount(() => {
 <style scoped>
 .style-sheet {
   max-height: min(86dvh, 760px);
-  background:
-    radial-gradient(120% 60% at 50% 0%, rgb(var(--color-accent) / 0.07), transparent 60%),
-    linear-gradient(180deg, rgb(var(--color-ivory) / 0.72), rgb(var(--color-vellum) / 0.78));
-  backdrop-filter: blur(calc(var(--glass-blur) * 1.4)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 1.4)) saturate(var(--glass-saturate));
-  box-shadow: var(--shadow-glass-xl);
+  border-color: rgb(var(--color-line) / 0.82);
+  background: rgb(var(--color-surface) / 0.98);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: var(--shadow-glass-lg);
   transition: transform 280ms var(--motion-soft);
   will-change: transform;
 }
@@ -349,7 +348,7 @@ onBeforeUnmount(() => {
 }
 
 .style-sheet__header {
-  background: linear-gradient(180deg, rgb(var(--color-ivory) / 0.45), transparent 78%);
+  background: rgb(var(--color-surface) / 0.98);
   padding-bottom: 0.85rem;
   border-bottom: 1px solid rgb(var(--color-line) / 0.4);
 }
@@ -405,10 +404,10 @@ onBeforeUnmount(() => {
   min-height: 64px;
   overflow: hidden;
   border-radius: var(--radius-panel);
-  border: 1px solid rgb(var(--color-line) / 0.4);
-  background: rgb(var(--color-ivory) / 0.4);
-  backdrop-filter: blur(12px) saturate(1.4);
-  -webkit-backdrop-filter: blur(12px) saturate(1.4);
+  border: 1px solid rgb(var(--color-line) / 0.72);
+  background: rgb(var(--color-surface-raised) / 0.82);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   padding: 0.55rem 0.7rem 0.55rem 0.85rem;
   color: rgb(var(--color-ink));
   text-align: left;
@@ -426,7 +425,7 @@ onBeforeUnmount(() => {
 .style-tile:hover {
   transform: translateY(-1px);
   border-color: rgb(var(--color-line-strong) / 0.6);
-  background: rgb(var(--color-ivory) / 0.6);
+  background: rgb(var(--color-surface-raised) / 1);
   box-shadow: var(--shadow-glass-sm), var(--shadow-inner-glass);
 }
 
@@ -434,11 +433,17 @@ onBeforeUnmount(() => {
   transform: scale(0.97);
 }
 
+.style-tile:focus-visible,
+.style-sheet__btn:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
 .style-tile--focused {
   border-color: rgb(var(--color-accent) / 0.5);
-  background: rgb(var(--color-ivory) / 0.65);
+  background: rgb(var(--color-accent) / 0.08);
   color: rgb(var(--color-ink));
-  box-shadow: var(--shadow-glow-accent), var(--shadow-glass), 0 0 0 1px rgb(var(--color-accent) / 0.2);
+  box-shadow: var(--shadow-inner-glass), 0 0 0 1px rgb(var(--color-accent) / 0.12);
 }
 
 .style-tile--focused:hover {
@@ -448,14 +453,14 @@ onBeforeUnmount(() => {
 .style-tile__rail {
   position: absolute;
   inset: 0 auto 0 0;
-  width: 3px;
-  background: var(--gradient-primary);
-  opacity: 0.6;
+  width: 2px;
+  background: rgb(var(--color-accent));
+  opacity: 0.44;
   transition: width 160ms var(--motion-soft), opacity 160ms var(--motion-soft);
 }
 
 .style-tile--focused .style-tile__rail {
-  width: 4px;
+  width: 3px;
   opacity: 1;
 }
 
@@ -520,11 +525,11 @@ onBeforeUnmount(() => {
   margin: 0.4rem 0.85rem 0;
   padding: 0.85rem 0.95rem 0.95rem;
   border-radius: var(--radius-card);
-  border: 1px solid rgb(var(--color-line) / 0.3);
-  background: var(--gradient-surface);
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  box-shadow: var(--shadow-glass), var(--shadow-inner-glass);
+  border: 1px solid rgb(var(--color-line) / 0.72);
+  background: rgb(var(--color-surface-raised) / 0.84);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: var(--shadow-inner-glass);
   max-height: min(34dvh, 240px);
   overflow-y: auto;
   scrollbar-width: thin;
@@ -606,10 +611,9 @@ onBeforeUnmount(() => {
   gap: 0.5rem;
   padding: 0.7rem 0.85rem calc(env(safe-area-inset-bottom, 0px) + 0.85rem);
   border-top: 1px solid rgb(var(--color-line) / 0.6);
-  background:
-    linear-gradient(180deg, rgb(var(--color-ivory) / 0.55), rgb(var(--color-vellum) / 0.7));
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  background: rgb(var(--color-surface) / 0.98);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 .style-sheet__footer:has(.style-sheet__btn + .style-sheet__btn) {
@@ -649,5 +653,70 @@ onBeforeUnmount(() => {
 }
 
 .style-sheet__btn--primary:hover:not(:disabled) {
-  box-shadow: var(--shadow-glass-lg), 0 0 28px -6px rgb(var(--color-accent) / 0.4);
-  transform: tra
+  box-shadow: var(--shadow-glass), inset 0 1px 0 rgb(255 255 255 / 0.18);
+  transform: translateY(-1px);
+}
+
+.style-sheet__btn--primary:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.style-sheet__btn--ghost {
+  border: 1px solid rgb(var(--color-line) / 0.5);
+  background: rgb(var(--color-surface) / 0.96);
+  color: rgb(var(--color-ink));
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: var(--shadow-inner-glass);
+}
+
+.style-sheet__btn--ghost:hover:not(:disabled) {
+  border-color: rgb(var(--color-line-strong) / 0.7);
+  background: rgb(var(--color-surface-raised) / 1);
+  box-shadow: var(--shadow-glass-sm);
+  transform: translateY(-1px);
+}
+
+.style-sheet__btn--ghost:active:not(:disabled) {
+  background: rgb(var(--color-ivory) / 0.7);
+}
+
+.style-scrim-enter-from,
+.style-scrim-leave-to {
+  opacity: 0;
+}
+
+.style-scrim-enter-active,
+.style-scrim-leave-active {
+  transition: opacity 0.24s ease-out;
+}
+
+.style-sheet-enter-from {
+  transform: translateY(100%);
+}
+
+.style-sheet-leave-to {
+  transform: translateY(100%);
+}
+
+.style-sheet-enter-active,
+.style-sheet-leave-active {
+  transition: transform 0.36s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .style-tile,
+  .style-sheet__btn,
+  .style-sheet,
+  .style-scrim-enter-active,
+  .style-scrim-leave-active,
+  .style-sheet-enter-active,
+  .style-sheet-leave-active,
+  .style-sheet__preview-text {
+    transition: none;
+    animation: none;
+  }
+}
+</style>
