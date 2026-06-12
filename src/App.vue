@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, nextTick, onMounted, ref, shallowRef, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue'
 import { resolveImageSource } from './api'
 import { autoModelSentinel, customModelSentinel, qualityOptions, sizeOptions, sizeTierById } from './presets'
 import { clearDraft, clearHistory, hydrateHistoryImages, loadDraft, loadHistory } from './storage'
@@ -17,7 +17,7 @@ import type {
   ReferenceImageAttachment,
 } from './types'
 import { createId } from './lib/id'
-import { payloadToMeta } from './lib/chatMessage'
+import { collectMessageReferenceImages, payloadToMeta } from './lib/chatMessage'
 import AppHeader from './components/AppHeader.vue'
 import Icon from './components/Icon.vue'
 import Toaster from './components/Toaster.vue'
@@ -143,6 +143,8 @@ const referenceImages = refImages.items
 const addReferenceImages = refImages.add
 const removeReferenceImage = refImages.remove
 const clearComposerReferenceImages = refImages.clear
+const releaseMessageReferenceImages = refImages.release
+const trackReferencePreviewUrl = refImages.trackPreviewUrl
 const { primeGeneratedImages } = useImagePriming()
 const { download: downloadImage } = useDownloadImage({ provider, toast, outputFormat })
 const health = useHealthCheck({ provider, discoveredModels, toast })
@@ -279,6 +281,16 @@ const canGenerate = computed(
 )
 const promptPreview = computed(() => trimmedPrompt.value.split('\n')[0]?.slice(0, 64) ?? '')
 
+function setMessages(next: ChatMessage[]) {
+  const nextIds = new Set(next.map((message) => message.id))
+  const removedMessages = messages.value.filter((message) => !nextIds.has(message.id))
+  const removedReferenceImages = collectMessageReferenceImages(removedMessages)
+  if (removedReferenceImages.length) {
+    releaseMessageReferenceImages(removedReferenceImages)
+  }
+  messages.value = next
+}
+
 watch(
   [outputFormat, canUseTransparentBackground],
   () => {
@@ -286,15 +298,31 @@ watch(
       transparentBackground.value = false
     }
   },
+  { immediate: true },
 )
 
 watch(canUsePartialPreview, (supported) => {
   if (!supported) partialPreview.value = false
-})
+}, { immediate: true })
 
 watch(canUseStreamingWait, (supported) => {
   if (!supported) streamingWait.value = false
-})
+}, { immediate: true })
+
+function gatedTransparentBackground(value: boolean | undefined): boolean | undefined {
+  if (value === undefined) return undefined
+  return Boolean(value && canUseTransparentBackground.value)
+}
+
+function gatedStreamingWait(value: boolean | undefined): boolean | undefined {
+  if (value === undefined) return undefined
+  return Boolean(value && canUseStreamingWait.value)
+}
+
+function gatedPartialPreview(value: boolean | undefined): boolean | undefined {
+  if (value === undefined) return undefined
+  return Boolean(value && canUsePartialPreview.value)
+}
 
 const healthStatusLabel = computed(() => {
   if (healthStatus.value === 'online') return t('header.healthOnline')
@@ -539,6 +567,10 @@ function selectedModelRequestFields(): Pick<GenerateImageRequest, 'model' | 'mod
 }
 
 function buildPayload(): GenerateImageRequest {
+  const useTransparentBackground = gatedTransparentBackground(transparentBackground.value)
+  const useStreamingWait = gatedStreamingWait(streamingWait.value)
+  const usePartialPreview = gatedPartialPreview(partialPreview.value)
+
   return {
     prompt: trimmedPrompt.value,
     style: style.value,
@@ -550,11 +582,11 @@ function buildPayload(): GenerateImageRequest {
     creativity: creativity.value,
     seed: seed.value.trim() || undefined,
     ...selectedModelRequestFields(),
-    transparentBackground: transparentBackground.value && canUseTransparentBackground.value,
-    streamingWait: streamingWait.value && canUseStreamingWait.value,
-    stream: streamingWait.value && canUseStreamingWait.value,
-    partialPreview: partialPreview.value && canUsePartialPreview.value,
-    partialImages: partialPreview.value && canUsePartialPreview.value ? 2 : 0,
+    transparentBackground: useTransparentBackground,
+    streamingWait: useStreamingWait,
+    stream: useStreamingWait,
+    partialPreview: usePartialPreview,
+    partialImages: usePartialPreview ? 2 : 0,
     referenceImages: referenceImages.value.length ? referenceImages.value.slice() : undefined,
   }
 }
@@ -672,6 +704,7 @@ async function handleInpaintSubmit(payload: {
   toast.dismiss(preparingId)
 
   const sourcePreview = URL.createObjectURL(sourceFile)
+  trackReferencePreviewUrl(sourcePreview)
   const referenceImage: ReferenceImageAttachment = {
     id: createId(),
     name: sourceFile.name,
@@ -681,6 +714,9 @@ async function handleInpaintSubmit(payload: {
     file: sourceFile,
   }
 
+  const useTransparentBackground = gatedTransparentBackground(transparentBackground.value)
+  const useStreamingWait = gatedStreamingWait(streamingWait.value)
+  const usePartialPreview = gatedPartialPreview(partialPreview.value)
   const inpaintPayload: GenerateImageRequest = {
     prompt: trimmed,
     style: style.value,
@@ -692,17 +728,17 @@ async function handleInpaintSubmit(payload: {
     creativity: creativity.value,
     seed: seed.value.trim() || undefined,
     ...selectedModelRequestFields(),
-    transparentBackground: transparentBackground.value && canUseTransparentBackground.value,
-    streamingWait: streamingWait.value && canUseStreamingWait.value,
-    stream: streamingWait.value && canUseStreamingWait.value,
-    partialPreview: partialPreview.value && canUsePartialPreview.value,
-    partialImages: partialPreview.value && canUsePartialPreview.value ? 2 : 0,
+    transparentBackground: useTransparentBackground,
+    streamingWait: useStreamingWait,
+    stream: useStreamingWait,
+    partialPreview: usePartialPreview,
+    partialImages: usePartialPreview ? 2 : 0,
     referenceImages: [referenceImage],
     inpaintMask: payload.mask,
   }
 
   const userId = createId()
-  messages.value = [
+  setMessages([
     ...messages.value,
     {
       id: userId,
@@ -712,13 +748,9 @@ async function handleInpaintSubmit(payload: {
       meta: payloadToMeta(inpaintPayload),
       referenceImages: [referenceImage],
     },
-  ]
+  ])
 
-  try {
-    await runGeneration({ payload: inpaintPayload, userMessageId: userId })
-  } finally {
-    URL.revokeObjectURL(sourcePreview)
-  }
+  await runGeneration({ payload: inpaintPayload, userMessageId: userId })
 }
 
 function handleTreeUndo() {
@@ -842,7 +874,7 @@ async function handleGenerate(options?: { clearAfter?: boolean }) {
   const continuation = pendingContinuation.value
   pendingContinuation.value = null
 
-  messages.value = [
+  setMessages([
     ...messages.value,
     {
       id: userId,
@@ -853,7 +885,7 @@ async function handleGenerate(options?: { clearAfter?: boolean }) {
       referenceImages: messageReferenceImages,
       continuedFrom: continuation ?? undefined,
     },
-  ]
+  ])
 
   if (options?.clearAfter) {
     prompt.value = ''
@@ -885,6 +917,9 @@ async function regenerateFromMessage(userMessageId: string) {
   }
 
   const resolvedModel = target.meta.model?.trim() || undefined
+  const useTransparentBackground = gatedTransparentBackground(target.meta.transparentBackground)
+  const useStreamingWait = gatedStreamingWait(target.meta.streamingWait)
+  const usePartialPreview = gatedPartialPreview(target.meta.partialPreview)
   const payload: GenerateImageRequest = {
     prompt: target.content,
     style: target.meta.style,
@@ -897,11 +932,11 @@ async function regenerateFromMessage(userMessageId: string) {
     seed: target.meta.seed,
     model: resolvedModel,
     modelSelection: target.meta.modelSelection ?? (resolvedModel ? 'explicit' : 'auto'),
-    transparentBackground: target.meta.transparentBackground,
-    streamingWait: target.meta.streamingWait,
-    stream: target.meta.streamingWait,
-    partialPreview: target.meta.partialPreview,
-    partialImages: target.meta.partialPreview ? 2 : 0,
+    transparentBackground: useTransparentBackground,
+    streamingWait: useStreamingWait,
+    stream: useStreamingWait,
+    partialPreview: usePartialPreview,
+    partialImages: usePartialPreview ? 2 : 0,
     referenceImages: target.referenceImages?.length ? target.referenceImages.slice() : undefined,
   }
 
@@ -998,12 +1033,12 @@ async function restoreHistory(item: GenerationHistoryItem) {
   creativity.value = item.creativity ?? 7
   seed.value = item.seed || ''
   transparentBackground.value = Boolean(item.transparentBackground && canUseTransparentBackground.value)
-  streamingWait.value = item.streamingWait ?? streamingWait.value
-  partialPreview.value = item.partialPreview ?? partialPreview.value
+  streamingWait.value = Boolean((item.streamingWait ?? streamingWait.value) && canUseStreamingWait.value)
+  partialPreview.value = Boolean((item.partialPreview ?? partialPreview.value) && canUsePartialPreview.value)
   restoreModelChoiceFromHistory(item)
   errorMessage.value = ''
   historyOpen.value = false
-  messages.value = historyMessages(item)
+  setMessages(historyMessages(item))
 
   if (item.images && item.images.length) {
     images.value = item.images
@@ -1046,8 +1081,8 @@ function applyHistoryParams(item: GenerationHistoryItem) {
   seed.value = item.seed || ''
   negativePrompt.value = item.negativePrompt || ''
   transparentBackground.value = Boolean(item.transparentBackground && canUseTransparentBackground.value)
-  streamingWait.value = item.streamingWait ?? streamingWait.value
-  partialPreview.value = item.partialPreview ?? partialPreview.value
+  streamingWait.value = Boolean((item.streamingWait ?? streamingWait.value) && canUseStreamingWait.value)
+  partialPreview.value = Boolean((item.partialPreview ?? partialPreview.value) && canUsePartialPreview.value)
 
   restoreModelChoiceFromHistory(item)
 
@@ -1104,6 +1139,9 @@ async function regenerateFromHistory(item: GenerationHistoryItem) {
   }
 
   const resolvedModel = (item.model || '').trim() || undefined
+  const useTransparentBackground = gatedTransparentBackground(item.transparentBackground)
+  const useStreamingWait = gatedStreamingWait(item.streamingWait)
+  const usePartialPreview = gatedPartialPreview(item.partialPreview)
   const payload: GenerateImageRequest = {
     prompt: item.prompt,
     style: item.style,
@@ -1116,15 +1154,15 @@ async function regenerateFromHistory(item: GenerationHistoryItem) {
     seed: item.seed,
     model: resolvedModel,
     modelSelection: item.modelSelection ?? (resolvedModel ? 'explicit' : 'auto'),
-    transparentBackground: item.transparentBackground,
-    streamingWait: item.streamingWait,
-    stream: item.streamingWait,
-    partialPreview: item.partialPreview,
-    partialImages: item.partialPreview ? 2 : 0,
+    transparentBackground: useTransparentBackground,
+    streamingWait: useStreamingWait,
+    stream: useStreamingWait,
+    partialPreview: usePartialPreview,
+    partialImages: usePartialPreview ? 2 : 0,
   }
 
   const userId = createId()
-  messages.value = [
+  setMessages([
     ...messages.value,
     {
       id: userId,
@@ -1133,7 +1171,7 @@ async function regenerateFromHistory(item: GenerationHistoryItem) {
       createdAt: new Date().toISOString(),
       meta: payloadToMeta(payload),
     },
-  ]
+  ])
   vibrate('tap')
   toast.info(t('toast.historyGenerate'), t('toast.historyGenerateHint'))
   await runGeneration({ payload, userMessageId: userId })
@@ -1164,7 +1202,7 @@ function performResetDraft() {
   errorMessage.value = ''
   images.value = []
   activeImageIndex.value = 0
-  messages.value = []
+  setMessages([])
   pendingContinuation.value = null
   lastRequestId.value = ''
   elapsedSeconds.value = 0
@@ -1463,6 +1501,13 @@ onMounted(() => {
       action: 'manual',
       label: t('promptTree.initial'),
     })
+  }
+})
+
+onUnmounted(() => {
+  const referenceImages = collectMessageReferenceImages(messages.value)
+  if (referenceImages.length) {
+    releaseMessageReferenceImages(referenceImages)
   }
 })
 

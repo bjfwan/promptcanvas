@@ -1,4 +1,9 @@
-import type { ChatMessageMeta, GenerateImageRequest } from '../types'
+import type {
+  ChatMessage,
+  ChatMessageMeta,
+  GenerateImageRequest,
+  ReferenceImageAttachment,
+} from '../types'
 
 export function payloadToMeta(payload: GenerateImageRequest): ChatMessageMeta {
   return {
@@ -18,4 +23,12 @@ export function payloadToMeta(payload: GenerateImageRequest): ChatMessageMeta {
     negativePrompt: payload.negativePrompt,
     referenceImageCount: payload.referenceImages?.length || undefined,
   }
+}
+
+export function collectMessageReferenceImages(
+  messages: readonly ChatMessage[],
+): ReferenceImageAttachment[] {
+  return messages.flatMap((message) =>
+    message.role === 'user' ? (message.referenceImages ?? []) : [],
+  )
 }

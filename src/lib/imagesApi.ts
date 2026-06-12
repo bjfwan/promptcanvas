@@ -478,10 +478,47 @@ function cleanBase64Body(value: string): string {
   return value.replace(/\s+/g, '')
 }
 
+function parseImageDataUrl(value: string): { b64Json: string; mimeType: string } | null {
+  const match = value.trim().match(/^data:(image\/[a-z0-9.+-]+);base64,([\s\S]+)$/i)
+  if (!match) return null
+  return {
+    mimeType: match[1].toLowerCase(),
+    b64Json: cleanBase64Body(match[2]),
+  }
+}
+
+function mimeTypeForOutputFormat(outputFormat: string): string {
+  return mimeTypes[outputFormat] || 'image/png'
+}
+
+function normalizeMimeType(value: unknown): string | null {
+  if (typeof value !== 'string' || !value.trim()) return null
+  const normalized = value.trim().toLowerCase()
+  if (normalized.includes('/')) return normalized
+  return mimeTypes[normalized] || null
+}
+
+function normalizeB64ImagePayload(
+  value: unknown,
+  fallbackMimeType: string,
+): { b64Json: string | null; mimeType: string } {
+  if (typeof value !== 'string' || !value.trim()) {
+    return { b64Json: null, mimeType: fallbackMimeType }
+  }
+
+  const dataUrl = parseImageDataUrl(value)
+  if (dataUrl) return dataUrl
+
+  return {
+    b64Json: cleanBase64Body(value),
+    mimeType: fallbackMimeType,
+  }
+}
+
 function getBase64BodyFromImageInput(value: string): string | null {
   const trimmed = value.trim()
-  const dataUrlMatch = trimmed.match(/^data:image\/[a-z0-9.+-]+;base64,([\s\S]+)$/i)
-  if (dataUrlMatch) return cleanBase64Body(dataUrlMatch[1])
+  const dataUrl = parseImageDataUrl(trimmed)
+  if (dataUrl) return dataUrl.b64Json
 
   const bare = trimmed.replace(/^base64,/i, '')
   return looksLikeBase64ImageBody(bare) ? cleanBase64Body(bare) : null
@@ -746,6 +783,9 @@ interface RawUpstreamImage {
   url?: string
   b64_json?: string
   b64Json?: string
+  mime_type?: string
+  mimeType?: string
+  content_type?: string
   revised_prompt?: string
   revisedPrompt?: string
 }
@@ -759,6 +799,9 @@ interface RawResponsesImageCall {
   b64Json?: string
   image_base64?: string
   imageBase64?: string
+  mime_type?: string
+  mimeType?: string
+  content_type?: string
   revised_prompt?: string
   revisedPrompt?: string
 }
@@ -895,7 +938,9 @@ function pickBase64LikeString(value: unknown, depth = 0): string | null {
   const record = value as Record<string, unknown>
   const direct = pickFirstString(
     record.partial_image,
+    record.partial_image_b64,
     record.partialImage,
+    record.partialImageB64,
     record.image_base64,
     record.imageBase64,
     record.b64_json,
@@ -1007,8 +1052,13 @@ export function responsesImageProgressFromEvent(
 
 export function parseResponsesImageSseBlock(block: string): unknown | null {
   const dataLines: string[] = []
+  let eventType = ''
   for (const line of block.split('\n')) {
     if (!line || line.startsWith(':')) continue
+    if (line.startsWith('event:')) {
+      eventType = line.slice(6).trim()
+      continue
+    }
     if (line.startsWith('data:')) {
       dataLines.push(line.slice(5).replace(/^ /, ''))
     }
@@ -1018,7 +1068,14 @@ export function parseResponsesImageSseBlock(block: string): unknown | null {
   if (!data || data === '[DONE]') return null
 
   try {
-    return JSON.parse(data)
+    const parsed = JSON.parse(data)
+    if (eventType && parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const record = parsed as Record<string, unknown>
+      if (typeof record.type !== 'string' || !record.type.trim()) {
+        return { ...record, type: eventType }
+      }
+    }
+    return parsed
   } catch {
     return null
   }
@@ -1077,13 +1134,25 @@ function normalizeResponsesImages(response: unknown, outputFormat: string): Gene
 
   return output
     .filter(hasResponseImagePayload)
-    .map((item, index) => ({
-      id: item.id || `img_${index + 1}`,
-      url: null,
-      b64Json: pickFirstString(item.result, item.b64_json, item.b64Json, item.image_base64, item.imageBase64),
-      mimeType: mimeTypes[outputFormat] || 'image/png',
-      revisedPrompt: item.revised_prompt || item.revisedPrompt || null,
-    }))
+    .map((item, index) => {
+      const fallbackMimeType =
+        normalizeMimeType(item.mime_type)
+        || normalizeMimeType(item.mimeType)
+        || normalizeMimeType(item.content_type)
+        || mimeTypeForOutputFormat(outputFormat)
+      const imagePayload = normalizeB64ImagePayload(
+        pickFirstString(item.result, item.b64_json, item.b64Json, item.image_base64, item.imageBase64),
+        fallbackMimeType,
+      )
+
+      return {
+        id: item.id || `img_${index + 1}`,
+        url: null,
+        b64Json: imagePayload.b64Json,
+        mimeType: imagePayload.mimeType,
+        revisedPrompt: item.revised_prompt || item.revisedPrompt || null,
+      }
+    })
     .filter((image) => Boolean(image.b64Json))
 }
 
@@ -1114,13 +1183,25 @@ export function normalizeImages(response: unknown, outputFormat: string): Genera
     : []
 
   if (data.length > 0) {
-    return data.map((image, index) => ({
-      id: image.id || `img_${index + 1}`,
-      url: image.url || null,
-      b64Json: image.b64_json || image.b64Json || null,
-      mimeType: mimeTypes[outputFormat] || 'image/png',
-      revisedPrompt: image.revised_prompt || image.revisedPrompt || null,
-    }))
+    return data.map((image, index) => {
+      const fallbackMimeType =
+        normalizeMimeType(image.mime_type)
+        || normalizeMimeType(image.mimeType)
+        || normalizeMimeType(image.content_type)
+        || mimeTypeForOutputFormat(outputFormat)
+      const imagePayload = normalizeB64ImagePayload(
+        pickFirstString(image.b64_json, image.b64Json),
+        fallbackMimeType,
+      )
+
+      return {
+        id: image.id || `img_${index + 1}`,
+        url: image.url || null,
+        b64Json: imagePayload.b64Json,
+        mimeType: imagePayload.mimeType,
+        revisedPrompt: image.revised_prompt || image.revisedPrompt || null,
+      }
+    })
   }
 
   const responsesImages = normalizeResponsesImages(response, outputFormat)
@@ -1147,6 +1228,17 @@ export function resolveOpenAIError(error: {
   const upstreamMessage = (error?.message ?? '').toLowerCase()
   const model = error?.model ?? ''
   const isPriorityModel = model.toLowerCase().includes('priority')
+  const isConnectionDropped =
+    upstreamCode === 'ECONNRESET'
+    || upstreamCode === 'ECONNABORTED'
+    || upstreamMessage.includes('socket hang up')
+    || upstreamMessage.includes('connection reset')
+    || upstreamMessage.includes('connection closed')
+    || upstreamMessage.includes('connection terminated')
+    || upstreamMessage.includes('premature close')
+    || upstreamMessage.includes('prematurely closed')
+    || upstreamMessage.includes('response terminated')
+    || upstreamMessage.includes('stream terminated')
   const modelAdvice = model.toLowerCase().includes('priority')
     ? '当前使用的是 priority 模型/通道，建议先切回普通模型再试。'
     : (model
@@ -1196,6 +1288,7 @@ export function resolveOpenAIError(error: {
     || status === 523
     || status === 524
     || upstreamCode === 'PROXY_FETCH_FAILED'
+    || isConnectionDropped
     || upstreamMessage.includes('cloudflare')
     || upstreamMessage.includes('web server returned an unknown error')
     || upstreamMessage.includes('error code: 520')

@@ -78,6 +78,28 @@ test('infers traditional image generation capability matrix from model hints', (
   assert.equal(config.responsesTool, 'unsupported')
 })
 
+test('infers Responses tool support from nested endpoint metadata', () => {
+  const config = inferImageGenerationConfigFromModels([
+    {
+      id: 'relay-image-chat',
+      endpoints: {
+        primary: '/v1/responses',
+      },
+    },
+    {
+      id: 'relay-image-core',
+      supported_endpoints: {
+        image: ['/v1/images/generations'],
+      },
+    },
+  ], { detectedAt })
+
+  assert.equal(config.mode, 'responses_tool')
+  assert.equal(config.responseModel, 'relay-image-chat')
+  assert.equal(config.imageToolModel, 'relay-image-core')
+  assert.equal(config.returnFormat, 'image_generation_call')
+})
+
 test('parses OpenAI-compatible model response shapes', () => {
   const entries = parseOpenAIModelsResponse({
     data: [
@@ -112,6 +134,22 @@ test('probe result can upgrade hinted config without calling real providers in t
   assert.equal(config.detectionSource, 'probe')
 })
 
+test('probe failures keep the hinted capability config and try candidates in order', async () => {
+  const attempted = []
+  const config = await detectImageGenerationConfig({
+    detectedAt,
+    models: [{ id: 'gpt-image-2' }, { id: 'gpt-image-2-chat' }],
+    probe: async (candidate) => {
+      attempted.push(candidate.mode)
+      return { ok: false, candidate }
+    },
+  })
+
+  assert.deepEqual(attempted, ['responses_tool', 'images_generations'])
+  assert.equal(config.mode, 'responses_tool')
+  assert.equal(config.detectionSource, 'models_hint')
+})
+
 test('builds probe candidates for supported non-auto modes', () => {
   const candidates = buildImageGenerationProbeCandidates({
     mode: 'responses_tool',
@@ -122,4 +160,33 @@ test('builds probe candidates for supported non-auto modes', () => {
   })
 
   assert.deepEqual(candidates.map((candidate) => candidate.endpoint), ['/responses', '/images/generations'])
+})
+
+test('probe candidates disable partial preview when Responses streaming is disabled', () => {
+  const [candidate] = buildImageGenerationProbeCandidates({
+    mode: 'responses_tool',
+    responseModel: 'gpt-image-2-chat',
+    imageToolModel: 'gpt-image-2',
+    stream: false,
+  })
+
+  assert.equal(candidate.stream, false)
+  assert.equal(candidate.partialPreview, false)
+})
+
+test('traditional-only configs probe text data URL Responses before images generations', () => {
+  const candidates = buildImageGenerationProbeCandidates({
+    mode: 'images_generations',
+    traditionalModel: 'gpt-image-2',
+    stream: false,
+  })
+
+  assert.deepEqual(candidates.map((candidate) => candidate.mode), [
+    'responses_text_data_url',
+    'images_generations',
+  ])
+  assert.deepEqual(candidates.map((candidate) => candidate.returnFormat), [
+    'output_text_data_url',
+    'b64_json',
+  ])
 })

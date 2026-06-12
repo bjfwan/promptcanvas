@@ -39,8 +39,13 @@ defineEmits<{
 }>()
 
 const fillPct = computed(() => Math.max(0, Math.min(100, props.progress)))
+const previewClarity = computed(() => Math.max(0, Math.min(1, (fillPct.value - 60) / 36)))
 const epulseStyle = computed<Record<string, string>>(() => ({
   '--epulse-progress': `${fillPct.value}%`,
+  '--epulse-preview-blur': `${Math.round(14 - previewClarity.value * 10)}px`,
+  '--epulse-preview-opacity': `${0.42 + previewClarity.value * 0.2}`,
+  '--epulse-preview-scale': `${1.08 - previewClarity.value * 0.035}`,
+  '--epulse-preview-overlay-alpha': `${0.82 - previewClarity.value * 0.28}`,
 }))
 </script>
 
@@ -149,17 +154,22 @@ const epulseStyle = computed<Record<string, string>>(() => ({
   width: 100%;
   height: 100%;
   object-fit: cover;
-  filter: blur(14px) saturate(1.14);
-  opacity: 0.46;
-  transform: scale(1.08);
+  filter: blur(var(--epulse-preview-blur, 14px)) saturate(1.14);
+  opacity: var(--epulse-preview-opacity, 0.46);
+  transform: scale(var(--epulse-preview-scale, 1.08));
+  transition:
+    filter 700ms var(--motion-snap),
+    opacity 700ms var(--motion-snap),
+    transform 700ms var(--motion-snap);
 }
 
 .epulse__preview span {
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(180deg, rgb(var(--color-surface-raised) / 0.3), rgb(var(--color-surface-raised) / 0.82)),
+    linear-gradient(180deg, rgb(var(--color-surface-raised) / 0.3), rgb(var(--color-surface-raised) / var(--epulse-preview-overlay-alpha, 0.82))),
     radial-gradient(circle at 50% 45%, transparent, rgb(var(--color-vellum) / 0.58) 68%);
+  transition: background 700ms var(--motion-snap);
 }
 
 .epulse__center,

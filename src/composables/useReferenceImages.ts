@@ -68,6 +68,12 @@ export function useReferenceImages(deps: { toast: Toast }) {
     })
   }
 
+  function trackPreviewUrl(url: string) {
+    if (/^blob:/i.test(url)) {
+      ownedPreviewUrls.add(url)
+    }
+  }
+
   function clear() {
     releaseUrls(items.value)
     items.value = []
@@ -151,5 +157,5 @@ export function useReferenceImages(deps: { toast: Toast }) {
     ownedPreviewUrls.clear()
   })
 
-  return { items, add, remove, clear, cloneList }
+  return { items, add, remove, clear, cloneList, release: releaseUrls, trackPreviewUrl }
 }

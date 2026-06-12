@@ -35,6 +35,9 @@ export interface GenerationFlowDeps {
   primeGeneratedImages: (list: GeneratedImage[]) => void
 }
 
+const downloadProgressMinBytes = 256 * 1024
+const downloadProgressMinMs = 160
+
 export function useGenerationFlow(deps: GenerationFlowDeps) {
   let timerId: number | undefined
   let activeAbortController: AbortController | null = null
@@ -102,14 +105,42 @@ export function useGenerationFlow(deps: GenerationFlowDeps) {
 
     const formatMb = (bytes: number) => (bytes / 1024 / 1024).toFixed(1)
     let lastProgressOverride: ChatProgressOverride | undefined
+    let lastDownloadProgressAt = 0
+    let lastDownloadProgressBytes = -1
 
     const applyProgressOverride = (override: ChatProgressOverride) => {
+      if (
+        lastProgressOverride
+        && lastProgressOverride.stage === override.stage
+        && lastProgressOverride.remainingLabel === override.remainingLabel
+        && lastProgressOverride.progress === override.progress
+        && lastProgressOverride.previewUrl === override.previewUrl
+      ) {
+        return
+      }
+
       lastProgressOverride = override
       deps.generationProgressOverride.value = override
       updateAssistantMessage(assistantId, (current) => ({
         ...current,
         progressOverride: override,
       }))
+    }
+
+    const shouldApplyDownloadProgress = (bytesReceived: number, bytesTotal?: number) => {
+      const now = Date.now()
+      const isInitial = bytesReceived === 0 && lastDownloadProgressBytes < 0
+      const isComplete = bytesTotal !== undefined && bytesReceived >= bytesTotal
+      const enoughBytes = bytesReceived - lastDownloadProgressBytes >= downloadProgressMinBytes
+      const enoughTime = now - lastDownloadProgressAt >= downloadProgressMinMs
+
+      if (!isInitial && !isComplete && !enoughBytes && !enoughTime) {
+        return false
+      }
+
+      lastDownloadProgressAt = now
+      lastDownloadProgressBytes = bytesReceived
+      return true
     }
 
     try {
@@ -122,6 +153,7 @@ export function useGenerationFlow(deps: GenerationFlowDeps) {
               remainingLabel: t('generation.progress.preparingFrame'),
             })
           } else if (event.stage === 'downloading') {
+            if (!shouldApplyDownloadProgress(event.bytesReceived, event.bytesTotal)) return
             const received = formatMb(event.bytesReceived)
             const remainingLabel = event.bytesTotal
               ? t('generation.progress.receivedOf', { received, total: formatMb(event.bytesTotal) })

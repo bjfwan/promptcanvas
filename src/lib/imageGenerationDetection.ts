@@ -412,15 +412,17 @@ export function buildImageGenerationProbeCandidates(
 ): ImageGenerationProbeCandidate[] {
   const candidates: ImageGenerationProbeCandidate[] = []
   if (config.responseModel && config.imageToolModel) {
+    const stream = config.stream ?? true
     candidates.push({
       mode: 'responses_tool',
       endpoint: '/responses',
       responseModel: config.responseModel,
       imageToolModel: config.imageToolModel,
-      stream: config.stream ?? true,
+      stream,
       returnFormat: 'image_generation_call',
       responsesTool: 'supported',
-      partialPreview: true,
+      sseStream: stream,
+      partialPreview: stream,
     })
   } else if (config.traditionalModel) {
     candidates.push({
