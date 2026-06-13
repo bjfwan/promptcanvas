@@ -2739,6 +2739,7 @@ watch(sw.updateAvailable, (available) => {
     min-height: 0;
     height: 100%;
   }
+}
 
 @media (max-width: 1279px) {
   .desktop-workbench--tool {
