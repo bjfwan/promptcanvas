@@ -1,24 +1,4 @@
 import { computed, ref, watch } from 'vue'
-
-/**
- * Tiny custom i18n.
- *
- * Why not vue-i18n: PromptCanvas is a single-page tool with ~120 strings,
- * a 6 kB dependency would dominate vs. a 1 kB dictionary lookup.
- *
- * Public surface:
- *   - `t('key')` for a flat reactive read inside <template>/<script setup>
- *   - `useI18n()` returns { locale, t, setLocale, locales }
- *   - `setLocale('en' | 'zh-CN' | 'auto')` persists to localStorage
- *
- * Conventions:
- *   - All UI literal strings live in messages tables below.
- *   - Keys are dot-segmented domains: `app.title`, `header.history`, ...
- *   - Unknown keys fall back to the key itself, *not* an empty string,
- *     so missing translations are immediately visible.
- *   - Template interpolation: `t('foo.greet', { name: 'Lin' })` → uses {name}.
- */
-
 export type Locale = 'zh-CN' | 'en'
 export type LocalePreference = Locale | 'auto'
 
@@ -27,11 +7,6 @@ const LOCALE_KEY = 'promptcanvas:locale-v1'
 interface Messages {
   [key: string]: string
 }
-
-// ---------------------------------------------------------------------------
-// Dictionaries
-// ---------------------------------------------------------------------------
-
 const zh: Messages = {
   // App-wide
   'app.title': 'PromptCanvas',
@@ -557,8 +532,6 @@ const zh: Messages = {
   'canvas.empty.proxy': 'proxy · likeyou.qzz.io · 透明转发',
   'canvas.empty.compose': '去写提示词',
   'canvas.empty.generate': '立即生成',
-  'canvas.empty.startersLabel': '创作起点',
-  'canvas.empty.useStarter': '使用',
   'canvas.actionsLabel': '结果动作',
   'canvas.action.inpaint': '局部编辑',
   'canvas.action.inpaintLabel': '打开局部重绘',
@@ -593,18 +566,6 @@ const zh: Messages = {
   'canvas.imageGenerated': '生成图片 {n}',
   'canvas.untitled': 'untitled draft',
 
-  'starter.productPoster.title': '产品海报',
-  'starter.productPoster.body': '物件、材质、留白和版式一次定清楚',
-  'starter.productPoster.prompt': '一张克制的产品海报，主体是一盏哑光陶瓷桌灯，正面构图，干净工作台表面，柔和侧光，少量青绿色点缀，大面积留白，编辑部摄影质感',
-  'starter.characterSheet.title': '角色设定',
-  'starter.characterSheet.body': '全身造型、表情和装备在同一页展开',
-  'starter.characterSheet.prompt': '一张角色设定图，安静的科幻工坊信使，全身立绘加表情小稿，石墨色服装，紧凑工具装备，中性背景，精确的概念设计线稿与上色',
-  'starter.avatar.title': '头像',
-  'starter.avatar.body': '清楚轮廓、稳定光线，适合个人资料图',
-  'starter.avatar.prompt': '一张精致的个人头像，AI 图片导演的三分之二侧面，神情冷静，柔和棚拍光，清晰轮廓，极简背景，真实但带一点概念设计气质',
-  'starter.sceneConcept.title': '场景概念图',
-  'starter.sceneConcept.body': '先确定空间、光线和叙事重心',
-  'starter.sceneConcept.prompt': '一张电影感场景概念图，夜间的本地优先创作工作台，主画布发出柔和光线，工具像工坊工作台一样有序摆放，冷静、精确、安静的创作氛围',
 
   // ChatBubble
   'chat.canvas': 'canvas',
@@ -1265,8 +1226,6 @@ const en: Messages = {
   'canvas.empty.proxy': 'proxy · likeyou.qzz.io · transparent',
   'canvas.empty.compose': 'Write a prompt',
   'canvas.empty.generate': 'Generate now',
-  'canvas.empty.startersLabel': 'Creative starting points',
-  'canvas.empty.useStarter': 'Use',
   'canvas.actionsLabel': 'Result actions',
   'canvas.action.inpaint': 'Local edit',
   'canvas.action.inpaintLabel': 'Open local edit',
@@ -1301,18 +1260,6 @@ const en: Messages = {
   'canvas.imageGenerated': 'Generated image {n}',
   'canvas.untitled': 'untitled draft',
 
-  'starter.productPoster.title': 'Product poster',
-  'starter.productPoster.body': 'Object, material, whitespace, and layout',
-  'starter.productPoster.prompt': 'A restrained product poster for a matte ceramic desk lamp, front view, clean workbench surface, soft side light, a small teal accent, generous negative space, editorial studio photography',
-  'starter.characterSheet.title': 'Character sheet',
-  'starter.characterSheet.body': 'Full body, expressions, and gear in one page',
-  'starter.characterSheet.prompt': 'A character design sheet for a quiet sci-fi atelier courier, full body plus expression studies, graphite clothing, compact tool gear, neutral background, precise concept art linework and color',
-  'starter.avatar.title': 'Avatar',
-  'starter.avatar.body': 'Clear silhouette and stable studio light',
-  'starter.avatar.prompt': 'A refined profile avatar of an AI image director, three-quarter view, calm expression, soft studio light, crisp silhouette, minimal background, realistic with a subtle concept design feel',
-  'starter.sceneConcept.title': 'Scene concept',
-  'starter.sceneConcept.body': 'Set the space, light, and story focus first',
-  'starter.sceneConcept.prompt': 'A cinematic concept image of a local-first creative workstation at night, the main canvas glowing softly, tools arranged like an atelier bench, calm, precise, quiet creative atmosphere',
 
   'chat.canvas': 'canvas',
   'chat.refCount': 'Ref ×{n}',
@@ -1462,10 +1409,6 @@ const dictionaries: Record<Locale, Messages> = {
   en,
 }
 
-// ---------------------------------------------------------------------------
-// Reactive state
-// ---------------------------------------------------------------------------
-
 function detectSystemLocale(): Locale {
   if (typeof navigator === 'undefined') return 'zh-CN'
   const tags = (navigator.languages?.length ? navigator.languages : [navigator.language]).map((l) =>
@@ -1515,17 +1458,11 @@ watch(
 )
 
 if (typeof window !== 'undefined' && typeof window.matchMedia !== 'undefined') {
-  // navigator.languages doesn't fire change events; the next-best signal
-  // is the system color-scheme media query, which usually flips with locale changes.
-  // We only re-read on focus to avoid binding an extra listener forever.
+ 
   window.addEventListener('focus', () => {
     systemLocale.value = detectSystemLocale()
   })
 }
-
-// ---------------------------------------------------------------------------
-// Translation function
-// ---------------------------------------------------------------------------
 
 function format(template: string, params?: Record<string, string | number>): string {
   if (!params) return template
@@ -1535,10 +1472,6 @@ function format(template: string, params?: Record<string, string | number>): str
   })
 }
 
-/**
- * Reactive translate. Returns the literal `key` if no translation found, so
- * untranslated keys are immediately visible during development.
- */
 export function t(key: string, params?: Record<string, string | number>): string {
   const dict = dictionaries[locale.value]
   const fallback = dictionaries['zh-CN']

@@ -60,9 +60,9 @@ const epulseStyle = computed<Record<string, string>>(() => ({
       <img :src="previewUrl" alt="" />
       <span></span>
     </div>
+    <div class="epulse__gradient-orb" aria-hidden="true"></div>
 
     <div class="epulse__center">
-      <div class="epulse__gradient-orb" aria-hidden="true"></div>
       <div class="epulse__time">
         <FlipDigits :value="elapsedSeconds" suffix="s" :pad="2" haptic />
       </div>
@@ -199,8 +199,13 @@ const epulseStyle = computed<Record<string, string>>(() => ({
 
 .epulse__gradient-orb {
   position: absolute;
-  width: 108px;
-  height: 108px;
+  left: 50%;
+  top: 50%;
+  z-index: 1;
+  width: min(42%, 210px);
+  height: min(42%, 210px);
+  min-width: 118px;
+  min-height: 118px;
   border-radius: 50%;
   background:
     radial-gradient(circle at 34% 30%, rgb(255 255 255 / 0.82), transparent 22%),
@@ -209,17 +214,20 @@ const epulseStyle = computed<Record<string, string>>(() => ({
     radial-gradient(circle, rgb(var(--color-clay) / 0.1), transparent 78%);
   filter: blur(18px) saturate(1.22);
   opacity: 0.92;
-  transform: translate3d(-22px, 10px, 0) scale(1);
+  transform: translate3d(-116%, -84%, 0) scale(1.22);
   animation:
-    epulse-orb-drift 5.4s var(--motion-soft) infinite,
+    epulse-orb-drift 6.4s var(--motion-soft) infinite,
     epulse-orb-gradient 7.2s ease-in-out infinite;
   mix-blend-mode: multiply;
+  pointer-events: none;
   will-change: transform, filter, opacity;
 }
 
 .epulse--compact .epulse__gradient-orb {
-  width: 82px;
-  height: 82px;
+  width: min(48%, 128px);
+  height: min(48%, 128px);
+  min-width: 82px;
+  min-height: 82px;
   filter: blur(15px) saturate(1.18);
 }
 
@@ -458,13 +466,16 @@ const epulseStyle = computed<Record<string, string>>(() => ({
 
 @keyframes epulse-orb-drift {
   0%, 100% {
-    transform: translate3d(-24px, 12px, 0) scale(0.96);
+    transform: translate3d(-116%, -84%, 0) scale(1.26);
   }
-  36% {
-    transform: translate3d(18px, -18px, 0) scale(1.1);
+  28% {
+    transform: translate3d(54%, -104%, 0) scale(0.64);
   }
-  68% {
-    transform: translate3d(28px, 16px, 0) scale(1.02);
+  52% {
+    transform: translate3d(76%, 42%, 0) scale(1.16);
+  }
+  76% {
+    transform: translate3d(-98%, 58%, 0) scale(0.7);
   }
 }
 

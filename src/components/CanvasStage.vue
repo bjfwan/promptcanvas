@@ -4,7 +4,6 @@ import Icon from './Icon.vue'
 import DevelopingFrame from './DevelopingFrame.vue'
 import { resolveImageSource } from '../api'
 import { useI18n } from '../lib/i18n'
-import { promptStarters } from '../lib/promptStarters'
 import { useShare } from '../composables/useShare'
 import { useToast } from '../composables/useToast'
 import {
@@ -63,7 +62,6 @@ const emit = defineEmits<{
   (e: 'copy', text: string, message: string): void
   (e: 'export'): void
   (e: 'go-compose'): void
-  (e: 'use-starter', prompt: string): void
   (e: 'reuse-prompt', prompt: string): void
   (e: 'continue-image', index: number): void
   (e: 'open-inpaint', index: number): void
@@ -80,15 +78,6 @@ const revealedImageKeys = ref<Record<string, boolean>>({})
 const { t } = useI18n()
 const { supported: shareSupported, share } = useShare()
 const toast = useToast()
-
-const starterCards = computed(() =>
-  promptStarters.map((starter) => ({
-    ...starter,
-    title: t(`starter.${starter.id}.title`),
-    body: t(`starter.${starter.id}.body`),
-    prompt: t(`starter.${starter.id}.prompt`),
-  })),
-)
 
 async function shareActive() {
   if (!activeImage.value || !activeSrc.value) return
@@ -649,29 +638,7 @@ function reuseActivePrompt() {
               {{ t('canvas.empty.body') }}
             </p>
 
-            <div class="canvas-empty-starters mt-6" :aria-label="t('canvas.empty.startersLabel')">
-              <button
-                v-for="starter in starterCards"
-                :key="starter.id"
-                type="button"
-                class="canvas-empty-starter"
-                @click="emit('use-starter', starter.prompt)"
-              >
-                <span class="canvas-empty-starter__icon" aria-hidden="true">
-                  <Icon :name="starter.icon" :size="15" />
-                </span>
-                <span class="canvas-empty-starter__copy">
-                  <span class="canvas-empty-starter__title">{{ starter.title }}</span>
-                  <span class="canvas-empty-starter__body">{{ starter.body }}</span>
-                </span>
-                <span class="canvas-empty-starter__action">
-                  {{ t('canvas.empty.useStarter') }}
-                  <Icon name="arrowRight" :size="12" />
-                </span>
-              </button>
-            </div>
-
-            <div class="mt-5 flex flex-col items-center gap-2.5 sm:flex-row sm:justify-center">
+            <div class="mt-6 flex flex-col items-center gap-2.5 sm:flex-row sm:justify-center">
               <button
                 v-if="hasPrompt"
                 type="button"
@@ -1094,102 +1061,6 @@ function reuseActivePrompt() {
   width: min(100%, 23rem);
 }
 
-.canvas-empty-starters {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
-  gap: 0.55rem;
-  text-align: left;
-}
-
-.canvas-frame[data-orient="portrait"] .canvas-empty-starters {
-  grid-template-columns: 1fr;
-}
-
-.canvas-empty-starter {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  grid-template-areas:
-    "icon copy"
-    "icon action";
-  align-items: center;
-  gap: 0.18rem 0.65rem;
-  min-height: 74px;
-  border: 1px solid rgb(var(--color-line) / 0.78);
-  border-radius: 9px;
-  background: rgb(var(--color-surface-raised) / 0.78);
-  color: rgb(var(--color-ink));
-  padding: 0.62rem 0.68rem;
-  box-shadow: var(--shadow-inner-glass);
-  transition: border-color 150ms var(--motion-soft), background-color 150ms var(--motion-soft), transform 150ms var(--motion-press), box-shadow 170ms var(--motion-soft);
-}
-
-.canvas-empty-starter:hover {
-  border-color: rgb(var(--color-action) / 0.38);
-  background: rgb(var(--color-surface-raised));
-  box-shadow: var(--shadow-glass-sm), var(--shadow-inner-glass);
-  transform: translateY(-1px);
-}
-
-.canvas-empty-starter:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring);
-}
-
-.canvas-empty-starter:active {
-  transform: translateY(0);
-}
-
-.canvas-empty-starter__icon {
-  grid-area: icon;
-  display: grid;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  border-radius: 8px;
-  border: 1px solid rgb(var(--color-line) / 0.68);
-  background: rgb(var(--color-surface-muted) / 0.82);
-  color: rgb(var(--color-action));
-}
-
-.canvas-empty-starter__copy {
-  grid-area: copy;
-  display: grid;
-  min-width: 0;
-  gap: 0.12rem;
-}
-
-.canvas-empty-starter__title {
-  overflow: hidden;
-  color: rgb(var(--color-ink));
-  font-size: 12.5px;
-  font-weight: 780;
-  line-height: 1.2;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.canvas-empty-starter__body {
-  display: -webkit-box;
-  overflow: hidden;
-  color: rgb(var(--color-muted));
-  font-size: 11px;
-  line-height: 1.35;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-
-.canvas-empty-starter__action {
-  grid-area: action;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.22rem;
-  min-width: 0;
-  color: rgb(var(--color-action));
-  font-size: 11px;
-  font-weight: 760;
-  line-height: 1.2;
-}
-
 @media (max-height: 720px) and (min-width: 1024px) {
   .canvas-empty-content {
     padding-block: 0.65rem;
@@ -1199,15 +1070,6 @@ function reuseActivePrompt() {
     width: 46px;
     height: 46px;
     margin-bottom: 0.75rem;
-  }
-
-  .canvas-empty-starters {
-    margin-top: 0.9rem;
-  }
-
-  .canvas-empty-starter {
-    min-height: 62px;
-    padding-block: 0.48rem;
   }
 }
 

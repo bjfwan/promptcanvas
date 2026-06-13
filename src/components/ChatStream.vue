@@ -3,7 +3,6 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import ChatBubble from './ChatBubble.vue'
 import Icon from './Icon.vue'
 import { useI18n } from '../lib/i18n'
-import { promptStarters } from '../lib/promptStarters'
 import type { ChatMessage, GeneratedImage, GenerationHistoryItem } from '../types'
 
 interface Props {
@@ -54,7 +53,6 @@ const emit = defineEmits<{
   (e: 'copy', text: string, message: string): void
   (e: 'image-edit-unavailable', reason?: string): void
   (e: 'import-prompt', text: string): void
-  (e: 'use-starter', prompt: string): void
   (e: 'scroll-to-message', id: string): void
   (e: 'abort', id: string): void
   (e: 'open-settings'): void
@@ -63,14 +61,6 @@ const emit = defineEmits<{
 const scrollerRef = ref<HTMLDivElement | null>(null)
 const stuckToBottom = ref(true)
 const { t } = useI18n()
-const starterCards = computed(() =>
-  promptStarters.map((starter) => ({
-    ...starter,
-    title: t(`starter.${starter.id}.title`),
-    body: t(`starter.${starter.id}.body`),
-    prompt: t(`starter.${starter.id}.prompt`),
-  })),
-)
 
 function shouldVirtualize(index: number, total: number): boolean {
   if (total < VIRTUALIZE_THRESHOLD) return false
@@ -189,25 +179,6 @@ defineExpose({ scrollToBottom, scrollToMessage })
           <p class="chat-stream__empty-copy">
             {{ t('stream.empty.body') }}
           </p>
-
-          <div class="chat-stream__starters" :aria-label="t('canvas.empty.startersLabel')">
-            <button
-              v-for="starter in starterCards"
-              :key="starter.id"
-              type="button"
-              class="empty-suggestion"
-              @click="emit('use-starter', starter.prompt)"
-            >
-              <span class="empty-suggestion__icon" aria-hidden="true">
-                <Icon :name="starter.icon" :size="14" />
-              </span>
-              <span class="empty-suggestion__copy">
-                <span class="empty-suggestion__title">{{ starter.title }}</span>
-                <span class="empty-suggestion__body">{{ starter.body }}</span>
-              </span>
-              <Icon name="arrowRight" :size="13" class="empty-suggestion__arrow" />
-            </button>
-          </div>
         </template>
       </div>
 
@@ -415,109 +386,6 @@ defineExpose({ scrollToBottom, scrollToMessage })
   opacity: 0.36;
 }
 
-/* ─── Empty-state suggestion cards — glass tiles ─── */
-.chat-stream__starters {
-  display: grid;
-  width: min(100%, 25rem);
-  gap: 0.55rem;
-  margin-top: 1.1rem;
-}
-
-.empty-suggestion {
-  position: relative;
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 0.65rem;
-  min-height: 58px;
-  border-radius: 10px;
-  border: 1px solid rgb(var(--color-line) / 0.72);
-  background: rgb(var(--color-surface) / 0.96);
-  color: rgb(var(--color-ink));
-  padding: 0.55rem 0.65rem;
-  text-align: left;
-  box-shadow: var(--shadow-inner-glass);
-  transition:
-    transform 150ms var(--motion-press),
-    border-color 150ms var(--motion-soft),
-    box-shadow 170ms var(--motion-soft),
-    background-color 150ms var(--motion-soft);
-  -webkit-tap-highlight-color: transparent;
-  touch-action: manipulation;
-}
-
-.empty-suggestion:hover {
-  transform: translateY(-1px);
-  border-color: rgb(var(--color-action) / 0.42);
-  background: rgb(var(--color-surface-raised));
-  box-shadow: var(--shadow-glass-sm), var(--shadow-inner-glass);
-}
-
-.empty-suggestion:active {
-  transform: translateY(0) scale(0.98);
-}
-
-.empty-suggestion:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring);
-}
-
-.empty-suggestion__icon {
-  display: grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  border: 1px solid rgb(var(--color-line) / 0.68);
-  background: rgb(var(--color-surface-muted) / 0.8);
-  color: rgb(var(--color-action));
-}
-
-.empty-suggestion__copy {
-  display: grid;
-  min-width: 0;
-  gap: 0.12rem;
-}
-
-.empty-suggestion__title {
-  overflow: hidden;
-  color: rgb(var(--color-ink));
-  font-size: 12.5px;
-  font-weight: 760;
-  line-height: 1.2;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.empty-suggestion__body {
-  overflow: hidden;
-  color: rgb(var(--color-muted));
-  font-size: 11px;
-  line-height: 1.35;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.empty-suggestion__arrow {
-  opacity: 0;
-  transform: translateX(-4px);
-  transition: opacity 180ms var(--motion-soft), transform 180ms var(--motion-soft);
-}
-
-.empty-suggestion:hover .empty-suggestion__arrow {
-  opacity: 1;
-  transform: translateX(0);
-  color: rgb(var(--color-accent));
-}
-
-/* On touch (no hover) keep the arrow softly visible as an affordance. */
-@media (hover: none) {
-  .empty-suggestion__arrow {
-    opacity: 0.5;
-    transform: translateX(0);
-  }
-}
-
 /* ─── Empty-state primary CTA (unconfigured) — gradient pill ─── */
 .empty-cta {
   background: var(--gradient-primary);
@@ -606,15 +474,6 @@ defineExpose({ scrollToBottom, scrollToMessage })
     width: min(100%, 240px);
   }
 
-  .chat-stream__starters {
-    width: 100%;
-    margin-top: 0.95rem;
-  }
-
-  .empty-suggestion {
-    min-height: 56px;
-  }
-
   .chat-stream__list {
     gap: 0.9rem;
     padding: 0.75rem 0.75rem 0;
@@ -660,19 +519,6 @@ defineExpose({ scrollToBottom, scrollToMessage })
     margin-top: 0.45rem;
   }
 
-  .chat-stream__starters {
-    grid-template-columns: repeat(2, minmax(150px, 1fr));
-    width: min(100%, 42rem);
-    margin-top: 0.75rem;
-  }
-
-  .empty-suggestion {
-    min-height: 48px;
-  }
-
-  .empty-suggestion__body {
-    display: none;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -684,8 +530,6 @@ defineExpose({ scrollToBottom, scrollToMessage })
     animation: none;
   }
 
-  .empty-suggestion,
-  .empty-suggestion__arrow,
   .empty-cta,
   .chat-stream__jump {
     transition: none;

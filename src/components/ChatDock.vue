@@ -13,6 +13,7 @@ import type { ContinuationContext, GenerateImageRequest, ImageQuality, ImageSize
 
 type OutputFormat = GenerateImageRequest['outputFormat']
 type QuickSettingKey = 'size' | 'format' | 'quality' | 'count'
+type ToggleState = 'on' | 'off' | 'blocked'
 
 interface QuickSettingPill {
   key: QuickSettingKey
@@ -31,6 +32,10 @@ interface Props {
   viewportHeight?: number
   continuation?: ContinuationContext | null
   modelWarning?: string
+  canStreamingWait?: boolean
+  canPartialPreview?: boolean
+  streamingWaitHint?: string
+  partialPreviewHint?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -38,6 +43,10 @@ const props = withDefaults(defineProps<Props>(), {
   viewportHeight: 0,
   continuation: null,
   modelWarning: '',
+  canStreamingWait: true,
+  canPartialPreview: true,
+  streamingWaitHint: '',
+  partialPreviewHint: '',
 })
 
 const prompt = defineModel<string>('prompt', { required: true })
@@ -47,6 +56,8 @@ const size = defineModel<ImageSize>('size', { required: true })
 const count = defineModel<number>('count', { required: true })
 const outputFormat = defineModel<OutputFormat>('outputFormat', { required: true })
 const quality = defineModel<ImageQuality>('quality', { required: true })
+const streamingWait = defineModel<boolean>('streamingWait', { required: true })
+const partialPreview = defineModel<boolean>('partialPreview', { required: true })
 
 const emit = defineEmits<{
   (e: 'send'): void
@@ -194,18 +205,21 @@ const sendLabel = computed(() =>
       ? t('dock.sendRemix')
       : t('dock.send'),
 )
-const sendButtonText = computed(() => {
-  if (props.isGenerating) return t('dock.actionCancel')
-  if (props.continuation) return t('dock.actionRemix')
-  if (sendDisabled.value) return prompt.value.trim() ? t('dock.actionShort') : t('dock.actionEmpty')
-  return t('dock.actionGenerate')
-})
-
 const referenceUploadLabel = computed(() => {
   if (!canAddReferenceImages.value) return t('composer.tools.refLimitLabel', { max: maxReferenceImages })
   if (hasReferenceImages.value) return t('dock.refOpenWith', { n: props.referenceImages.length })
   return t('dock.refOpen')
 })
+
+function toggleState(value: boolean, enabled: boolean): ToggleState {
+  if (!enabled) return 'blocked'
+  return value ? 'on' : 'off'
+}
+
+function toggleStateLabel(value: boolean, enabled: boolean) {
+  if (!enabled) return t('settings.toggle.unavailable')
+  return value ? t('settings.toggle.on') : t('settings.toggle.off')
+}
 
 // GPU-only translate when the on-screen keyboard pushes the dock up.
 // Avoids `bottom` transitions which trigger layout work each frame.
@@ -611,6 +625,48 @@ defineExpose({ focusInput })
               </div>
             </div>
           </div>
+
+          <div class="chat-dock__quick-switches">
+            <label
+              class="chat-dock__quick-toggle"
+              :class="{ 'is-disabled': !canStreamingWait }"
+              :data-state="toggleState(streamingWait, canStreamingWait)"
+            >
+              <input
+                v-model="streamingWait"
+                type="checkbox"
+                :disabled="!canStreamingWait"
+              />
+              <span class="chat-dock__quick-toggle-copy">
+                <span>
+                  <Icon name="clock" :size="12" />
+                  <span>{{ t('settings.streamingWait') }}</span>
+                  <strong>{{ toggleStateLabel(streamingWait, canStreamingWait) }}</strong>
+                </span>
+                <small>{{ streamingWaitHint || t('settings.streamingWait.hint') }}</small>
+              </span>
+            </label>
+
+            <label
+              class="chat-dock__quick-toggle"
+              :class="{ 'is-disabled': !canPartialPreview }"
+              :data-state="toggleState(partialPreview, canPartialPreview)"
+            >
+              <input
+                v-model="partialPreview"
+                type="checkbox"
+                :disabled="!canPartialPreview"
+              />
+              <span class="chat-dock__quick-toggle-copy">
+                <span>
+                  <Icon name="pulse" :size="12" />
+                  <span>{{ t('settings.stagePreview') }}</span>
+                  <strong>{{ toggleStateLabel(partialPreview, canPartialPreview) }}</strong>
+                </span>
+                <small>{{ partialPreviewHint || t('settings.stagePreview.hint') }}</small>
+              </span>
+            </label>
+          </div>
         </section>
       </Transition>
 
@@ -694,6 +750,22 @@ defineExpose({ focusInput })
           :aria-label="promptCountTone.hint ? t('composer.prompt.countHintLabel', { count: promptCount, hint: promptCountTone.hint }) : undefined"
         >{{ promptCount }}</span>
 
+        <button
+          type="button"
+          class="chat-dock__send"
+          :class="{
+            'chat-dock__send--ready': promptHasContent && !sendDisabled && !isGenerating,
+            'chat-dock__send--busy': isGenerating,
+          }"
+          :disabled="sendDisabled"
+          :aria-label="sendLabel"
+          :title="sendLabel"
+          @click.stop="send"
+        >
+          <Icon v-if="isGenerating" name="close" :size="18" />
+          <Icon v-else name="send" :size="18" />
+        </button>
+
         <p v-if="modelWarning" class="chat-dock__model-warning" role="status">
           <Icon name="warning" :size="11" />
           <span>{{ modelWarning }}</span>
@@ -763,25 +835,6 @@ defineExpose({ focusInput })
         </div>
       </div>
 
-      <button
-        type="button"
-        class="chat-dock__send"
-        :class="{
-          'chat-dock__send--ready': promptHasContent && !sendDisabled && !isGenerating,
-          'chat-dock__send--busy': isGenerating,
-        }"
-        :disabled="sendDisabled"
-        :aria-label="sendLabel"
-        :title="sendLabel"
-        @click.stop="send"
-      >
-        <span class="chat-dock__send-icon" aria-hidden="true">
-          <Icon v-if="isGenerating" name="close" :size="17" />
-          <Icon v-else name="send" :size="17" />
-        </span>
-        <span class="chat-dock__send-label">{{ sendButtonText }}</span>
-        <span v-if="isGenerating" class="chat-dock__send-status">{{ elapsedSeconds }}s</span>
-      </button>
     </div>
   </div>
 </template>
@@ -1117,6 +1170,129 @@ defineExpose({ focusInput })
   font-feature-settings: 'tnum';
 }
 
+.chat-dock__quick-switches {
+  display: grid;
+  gap: 7px;
+}
+
+.chat-dock__quick-toggle {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  align-items: center;
+  min-width: 0;
+  min-height: 50px;
+  gap: 8px;
+  border: 1px solid rgb(var(--color-line) / 0.66);
+  border-radius: 9px;
+  background: rgb(var(--color-surface-raised) / 0.76);
+  padding: 7px 9px;
+  color: rgb(var(--color-ink));
+}
+
+.chat-dock__quick-toggle input[type='checkbox'] {
+  appearance: none;
+  position: relative;
+  width: 38px;
+  height: 22px;
+  border: 1px solid rgb(var(--color-line));
+  border-radius: 999px;
+  background: rgb(var(--color-paper-soft));
+}
+
+.chat-dock__quick-toggle input[type='checkbox']::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: rgb(var(--color-ivory));
+  box-shadow: 0 1px 2px rgb(var(--color-ink) / 0.18);
+  transition: transform 140ms var(--motion-soft);
+}
+
+.chat-dock__quick-toggle input[type='checkbox']:checked {
+  border-color: rgb(var(--color-action));
+  background: rgb(var(--color-action));
+}
+
+.chat-dock__quick-toggle input[type='checkbox']:checked::after {
+  transform: translateX(16px);
+}
+
+.chat-dock__quick-toggle input[type='checkbox']:focus-visible {
+  outline: none;
+}
+
+.chat-dock__quick-toggle:focus-within {
+  border-color: rgb(var(--color-accent) / 0.54);
+  box-shadow: var(--focus-ring);
+}
+
+.chat-dock__quick-toggle-copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.chat-dock__quick-toggle-copy > span {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 5px;
+  color: rgb(var(--color-ink));
+  font-size: 11.5px;
+  font-weight: 720;
+  line-height: 1.2;
+}
+
+.chat-dock__quick-toggle-copy > span > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-dock__quick-toggle-copy svg {
+  flex: 0 0 auto;
+  color: rgb(var(--color-muted));
+}
+
+.chat-dock__quick-toggle-copy strong {
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: rgb(var(--color-muted));
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 9px;
+  font-weight: 760;
+}
+
+.chat-dock__quick-toggle-copy small {
+  min-width: 0;
+  overflow: hidden;
+  color: rgb(var(--color-muted));
+  font-size: 10px;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-dock__quick-toggle[data-state='on'] .chat-dock__quick-toggle-copy svg,
+.chat-dock__quick-toggle[data-state='on'] .chat-dock__quick-toggle-copy strong {
+  color: rgb(var(--color-forest));
+}
+
+.chat-dock__quick-toggle[data-state='blocked'] .chat-dock__quick-toggle-copy svg,
+.chat-dock__quick-toggle[data-state='blocked'] .chat-dock__quick-toggle-copy strong {
+  color: rgb(var(--color-ochre));
+}
+
+.chat-dock__quick-toggle.is-disabled {
+  background: rgb(var(--color-surface-muted) / 0.56);
+  cursor: not-allowed;
+}
+
 .chat-dock__refs {
   order: 3;
   position: relative;
@@ -1314,7 +1490,7 @@ defineExpose({ focusInput })
   display: block;
   width: 100%;
   min-height: 46px;
-  padding: 13px 15px 10px;
+  padding: 13px 62px 10px 15px;
   resize: none;
   background: transparent;
   border: 0;
@@ -1342,7 +1518,7 @@ defineExpose({ focusInput })
 .chat-dock__indicator {
   position: absolute;
   top: 10px;
-  right: 12px;
+  right: 58px;
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -1367,7 +1543,6 @@ defineExpose({ focusInput })
 
 /* ------------------------------------------------------------------
  * Toolbar — single horizontal row, scrolls when chips overflow.
- * Send button is pinned on the right and never scrolls.
  * ------------------------------------------------------------------ */
 
 .chat-dock__toolbar {
@@ -1685,10 +1860,6 @@ defineExpose({ focusInput })
   padding: 5px;
 }
 
-.chat-dock[data-keyboard-open="true"] .chat-dock__send {
-  min-height: 50px;
-}
-
 .chat-dock__chip-prefix {
   color: rgb(var(--color-muted));
 }
@@ -1711,27 +1882,26 @@ defineExpose({ focusInput })
   padding: 0 10px;
 }
 
-/* ------------------------------------------------------------------
- * Send button — pinned to the right of the toolbar
- * ------------------------------------------------------------------ */
-
-/* ready: full primary gradient + accent glow — the hero action */
 .chat-dock__send {
-  order: 5;
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  z-index: 4;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  justify-items: center;
-  gap: 10px;
-  width: 100%;
-  height: auto;
-  min-height: 52px;
-  border-radius: 12px;
-  border: 1px solid rgb(var(--color-line) / 0.82);
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 999px;
+  border: 1px solid rgb(var(--color-line) / 0.78);
   background: rgb(var(--color-surface-muted) / 0.96);
   color: rgb(var(--color-muted));
   cursor: not-allowed;
   box-shadow: var(--shadow-inner-glass);
+  transition:
+    transform 140ms var(--motion-press),
+    background-color 140ms var(--motion-soft),
+    color 140ms var(--motion-soft),
+    box-shadow 160ms var(--motion-soft);
 }
 
 .chat-dock__send:focus-visible {
@@ -1743,38 +1913,6 @@ defineExpose({ focusInput })
   opacity: 1;
 }
 
-.chat-dock__send-icon {
-  display: inline-grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  background: rgb(var(--color-surface-raised) / 0.86);
-  color: currentColor;
-}
-
-.chat-dock__send-label {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 14px;
-  font-weight: 780;
-  line-height: 1.1;
-}
-
-.chat-dock__send-status {
-  min-width: 42px;
-  border-radius: 8px;
-  background: rgb(var(--color-paper) / 0.14);
-  padding: 4px 7px;
-  font-family: 'JetBrains Mono', ui-monospace, monospace;
-  font-size: 10px;
-  font-weight: 760;
-  letter-spacing: 0;
-  font-feature-settings: 'tnum';
-}
-
 .chat-dock__send--ready {
   background: var(--gradient-primary);
   color: #fff;
@@ -1783,13 +1921,9 @@ defineExpose({ focusInput })
   box-shadow: var(--shadow-glass), var(--shadow-glow-accent);
 }
 
-.chat-dock__send--ready .chat-dock__send-icon {
-  background: rgb(255 255 255 / 0.14);
-}
-
 .chat-dock__send--ready:active,
 .chat-dock__send--busy:active {
-  transform: scale(0.985);
+  transform: scale(0.94);
 }
 
 .chat-dock__send--busy {
@@ -1798,10 +1932,6 @@ defineExpose({ focusInput })
   border-color: transparent;
   cursor: pointer;
   box-shadow: var(--shadow-glass);
-}
-
-.chat-dock__send--busy .chat-dock__send-icon {
-  background: rgb(var(--color-paper) / 0.12);
 }
 
 

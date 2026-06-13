@@ -950,21 +950,6 @@ function handleReusePrompt(text: string) {
   focusPrompt()
 }
 
-function handleUseStarterPrompt(text: string) {
-  const trimmed = text.trim()
-  if (!trimmed) return
-  pendingContinuation.value = null
-  vibrate('tap')
-  replacePromptWithUndo(trimmed, {
-    treeAction: 'import',
-    treeLabel: t('toast.starterPromptLabel'),
-    successTitle: t('toast.starterApplied'),
-    successHint: t('toast.starterAppliedHint'),
-  })
-  focusPrompt()
-}
-
-
 async function handleGenerate(options?: { clearAfter?: boolean }) {
   if (!canGenerate.value || !provider.isConfigured.value || healthStatus.value === 'offline') {
     if (!provider.isConfigured.value) {
@@ -1968,7 +1953,6 @@ watch(sw.updateAvailable, (available) => {
             @copy="copyToClipboard"
             @export="exportCurrentConfig"
             @go-compose="focusPrompt"
-            @use-starter="handleUseStarterPrompt"
             @reuse-prompt="handleReusePrompt"
             @continue-image="continueFromCanvasImage"
             @generate="handleGenerate"
@@ -2048,140 +2032,6 @@ watch(sw.updateAvailable, (available) => {
     </footer>
 
     <div id="canvas" v-if="!isDesktop" class="mobile-shell flex min-h-0 flex-1 flex-col overflow-hidden">
-      <section class="mobile-generation-panel" :aria-label="t('desktop.render.settings')">
-        <details class="mobile-generation-details">
-          <summary class="mobile-generation-summary">
-            <span class="mobile-generation-summary__label">
-              <Icon name="sliders" :size="13" />
-              <span>{{ t('desktop.render.settings') }}</span>
-            </span>
-            <strong>{{ generationSettingsSummary }}</strong>
-            <Icon name="chevronDown" :size="13" />
-          </summary>
-
-          <div class="mobile-generation-body">
-            <div class="mobile-generation-grid">
-              <label class="mobile-generation-field" for="mobile-size">
-                <span>{{ t('desktop.render.size') }}</span>
-                <Select
-                  id="mobile-size"
-                  v-model="size"
-                  :options="desktopSizeOptions"
-                  :aria-label="t('desktop.render.size')"
-                  size="sm"
-                  :show-hints="false"
-                />
-              </label>
-
-              <label class="mobile-generation-field" for="mobile-format">
-                <span>{{ t('desktop.render.format') }}</span>
-                <Select
-                  id="mobile-format"
-                  v-model="outputFormat"
-                  :options="desktopFormatOptions"
-                  :aria-label="t('settings.format.label')"
-                  size="sm"
-                  :show-hints="false"
-                />
-              </label>
-
-              <label class="mobile-generation-field" for="mobile-quality">
-                <span>{{ t('desktop.render.quality') }}</span>
-                <Select
-                  id="mobile-quality"
-                  v-model="quality"
-                  :options="desktopQualityOptions"
-                  :aria-label="t('settings.quality.label')"
-                  size="sm"
-                  :show-hints="false"
-                />
-              </label>
-
-              <div class="mobile-generation-field">
-                <span>{{ t('desktop.render.count') }}</span>
-                <div class="mobile-generation-stepper" role="group" :aria-label="t('desktop.render.count')">
-                  <button type="button" :disabled="count <= 1 || isGenerating" @click="adjustGenerationCount(-1)">
-                    <Icon name="minus" :size="12" />
-                  </button>
-                  <span aria-live="polite">{{ count }}</span>
-                  <button type="button" :disabled="count >= 4 || isGenerating" @click="adjustGenerationCount(1)">
-                    <Icon name="plus" :size="12" />
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <div class="mobile-generation-switches">
-              <label
-                class="mobile-generation-toggle"
-                :class="{ 'is-disabled': !canUseTransparentBackground }"
-                :data-state="toggleState(transparentBackground, canUseTransparentBackground)"
-              >
-                <input
-                  v-model="transparentBackground"
-                  type="checkbox"
-                  :disabled="!canUseTransparentBackground"
-                  aria-describedby="mobile-transparent-hint"
-                />
-                <span class="mobile-generation-toggle__copy">
-                  <span class="mobile-generation-toggle__top">
-                    <Icon name="image" :size="12" />
-                    <span>{{ t('settings.transparentBackground') }}</span>
-                    <strong>{{ toggleStateLabel(transparentBackground, canUseTransparentBackground) }}</strong>
-                  </span>
-                  <small id="mobile-transparent-hint">{{ desktopTransparentHint }}</small>
-                </span>
-              </label>
-              <label
-                class="mobile-generation-toggle"
-                :class="{ 'is-disabled': !canUseStreamingWait }"
-                :data-state="toggleState(streamingWait, canUseStreamingWait)"
-              >
-                <input
-                  v-model="streamingWait"
-                  type="checkbox"
-                  :disabled="!canUseStreamingWait"
-                  aria-describedby="mobile-streaming-hint"
-                />
-                <span class="mobile-generation-toggle__copy">
-                  <span class="mobile-generation-toggle__top">
-                    <Icon name="clock" :size="12" />
-                    <span>{{ t('settings.streamingWait') }}</span>
-                    <strong>{{ toggleStateLabel(streamingWait, canUseStreamingWait) }}</strong>
-                  </span>
-                  <small id="mobile-streaming-hint">{{ desktopStreamingHint }}</small>
-                </span>
-              </label>
-              <label
-                class="mobile-generation-toggle"
-                :class="{ 'is-disabled': !canUsePartialPreview }"
-                :data-state="toggleState(partialPreview, canUsePartialPreview)"
-              >
-                <input
-                  v-model="partialPreview"
-                  type="checkbox"
-                  :disabled="!canUsePartialPreview"
-                  aria-describedby="mobile-preview-hint"
-                />
-                <span class="mobile-generation-toggle__copy">
-                  <span class="mobile-generation-toggle__top">
-                    <Icon name="pulse" :size="12" />
-                    <span>{{ t('settings.stagePreview') }}</span>
-                    <strong>{{ toggleStateLabel(partialPreview, canUsePartialPreview) }}</strong>
-                  </span>
-                  <small id="mobile-preview-hint">{{ desktopPartialPreviewHint }}</small>
-                </span>
-              </label>
-            </div>
-
-            <button type="button" class="mobile-generation-more" @click="settingsOpen = true">
-              <Icon name="settings" :size="13" />
-              <span>{{ t('settings.advanced.title') }}</span>
-            </button>
-          </div>
-        </details>
-      </section>
-
       <ChatStream
         ref="chatStreamRef"
         :messages="messages"
@@ -2199,7 +2049,6 @@ watch(sw.updateAvailable, (available) => {
         @download="downloadImage"
         @copy="copyToClipboard"
         @import-prompt="handleImportPrompt"
-        @use-starter="handleUseStarterPrompt"
         @scroll-to-message="handleScrollToMessage"
         @abort="handleAbortGeneration"
         @open-settings="settingsOpen = true"
@@ -2216,6 +2065,8 @@ watch(sw.updateAvailable, (available) => {
       v-model:count="count"
       v-model:output-format="outputFormat"
       v-model:quality="quality"
+      v-model:streaming-wait="streamingWait"
+      v-model:partial-preview="partialPreview"
       :is-generating="isGenerating"
       :can-generate="canGenerate"
       :elapsed-seconds="elapsedSeconds"
@@ -2225,6 +2076,10 @@ watch(sw.updateAvailable, (available) => {
       :viewport-height="mobileViewportHeight ?? undefined"
       :model-warning="selectedModelWarning"
       :continuation="pendingContinuation"
+      :can-streaming-wait="canUseStreamingWait"
+      :can-partial-preview="canUsePartialPreview"
+      :streaming-wait-hint="desktopStreamingHint"
+      :partial-preview-hint="desktopPartialPreviewHint"
       @send="sendFromChat"
       @abort="handleAbortGeneration"
       @layout-change="handleChatDockLayoutChange"
@@ -2885,349 +2740,6 @@ watch(sw.updateAvailable, (available) => {
     height: 100%;
   }
 
-  .mobile-generation-panel {
-    position: relative;
-    z-index: 3;
-    flex: 0 0 auto;
-    padding:
-      8px max(10px, env(safe-area-inset-right, 0px)) 4px
-      max(10px, env(safe-area-inset-left, 0px));
-  }
-
-  .mobile-generation-details {
-    overflow: clip;
-    border: 1px solid rgb(var(--color-line) / 0.78);
-    border-radius: 10px;
-    background: rgb(var(--color-surface) / 0.97);
-    box-shadow: var(--shadow-inner-glass), var(--shadow-glass-sm);
-  }
-
-  .mobile-generation-summary {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto;
-    align-items: center;
-    gap: 0.55rem;
-    min-height: 40px;
-    padding: 0 0.72rem;
-    cursor: pointer;
-    color: rgb(var(--color-ink));
-    font-size: 12px;
-    font-weight: 720;
-    line-height: 1.2;
-  }
-
-  .mobile-generation-summary__label {
-    display: inline-flex;
-    align-items: center;
-    min-width: 0;
-    gap: 0.35rem;
-    white-space: nowrap;
-  }
-
-  .mobile-generation-summary strong {
-    min-width: 0;
-    overflow: hidden;
-    color: rgb(var(--color-muted));
-    font-size: 11px;
-    font-weight: 650;
-    text-align: right;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .mobile-generation-summary > svg:last-child {
-    color: rgb(var(--color-muted));
-    transition: transform 140ms var(--motion-soft);
-  }
-
-  .mobile-generation-details[open] .mobile-generation-summary > svg:last-child {
-    transform: rotate(180deg);
-  }
-
-  .mobile-generation-body {
-    display: grid;
-    gap: 0.65rem;
-    max-height: min(280px, 36svh);
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    border-top: 1px solid rgb(var(--color-line) / 0.62);
-    padding: 0.65rem;
-    -webkit-overflow-scrolling: touch;
-  }
-
-  .mobile-generation-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.55rem;
-  }
-
-  .mobile-generation-field {
-    display: grid;
-    min-width: 0;
-    gap: 0.32rem;
-  }
-
-  .mobile-generation-field > span {
-    overflow: hidden;
-    color: rgb(var(--color-muted));
-    font-size: 11px;
-    font-weight: 720;
-    line-height: 1.2;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .mobile-generation-field :deep(.select-trigger) {
-    height: 36px;
-    border-radius: 8px;
-    padding-left: 0.7rem;
-    padding-right: 1.9rem;
-    font-size: 12px;
-  }
-
-  .mobile-generation-field :deep(.select-trigger__caret) {
-    right: 0.55rem;
-  }
-
-  .mobile-generation-stepper {
-    display: grid;
-    grid-template-columns: 34px minmax(0, 1fr) 34px;
-    align-items: center;
-    overflow: hidden;
-    min-height: 36px;
-    border: 1px solid rgb(var(--color-line) / 0.82);
-    border-radius: 8px;
-    background: rgb(var(--color-surface-raised) / 0.96);
-    box-shadow: var(--shadow-inner-glass);
-  }
-
-  .mobile-generation-stepper button {
-    display: grid;
-    height: 36px;
-    place-items: center;
-    color: rgb(var(--color-muted));
-  }
-
-  .mobile-generation-stepper button:disabled {
-    cursor: not-allowed;
-    opacity: 0.42;
-  }
-
-  .mobile-generation-stepper span {
-    color: rgb(var(--color-ink));
-    font-size: 12px;
-    font-weight: 760;
-    text-align: center;
-  }
-
-  .mobile-generation-switches {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: 0.45rem;
-  }
-
-  .mobile-generation-toggle {
-    display: grid;
-    grid-template-columns: 36px minmax(0, 1fr);
-    align-items: center;
-    min-width: 0;
-    min-height: 48px;
-    gap: 0.55rem;
-    border-radius: 8px;
-    border: 1px solid transparent;
-    background: rgb(var(--color-surface-muted) / 0.72);
-    padding: 0.45rem 0.6rem;
-    color: rgb(var(--color-ink));
-    transition: border-color 140ms var(--motion-soft), background-color 140ms var(--motion-soft);
-  }
-
-  .mobile-generation-toggle:focus-within {
-    border-color: rgb(var(--color-accent) / 0.54);
-    box-shadow: var(--focus-ring);
-  }
-
-  .mobile-generation-toggle input[type='checkbox'] {
-    appearance: none;
-    position: relative;
-    flex: 0 0 auto;
-    width: 36px;
-    height: 20px;
-    border: 1px solid rgb(var(--color-line));
-    border-radius: 999px;
-    background: rgb(var(--color-paper-soft));
-  }
-
-  .mobile-generation-toggle input[type='checkbox']::after {
-    content: '';
-    position: absolute;
-    top: 2px;
-    left: 2px;
-    width: 14px;
-    height: 14px;
-    border-radius: 999px;
-    background: rgb(var(--color-ivory));
-    box-shadow: 0 1px 2px rgb(var(--color-ink) / 0.18);
-    transition: transform 140ms var(--motion-soft);
-  }
-
-  .mobile-generation-toggle input[type='checkbox']:checked {
-    border-color: rgb(var(--color-action));
-    background: rgb(var(--color-action));
-  }
-
-  .mobile-generation-toggle input[type='checkbox']:checked::after {
-    transform: translateX(16px);
-  }
-
-  .mobile-generation-toggle input[type='checkbox']:focus-visible {
-    outline: none;
-  }
-
-  .mobile-generation-toggle__copy {
-    display: grid;
-    min-width: 0;
-    gap: 0.16rem;
-  }
-
-  .mobile-generation-toggle__top {
-    display: flex;
-    align-items: center;
-    min-width: 0;
-    gap: 0.32rem;
-    color: rgb(var(--color-ink));
-    font-size: 11.5px;
-    font-weight: 720;
-    line-height: 1.2;
-  }
-
-  .mobile-generation-toggle__top > span {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .mobile-generation-toggle__top > svg {
-    flex: 0 0 auto;
-    color: rgb(var(--color-muted));
-  }
-
-  .mobile-generation-toggle__top strong {
-    flex: 0 0 auto;
-    margin-left: auto;
-    color: rgb(var(--color-muted));
-    font-family: 'JetBrains Mono', ui-monospace, monospace;
-    font-size: 9px;
-    font-weight: 760;
-  }
-
-  .mobile-generation-toggle small {
-    min-width: 0;
-    overflow: hidden;
-    color: rgb(var(--color-muted));
-    font-size: 10px;
-    line-height: 1.3;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .mobile-generation-toggle[data-state='on'] .mobile-generation-toggle__top > svg,
-  .mobile-generation-toggle[data-state='on'] .mobile-generation-toggle__top strong {
-    color: rgb(var(--color-forest));
-  }
-
-  .mobile-generation-toggle[data-state='blocked'] .mobile-generation-toggle__top > svg,
-  .mobile-generation-toggle[data-state='blocked'] .mobile-generation-toggle__top strong {
-    color: rgb(var(--color-ochre));
-  }
-
-  .mobile-generation-toggle.is-disabled {
-    border-color: rgb(var(--color-line) / 0.54);
-    background: rgb(var(--color-surface-muted) / 0.5);
-    cursor: not-allowed;
-  }
-
-  .mobile-generation-more {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    justify-self: start;
-    gap: 0.35rem;
-    min-height: 34px;
-    border: 1px solid rgb(var(--color-line) / 0.76);
-    border-radius: 8px;
-    background: rgb(var(--color-surface-raised) / 0.96);
-    color: rgb(var(--color-ink));
-    padding: 0 0.7rem;
-    font-size: 12px;
-    font-weight: 720;
-    box-shadow: var(--shadow-inner-glass);
-  }
-}
-
-@media (max-width: 380px) {
-  .mobile-generation-panel {
-    padding-inline: max(8px, env(safe-area-inset-left, 0px)) max(8px, env(safe-area-inset-right, 0px));
-  }
-
-  .mobile-generation-summary {
-    gap: 0.42rem;
-    padding-inline: 0.6rem;
-  }
-
-  .mobile-generation-summary strong {
-    font-size: 10.5px;
-  }
-
-  .mobile-generation-body {
-    padding: 0.55rem;
-  }
-
-  .mobile-generation-grid {
-    gap: 0.45rem;
-  }
-}
-
-@media (max-width: 1023px) and (max-height: 540px) and (orientation: landscape) {
-  .mobile-generation-panel {
-    padding-top: 5px;
-  }
-
-  .mobile-generation-summary {
-    min-height: 34px;
-  }
-
-  .mobile-generation-body {
-    max-height: min(190px, 40svh);
-    padding: 0.5rem;
-  }
-
-  .mobile-generation-grid {
-    grid-template-columns: repeat(4, minmax(108px, 1fr));
-    overflow-x: auto;
-    padding-bottom: 0.1rem;
-    scrollbar-width: none;
-  }
-
-  .mobile-generation-grid::-webkit-scrollbar {
-    display: none;
-  }
-
-  .mobile-generation-switches {
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    scrollbar-width: none;
-  }
-
-  .mobile-generation-switches::-webkit-scrollbar {
-    display: none;
-  }
-
-  .mobile-generation-toggle {
-    flex-basis: 142px;
-  }
-}
-
 @media (max-width: 1279px) {
   .desktop-workbench--tool {
     max-width: 1320px;
@@ -3237,8 +2749,7 @@ watch(sw.updateAvailable, (available) => {
 @media (prefers-reduced-motion: reduce) {
   .rail-icon-button,
   .rail-stepper button,
-  .rail-details summary svg,
-  .mobile-generation-summary > svg:last-child {
+  .rail-details summary svg {
     transition: none;
   }
 }
