@@ -10,6 +10,7 @@ import { useFocusTrap } from '../composables/useFocusTrap'
 import { useBodyLock } from '../composables/useBodyLock'
 import { ApiRequestError, testProvider } from '../api'
 import { useI18n, type LocalePreference } from '../lib/i18n'
+import type { IconName } from '../icons'
 import type { GenerateImageRequest, ImageQuality, ImageSize } from '../types'
 
 type OutputFormat = NonNullable<GenerateImageRequest['outputFormat']>
@@ -57,45 +58,17 @@ const i18n = useI18n()
 const minCount = 1
 const maxCount = 4
 
-const settingsText = computed(() => {
-  if (i18n.locale.value === 'zh-CN') {
-    return {
-      imageEyebrow: 'Image · 图像',
-      imageTitle: '常用生成参数',
-      imageNote: '这些会直接影响每次生成的画幅、数量和输出方式。',
-      sizeHint: '选择画幅与分辨率。',
-      countHint: '一次生成的图片张数。',
-      transparentBackground: '透明背景',
-      transparentHint: '仅 PNG 输出可用。',
-      liveWait: '实时等待',
-      liveWaitHint: '生成时显示更及时的等待状态。',
-      stagePreview: '阶段预览',
-      stagePreviewHint: '支持时显示中间预览。',
-      advancedSummary: 'Advanced · 高级',
-      advancedTitle: '高级与手动能力',
-      advancedHint: '负面提示词、seed、创意强度和手动分辨率开关。',
-      manualResolution: '手动分辨率',
-    }
-  }
+type ToggleState = 'on' | 'off' | 'blocked'
+type CapabilityTileState = 'supported' | 'unsupported' | 'partial' | 'pending'
 
-  return {
-    imageEyebrow: 'Image',
-    imageTitle: 'Common image parameters',
-    imageNote: 'These control the frame, quantity, and output for each generation.',
-    sizeHint: 'Choose aspect ratio and resolution.',
-    countHint: 'Images to generate in one request.',
-    transparentBackground: 'Transparent background',
-    transparentHint: 'Available for PNG output.',
-    liveWait: 'Live wait',
-    liveWaitHint: 'Show more responsive waiting state while generating.',
-    stagePreview: 'Stage preview',
-    stagePreviewHint: 'Show intermediate previews when supported.',
-    advancedSummary: 'Advanced',
-    advancedTitle: 'Advanced and manual capability',
-    advancedHint: 'Negative prompt, seed, creativity, and manual resolution switches.',
-    manualResolution: 'Manual resolution',
-  }
-})
+interface CapabilityTile {
+  key: string
+  icon: IconName
+  label: string
+  detail: string
+  state: CapabilityTileState
+  stateLabel: string
+}
 
 function tierLabel(tier: '2k' | '4k'): string {
   const s = resolutionSupport.state
@@ -130,6 +103,167 @@ const resolutionSummary = computed(() => {
   if (resolutionSupport.unlocked2k.value) return i18n.t('settings.resolution.unlocked2k')
   return i18n.t('settings.resolution.only1k')
 })
+
+function toggleState(value: boolean, enabled: boolean): ToggleState {
+  if (!enabled) return 'blocked'
+  return value ? 'on' : 'off'
+}
+
+function toggleStateLabel(value: boolean, enabled: boolean): string {
+  if (!enabled) return i18n.t('settings.toggle.unavailable')
+  return value ? i18n.t('settings.toggle.on') : i18n.t('settings.toggle.off')
+}
+
+function capabilityStateLabel(state: CapabilityTileState): string {
+  if (state === 'supported') return i18n.t('desktop.capabilities.supported')
+  if (state === 'partial') return i18n.t('desktop.capabilities.limited')
+  if (state === 'pending') return i18n.t('desktop.capabilities.pending')
+  return i18n.t('desktop.capabilities.unsupported')
+}
+
+function configuredCapabilityState(supported: boolean): CapabilityTileState {
+  if (!provider.isConfigured.value) return 'pending'
+  return supported ? 'supported' : 'unsupported'
+}
+
+function capabilityDetailFor(
+  state: CapabilityTileState,
+  supportedDetail: string,
+  unsupportedDetail = i18n.t('desktop.capabilities.requiresProvider'),
+): string {
+  if (state === 'pending') return i18n.t('desktop.capabilities.pendingDetail')
+  if (state === 'supported' || state === 'partial') return supportedDetail
+  return unsupportedDetail
+}
+
+const providerGenerationModeLabel = computed(() => {
+  if (!provider.isConfigured.value) return i18n.t('desktop.capabilities.pendingDetail')
+  switch (provider.state.imageGeneration.generationMode) {
+    case 'images_generations':
+      return i18n.t('desktop.capabilities.modeImages')
+    case 'responses_tool':
+      return i18n.t('desktop.capabilities.modeResponses')
+    case 'responses_text_data_url':
+      return i18n.t('desktop.capabilities.modeResponsesData')
+    default:
+      return i18n.t('desktop.capabilities.modeAuto')
+  }
+})
+
+function resolutionTileState(unlocked: boolean, blocked: boolean): CapabilityTileState {
+  if (!provider.isConfigured.value) return 'pending'
+  if (blocked) return 'unsupported'
+  return unlocked ? 'supported' : 'unsupported'
+}
+
+const providerCapabilityTiles = computed<CapabilityTile[]>(() => {
+  const imageGeneration = provider.state.imageGeneration
+  const imageState = configuredCapabilityState(imageGeneration.textToImage === 'supported')
+  const editState = configuredCapabilityState(
+    imageGeneration.imageEdit === 'supported' || resolutionSupport.state.supportsEdits,
+  )
+  const streamingState = configuredCapabilityState(imageGeneration.sseStream === 'supported')
+  const previewState: CapabilityTileState = !provider.isConfigured.value
+    ? 'pending'
+    : imageGeneration.partialPreview !== 'supported'
+      ? 'unsupported'
+      : imageGeneration.sseStream === 'supported'
+        ? 'supported'
+        : 'partial'
+  const transparentState: CapabilityTileState = !provider.isConfigured.value
+    ? 'pending'
+    : imageGeneration.transparentBackground !== 'supported'
+      ? 'unsupported'
+      : outputFormat.value === 'png'
+        ? 'supported'
+        : 'partial'
+  const qualityState = configuredCapabilityState(resolutionSupport.state.supportsQuality)
+  const twoKState = resolutionTileState(resolutionSupport.unlocked2k.value, resolutionSupport.state.blocked2k)
+  const fourKState = resolutionTileState(resolutionSupport.unlocked4k.value, resolutionSupport.state.blocked4k)
+
+  return [
+    {
+      key: 'image-generation',
+      icon: 'image',
+      label: i18n.t('desktop.capabilities.imageGeneration'),
+      detail: capabilityDetailFor(imageState, providerGenerationModeLabel.value),
+      state: imageState,
+      stateLabel: capabilityStateLabel(imageState),
+    },
+    {
+      key: 'reference-image',
+      icon: 'layers',
+      label: i18n.t('desktop.capabilities.imageEdit'),
+      detail: capabilityDetailFor(
+        editState,
+        resolutionSupport.state.supportsMask
+          ? i18n.t('desktop.capabilities.withMask')
+          : i18n.t('desktop.capabilities.referenceEdit'),
+      ),
+      state: editState,
+      stateLabel: capabilityStateLabel(editState),
+    },
+    {
+      key: '2k',
+      icon: 'check',
+      label: i18n.t('settings.resolution.twoK'),
+      detail: capabilityDetailFor(twoKState, tierLabel('2k')),
+      state: twoKState,
+      stateLabel: capabilityStateLabel(twoKState),
+    },
+    {
+      key: '4k',
+      icon: 'star',
+      label: i18n.t('settings.resolution.fourK'),
+      detail: capabilityDetailFor(fourKState, tierLabel('4k')),
+      state: fourKState,
+      stateLabel: capabilityStateLabel(fourKState),
+    },
+    {
+      key: 'streaming',
+      icon: 'clock',
+      label: i18n.t('desktop.capabilities.streaming'),
+      detail: capabilityDetailFor(streamingState, i18n.t('desktop.capabilities.streamingDetail')),
+      state: streamingState,
+      stateLabel: capabilityStateLabel(streamingState),
+    },
+    {
+      key: 'preview',
+      icon: 'pulse',
+      label: i18n.t('desktop.capabilities.preview'),
+      detail: capabilityDetailFor(
+        previewState,
+        previewState === 'partial'
+          ? i18n.t('capability.previewRequiresStreaming')
+          : i18n.t('desktop.capabilities.previewDetail'),
+      ),
+      state: previewState,
+      stateLabel: capabilityStateLabel(previewState),
+    },
+    {
+      key: 'transparent',
+      icon: 'swatch',
+      label: i18n.t('desktop.capabilities.transparent'),
+      detail: capabilityDetailFor(
+        transparentState,
+        outputFormat.value === 'png'
+          ? i18n.t('settings.format.pngHint')
+          : i18n.t('desktop.capabilities.requiresPng'),
+      ),
+      state: transparentState,
+      stateLabel: capabilityStateLabel(transparentState),
+    },
+    {
+      key: 'quality',
+      icon: 'sliders',
+      label: i18n.t('desktop.capabilities.quality'),
+      detail: capabilityDetailFor(qualityState, i18n.t('settings.resolution.badgeQuality')),
+      state: qualityState,
+      stateLabel: capabilityStateLabel(qualityState),
+    },
+  ]
+})
+
 const showApiKey = ref(false)
 const dialogRef = ref<HTMLElement | null>(null)
 
@@ -310,6 +444,7 @@ const qualitySelectOptions = computed<SelectOption<ImageQuality>[]>(() =>
   qualityOptions.map((option) => ({
     value: option.value,
     label: i18n.t(`settings.quality.${option.value}`),
+    hint: i18n.t(`settings.quality.${option.value}Hint`),
   })),
 )
 
@@ -321,19 +456,19 @@ const localeSelectOptions = computed<SelectOption<LocalePreference>[]>(() => [
 
 const transparentBackgroundHint = computed(() =>
   props.canTransparentBackground
-    ? settingsText.value.transparentHint
+    ? i18n.t('settings.transparentBackground.hint')
     : props.transparentBackgroundDisabledReason || i18n.t('capability.transparentUnsupported'),
 )
 
 const streamingWaitHint = computed(() =>
   props.canStreamingWait
-    ? settingsText.value.liveWaitHint
+    ? i18n.t('settings.streamingWait.hint')
     : i18n.t('capability.streamingUnsupported'),
 )
 
 const partialPreviewHint = computed(() =>
   props.canPartialPreview
-    ? settingsText.value.stagePreviewHint
+    ? i18n.t('settings.stagePreview.hint')
     : props.partialPreviewDisabledReason || i18n.t('capability.previewUnsupported'),
 )
 
@@ -472,7 +607,7 @@ onBeforeUnmount(() => {
                   <div>
                     <label class="label mb-1.5 inline-flex items-center gap-1.5" for="set-api-key">
                       <Icon name="lightning" :size="12" />
-                      <span>API Key</span>
+                      <span>{{ i18n.t('settings.provider.apiKey') }}</span>
                     </label>
                     <div class="relative flex items-center gap-2">
                       <input
@@ -553,18 +688,43 @@ onBeforeUnmount(() => {
                     {{ testHint }}
                   </p>
                 </div>
+
+                <div class="settings-capability-map">
+                  <div class="settings-capability-map__head">
+                    <span class="display-eyebrow text-[10px]">{{ i18n.t('settings.capability.eyebrow') }}</span>
+                    <span>{{ i18n.t('settings.capability.body') }}</span>
+                  </div>
+                  <div class="settings-capability-grid" role="list">
+                    <div
+                      v-for="tile in providerCapabilityTiles"
+                      :key="tile.key"
+                      class="settings-capability-tile"
+                      :data-state="tile.state"
+                      role="listitem"
+                    >
+                      <span class="settings-capability-tile__icon" aria-hidden="true">
+                        <Icon :name="tile.icon" :size="13" />
+                      </span>
+                      <span class="settings-capability-tile__copy">
+                        <span class="settings-capability-tile__label">{{ tile.label }}</span>
+                        <span class="settings-capability-tile__detail">{{ tile.detail }}</span>
+                      </span>
+                      <strong class="settings-capability-tile__state">{{ tile.stateLabel }}</strong>
+                    </div>
+                  </div>
+                </div>
               </section>
 
               <section class="surface-1 p-4">
                 <div class="mb-3 flex items-center justify-between gap-2">
                   <div class="flex flex-col">
-                    <span class="display-eyebrow text-[10px]">{{ settingsText.imageEyebrow }}</span>
-                    <span class="mt-1 text-[13px] font-medium text-ink">{{ settingsText.imageTitle }}</span>
+                    <span class="display-eyebrow text-[10px]">{{ i18n.t('settings.image.eyebrow') }}</span>
+                    <span class="mt-1 text-[13px] font-medium text-ink">{{ i18n.t('settings.image.title') }}</span>
                   </div>
                 </div>
 
                 <p class="mb-3 text-[11px] leading-[1.6] text-muted">
-                  {{ settingsText.imageNote }}
+                  {{ i18n.t('settings.image.body') }}
                 </p>
 
                 <div class="settings-grid">
@@ -579,7 +739,7 @@ onBeforeUnmount(() => {
                       :options="sizeSelectOptions"
                       :aria-label="i18n.t('desktop.render.size')"
                     />
-                    <p class="settings-field__hint">{{ settingsText.sizeHint }}</p>
+                    <p class="settings-field__hint">{{ i18n.t('settings.image.sizeHint') }}</p>
                   </div>
 
                   <div class="settings-field">
@@ -606,7 +766,7 @@ onBeforeUnmount(() => {
                         <Icon name="plus" :size="12" />
                       </button>
                     </div>
-                    <p class="settings-field__hint">{{ settingsText.countHint }}</p>
+                    <p class="settings-field__hint">{{ i18n.t('settings.image.countHint') }}</p>
                   </div>
 
                   <div class="settings-field">
@@ -640,60 +800,95 @@ onBeforeUnmount(() => {
                   <label
                     class="settings-switch-row"
                     :class="{ 'is-disabled': !canTransparentBackground }"
+                    :data-state="toggleState(transparentBackground, canTransparentBackground)"
                   >
                     <input
                       v-model="transparentBackground"
                       type="checkbox"
                       :disabled="!canTransparentBackground"
+                      aria-describedby="settings-transparent-hint"
                     />
+                    <span class="settings-switch-row__icon" aria-hidden="true">
+                      <Icon name="image" :size="13" />
+                    </span>
                     <span class="settings-switch-row__body">
-                      <span class="settings-switch-row__label">
-                        <Icon name="image" :size="12" />
-                        <span>{{ settingsText.transparentBackground }}</span>
+                      <span class="settings-switch-row__top">
+                        <span class="settings-switch-row__label">{{ i18n.t('settings.transparentBackground') }}</span>
+                        <span
+                          class="settings-switch-row__state"
+                          :data-state="toggleState(transparentBackground, canTransparentBackground)"
+                        >
+                          {{ toggleStateLabel(transparentBackground, canTransparentBackground) }}
+                        </span>
                       </span>
-                      <span class="settings-switch-row__hint">{{ transparentBackgroundHint }}</span>
+                      <span id="settings-transparent-hint" class="settings-switch-row__hint">{{ transparentBackgroundHint }}</span>
                     </span>
                   </label>
 
                   <label
                     class="settings-switch-row"
                     :class="{ 'is-disabled': !canStreamingWait }"
+                    :data-state="toggleState(streamingWait, canStreamingWait)"
                   >
                     <input
                       v-model="streamingWait"
                       type="checkbox"
                       :disabled="!canStreamingWait"
+                      aria-describedby="settings-streaming-hint"
                     />
+                    <span class="settings-switch-row__icon" aria-hidden="true">
+                      <Icon name="clock" :size="13" />
+                    </span>
                     <span class="settings-switch-row__body">
-                      <span class="settings-switch-row__label">
-                        <Icon name="clock" :size="12" />
-                        <span>{{ settingsText.liveWait }}</span>
+                      <span class="settings-switch-row__top">
+                        <span class="settings-switch-row__label">{{ i18n.t('settings.streamingWait') }}</span>
+                        <span
+                          class="settings-switch-row__state"
+                          :data-state="toggleState(streamingWait, canStreamingWait)"
+                        >
+                          {{ toggleStateLabel(streamingWait, canStreamingWait) }}
+                        </span>
                       </span>
-                      <span class="settings-switch-row__hint">{{ streamingWaitHint }}</span>
+                      <span id="settings-streaming-hint" class="settings-switch-row__hint">{{ streamingWaitHint }}</span>
                     </span>
                   </label>
 
                   <label
                     class="settings-switch-row"
                     :class="{ 'is-disabled': !canPartialPreview }"
+                    :data-state="toggleState(partialPreview, canPartialPreview)"
                   >
                     <input
                       v-model="partialPreview"
                       type="checkbox"
                       :disabled="!canPartialPreview"
+                      aria-describedby="settings-preview-hint"
                     />
+                    <span class="settings-switch-row__icon" aria-hidden="true">
+                      <Icon name="pulse" :size="13" />
+                    </span>
                     <span class="settings-switch-row__body">
-                      <span class="settings-switch-row__label">
-                        <Icon name="pulse" :size="12" />
-                        <span>{{ settingsText.stagePreview }}</span>
+                      <span class="settings-switch-row__top">
+                        <span class="settings-switch-row__label">{{ i18n.t('settings.stagePreview') }}</span>
+                        <span
+                          class="settings-switch-row__state"
+                          :data-state="toggleState(partialPreview, canPartialPreview)"
+                        >
+                          {{ toggleStateLabel(partialPreview, canPartialPreview) }}
+                        </span>
                       </span>
-                      <span class="settings-switch-row__hint">{{ partialPreviewHint }}</span>
+                      <span id="settings-preview-hint" class="settings-switch-row__hint">{{ partialPreviewHint }}</span>
                     </span>
                   </label>
                 </div>
               </section>
 
-              <section>
+              <section class="surface-1 p-4">
+                <div class="mb-3 flex flex-col">
+                  <span class="display-eyebrow text-[10px]">{{ i18n.t('settings.display.eyebrow') }}</span>
+                  <span class="mt-1 text-[13px] font-medium text-ink">{{ i18n.t('settings.display.title') }}</span>
+                  <span class="mt-1 text-[11px] leading-[1.5] text-muted">{{ i18n.t('settings.display.body') }}</span>
+                </div>
                 <label class="label mb-2 inline-flex items-center gap-1.5" for="set-locale">
                   <Icon name="command" :size="12" />
                   <span>{{ i18n.t('settings.locale') }}</span>
@@ -715,9 +910,9 @@ onBeforeUnmount(() => {
               <details class="settings-advanced surface-1 p-4">
                 <summary class="settings-advanced__summary">
                   <span class="settings-advanced__summary-copy">
-                    <span class="display-eyebrow text-[10px]">{{ settingsText.advancedSummary }}</span>
-                    <span class="mt-1 text-[13px] font-medium text-ink">{{ settingsText.advancedTitle }}</span>
-                    <span class="mt-1 text-[11px] leading-[1.5] text-muted">{{ settingsText.advancedHint }}</span>
+                    <span class="display-eyebrow text-[10px]">{{ i18n.t('settings.advanced.eyebrow') }}</span>
+                    <span class="mt-1 text-[13px] font-medium text-ink">{{ i18n.t('settings.advanced.title') }}</span>
+                    <span class="mt-1 text-[11px] leading-[1.5] text-muted">{{ i18n.t('settings.advanced.body') }}</span>
                   </span>
                   <Icon name="chevronDown" :size="14" class="settings-advanced__chevron" />
                 </summary>
@@ -741,7 +936,7 @@ onBeforeUnmount(() => {
                   <section>
                     <label class="label mb-2 inline-flex items-center gap-1.5" for="set-seed">
                       <Icon name="dice" :size="12" />
-                      <span>Seed</span>
+                      <span>{{ i18n.t('settings.seed') }}</span>
                     </label>
                     <div class="relative flex items-center gap-2">
                       <input
@@ -856,7 +1051,7 @@ onBeforeUnmount(() => {
             </div>
 
             <footer
-              class="dialog-shell__footer flex flex-col-reverse items-stretch gap-2 border-t border-line/40 bg-ivory/30 px-5 py-4 backdrop-blur-sm sm:flex-row sm:items-center sm:justify-between sm:px-6"
+              class="dialog-shell__footer flex flex-col-reverse items-stretch gap-2 border-t border-line/40 bg-ivory/30 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6"
             >
               <button
                 type="button"
@@ -866,14 +1061,24 @@ onBeforeUnmount(() => {
                 <Icon name="reset" :size="13" />
                 {{ i18n.t('settings.action.reset') }}
               </button>
-              <button
-                type="button"
-                class="btn-secondary text-[12px]"
-                @click="emit('export')"
-              >
-                <Icon name="download" :size="13" />
-                {{ i18n.t('settings.action.export') }}
-              </button>
+              <div class="settings-footer-actions">
+                <button
+                  type="button"
+                  class="btn-secondary text-[12px]"
+                  @click="emit('export')"
+                >
+                  <Icon name="download" :size="13" />
+                  {{ i18n.t('settings.action.export') }}
+                </button>
+                <button
+                  type="button"
+                  class="btn-primary px-4 py-2.5 text-[12px] font-semibold"
+                  @click="close"
+                >
+                  <Icon name="check" :size="13" />
+                  {{ i18n.t('settings.close') }}
+                </button>
+              </div>
             </footer>
           </div>
         </Transition>
@@ -903,6 +1108,116 @@ onBeforeUnmount(() => {
   overscroll-behavior: contain;
   scrollbar-width: thin;
   scrollbar-gutter: stable;
+}
+
+.settings-capability-map {
+  display: grid;
+  gap: 0.65rem;
+  margin-top: 0.9rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid rgb(var(--color-line) / 0.48);
+}
+
+.settings-capability-map__head {
+  display: grid;
+  gap: 0.25rem;
+  color: rgb(var(--color-muted));
+  font-size: 10.5px;
+  line-height: 1.45;
+}
+
+.settings-capability-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.settings-capability-tile {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  grid-template-areas:
+    'icon copy'
+    'icon state';
+  gap: 0.1rem 0.55rem;
+  min-width: 0;
+  min-height: 58px;
+  padding: 0.55rem 0.6rem;
+  border: 1px solid rgb(var(--color-line) / 0.55);
+  border-radius: var(--radius-field);
+  background: rgb(var(--color-surface-muted) / 0.62);
+}
+
+.settings-capability-tile__icon {
+  grid-area: icon;
+  display: inline-grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border-radius: 7px;
+  background: rgb(var(--color-line) / 0.2);
+  color: rgb(var(--color-muted));
+}
+
+.settings-capability-tile__copy {
+  grid-area: copy;
+  display: grid;
+  min-width: 0;
+  gap: 0.1rem;
+}
+
+.settings-capability-tile__label,
+.settings-capability-tile__detail {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-capability-tile__label {
+  color: rgb(var(--color-ink));
+  font-size: 11.5px;
+  font-weight: 720;
+  line-height: 1.25;
+}
+
+.settings-capability-tile__detail {
+  color: rgb(var(--color-muted));
+  font-size: 10px;
+  line-height: 1.25;
+}
+
+.settings-capability-tile__state {
+  grid-area: state;
+  align-self: end;
+  justify-self: start;
+  color: rgb(var(--color-muted));
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+  font-size: 9.5px;
+  font-weight: 760;
+  line-height: 1.2;
+}
+
+.settings-capability-tile[data-state='supported'] .settings-capability-tile__icon,
+.settings-capability-tile[data-state='supported'] .settings-capability-tile__state {
+  color: rgb(var(--color-forest));
+}
+
+.settings-capability-tile[data-state='partial'] {
+  border-color: rgb(var(--color-ochre) / 0.38);
+  background: rgb(var(--color-ochre) / 0.08);
+}
+
+.settings-capability-tile[data-state='partial'] .settings-capability-tile__icon,
+.settings-capability-tile[data-state='partial'] .settings-capability-tile__state {
+  color: rgb(var(--color-ochre));
+}
+
+.settings-capability-tile[data-state='unsupported'] {
+  background: rgb(var(--color-surface-muted) / 0.5);
+}
+
+.settings-capability-tile[data-state='unsupported'] .settings-capability-tile__icon,
+.settings-capability-tile[data-state='unsupported'] .settings-capability-tile__state {
+  color: rgb(var(--color-clay));
 }
 
 .settings-grid {
@@ -983,17 +1298,18 @@ onBeforeUnmount(() => {
 }
 
 .settings-switch-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto 28px minmax(0, 1fr);
   align-items: center;
-  gap: 0.75rem;
-  min-height: 52px;
-  padding: 0.62rem 0.7rem;
+  gap: 0.65rem;
+  min-height: 58px;
+  padding: 0.62rem 0.7rem 0.62rem 0.62rem;
   border-radius: var(--radius-panel);
   border: 1px solid rgb(var(--color-line) / 0.55);
   background: rgb(var(--color-ivory) / 0.42);
   color: rgb(var(--color-ink));
   cursor: pointer;
-  transition: border-color 160ms var(--motion-soft), background-color 160ms var(--motion-soft), opacity 160ms var(--motion-soft);
+  transition: border-color 160ms var(--motion-soft), background-color 160ms var(--motion-soft), box-shadow 180ms var(--motion-soft), transform 140ms var(--motion-press);
 }
 
 .settings-switch-row:hover:not(.is-disabled) {
@@ -1001,10 +1317,19 @@ onBeforeUnmount(() => {
   background: rgb(var(--color-ivory) / 0.58);
 }
 
+.settings-switch-row:focus-within {
+  border-color: rgb(var(--color-accent) / 0.58);
+  box-shadow: var(--focus-ring);
+}
+
+.settings-switch-row:active:not(.is-disabled) {
+  transform: translateY(1px);
+}
+
 .settings-switch-row.is-disabled {
   cursor: not-allowed;
-  opacity: 0.64;
-  background: rgb(var(--color-surface-muted) / 0.58);
+  border-color: rgb(var(--color-line) / 0.68);
+  background: rgb(var(--color-surface-muted) / 0.7);
 }
 
 .settings-switch-row input[type='checkbox'] {
@@ -1046,23 +1371,64 @@ onBeforeUnmount(() => {
   cursor: not-allowed;
 }
 
+.settings-switch-row input[type='checkbox']:focus-visible {
+  outline: none;
+}
+
+.settings-switch-row__icon {
+  display: inline-grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 8px;
+  background: rgb(var(--color-line) / 0.18);
+  color: rgb(var(--color-muted));
+}
+
+.settings-switch-row[data-state='on'] .settings-switch-row__icon,
+.settings-switch-row[data-state='on'] .settings-switch-row__state {
+  color: rgb(var(--color-forest));
+}
+
+.settings-switch-row[data-state='blocked'] .settings-switch-row__icon,
+.settings-switch-row[data-state='blocked'] .settings-switch-row__state {
+  color: rgb(var(--color-ochre));
+}
+
 .settings-switch-row__body {
   display: flex;
   min-width: 0;
   flex: 1;
   flex-direction: column;
-  gap: 0.15rem;
+  gap: 0.22rem;
+}
+
+.settings-switch-row__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  gap: 0.55rem;
 }
 
 .settings-switch-row__label {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
   min-width: 0;
+  overflow: hidden;
   color: rgb(var(--color-ink));
   font-size: 12px;
   font-weight: 650;
   line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-switch-row__state {
+  flex: 0 0 auto;
+  color: rgb(var(--color-muted));
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+  font-size: 9.5px;
+  font-weight: 760;
+  line-height: 1.2;
 }
 
 .settings-switch-row__hint {
@@ -1123,8 +1489,13 @@ onBeforeUnmount(() => {
   border: 1px solid rgb(var(--color-line) / 0.4);
   background: rgb(var(--color-ivory) / 0.4);
   padding: 0.55rem 0.75rem;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+}
+
+.settings-footer-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
 }
 
 .settings-seed-roll:focus-visible {
@@ -1166,6 +1537,21 @@ onBeforeUnmount(() => {
     justify-content: center;
   }
 
+  .settings-footer-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .settings-footer-actions .btn-primary,
+  .settings-footer-actions .btn-secondary {
+    width: 100%;
+    min-height: 44px;
+  }
+
+  .settings-capability-grid {
+    grid-template-columns: 1fr;
+  }
+
   .settings-grid {
     grid-template-columns: 1fr;
     gap: 0.85rem;
@@ -1176,14 +1562,20 @@ onBeforeUnmount(() => {
   }
 
   .settings-switch-row {
-    align-items: flex-start;
+    grid-template-columns: auto 30px minmax(0, 1fr);
+    align-items: center;
     min-height: 56px;
   }
 
   .settings-switch-row input[type='checkbox'] {
-    margin-top: 0.15rem;
     min-width: 44px;
     min-height: 24px;
+  }
+
+  .settings-switch-row__top {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0.2rem;
   }
 
   .settings-resolution-row {

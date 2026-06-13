@@ -4,6 +4,7 @@ import Icon from './Icon.vue'
 import DevelopingFrame from './DevelopingFrame.vue'
 import { resolveImageSource } from '../api'
 import { useI18n } from '../lib/i18n'
+import { promptStarters } from '../lib/promptStarters'
 import { useShare } from '../composables/useShare'
 import { useToast } from '../composables/useToast'
 import {
@@ -30,6 +31,7 @@ interface Props {
   progressOverride?: ChatProgressOverride
   size: ImageSize
   promptPreview: string
+  promptText?: string
   hasPrompt: boolean
   modelLabel?: string
   modelName?: string
@@ -61,6 +63,9 @@ const emit = defineEmits<{
   (e: 'copy', text: string, message: string): void
   (e: 'export'): void
   (e: 'go-compose'): void
+  (e: 'use-starter', prompt: string): void
+  (e: 'reuse-prompt', prompt: string): void
+  (e: 'continue-image', index: number): void
   (e: 'open-inpaint', index: number): void
   (e: 'image-edit-unavailable', reason?: string): void
   (e: 'generate'): void
@@ -75,6 +80,15 @@ const revealedImageKeys = ref<Record<string, boolean>>({})
 const { t } = useI18n()
 const { supported: shareSupported, share } = useShare()
 const toast = useToast()
+
+const starterCards = computed(() =>
+  promptStarters.map((starter) => ({
+    ...starter,
+    title: t(`starter.${starter.id}.title`),
+    body: t(`starter.${starter.id}.body`),
+    prompt: t(`starter.${starter.id}.prompt`),
+  })),
+)
 
 async function shareActive() {
   if (!activeImage.value || !activeSrc.value) return
@@ -201,6 +215,11 @@ function isImageReady(image: GeneratedImage, index: number) {
 const imageEditUnavailableReason = computed(() => props.imageEditDisabledReason.trim())
 const imageEditAriaDisabled = computed(() => props.canEditImages ? undefined : 'true')
 const imageEditTitle = computed(() => props.canEditImages ? undefined : imageEditUnavailableReason.value || undefined)
+const reusablePrompt = computed(() =>
+  activeImage.value?.revisedPrompt?.trim()
+  || props.promptText?.trim()
+  || props.promptPreview.trim(),
+)
 
 function imageEditAriaLabel(label: string) {
   if (props.canEditImages || !imageEditUnavailableReason.value) return label
@@ -217,6 +236,19 @@ function openInpaint(index: number) {
     return
   }
   emit('open-inpaint', index)
+}
+
+function continueImage(index: number) {
+  if (!props.canEditImages) {
+    announceImageEditUnavailable()
+    return
+  }
+  emit('continue-image', index)
+}
+
+function reuseActivePrompt() {
+  if (!reusablePrompt.value) return
+  emit('reuse-prompt', reusablePrompt.value)
 }
 </script>
 
@@ -327,32 +359,57 @@ function openInpaint(index: number) {
         </button>
 
         <div
-          class="canvas-tool-cluster pointer-events-none absolute right-3 top-3"
-          :aria-label="t('canvas.mosaic.label')"
+          class="canvas-result-toolbar pointer-events-none absolute inset-x-3 bottom-3"
+          :aria-label="t('canvas.actionsLabel')"
         >
           <button
             type="button"
-            class="pointer-events-auto canvas-tool-btn"
+            class="pointer-events-auto canvas-result-tool canvas-result-tool--primary"
+            :aria-disabled="imageEditAriaDisabled"
+            :aria-label="imageEditAriaLabel(t('canvas.action.continueLabel'))"
+            :title="imageEditTitle"
+            @click.stop="continueImage(activeImageIndex)"
+          >
+            <Icon name="sparkle" :size="14" />
+            <span>{{ t('canvas.action.continue') }}</span>
+          </button>
+          <button
+            type="button"
+            class="pointer-events-auto canvas-result-tool"
+            :aria-disabled="imageEditAriaDisabled"
+            :aria-label="imageEditAriaLabel(t('canvas.action.inpaintLabel'))"
+            :title="imageEditTitle"
+            @click.stop="openInpaint(activeImageIndex)"
+          >
+            <Icon name="brush" :size="14" />
+            <span>{{ t('canvas.action.inpaint') }}</span>
+          </button>
+          <button
+            type="button"
+            class="pointer-events-auto canvas-result-tool canvas-result-tool--icon"
+            :aria-label="t('canvas.tool.download')"
+            :title="t('canvas.tool.download')"
+            @click.stop="emit('download', activeImage, activeImageIndex)"
+          >
+            <Icon name="download" :size="14" />
+          </button>
+          <button
+            type="button"
+            class="pointer-events-auto canvas-result-tool canvas-result-tool--icon"
             :aria-label="t('canvas.tool.zoom')"
+            :title="t('canvas.tool.zoom')"
             @click.stop="emit('open-lightbox', activeImageIndex)"
           >
             <Icon name="zoomIn" :size="14" />
           </button>
           <button
             type="button"
-            class="pointer-events-auto canvas-tool-btn"
-            :aria-label="t('canvas.tool.openExternal')"
-            @click.stop="emit('open', activeImage)"
+            class="pointer-events-auto canvas-result-tool canvas-result-tool--icon"
+            :aria-label="t('canvas.action.reusePrompt')"
+            :title="t('canvas.action.reusePrompt')"
+            @click.stop="reuseActivePrompt"
           >
-            <Icon name="external" :size="14" />
-          </button>
-          <button
-            type="button"
-            class="pointer-events-auto canvas-tool-btn"
-            :aria-label="t('canvas.tool.download')"
-            @click.stop="emit('download', activeImage, activeImageIndex)"
-          >
-            <Icon name="download" :size="14" />
+            <Icon name="upload" :size="14" />
           </button>
         </div>
       </div>
@@ -427,7 +484,28 @@ function openInpaint(index: number) {
             <button
               type="button"
               class="pointer-events-auto canvas-mosaic__tool"
+              :aria-disabled="imageEditAriaDisabled"
+              :aria-label="imageEditAriaLabel(t('canvas.action.continueLabel'))"
+              :title="imageEditTitle || t('canvas.action.continue')"
+              @click.stop="continueImage(index)"
+            >
+              <Icon name="sparkle" :size="13" />
+            </button>
+            <button
+              type="button"
+              class="pointer-events-auto canvas-mosaic__tool"
+              :aria-disabled="imageEditAriaDisabled"
+              :aria-label="imageEditAriaLabel(t('canvas.action.inpaintLabel'))"
+              :title="imageEditTitle || t('canvas.action.inpaint')"
+              @click.stop="openInpaint(index)"
+            >
+              <Icon name="brush" :size="13" />
+            </button>
+            <button
+              type="button"
+              class="pointer-events-auto canvas-mosaic__tool"
               :aria-label="t('canvas.tool.zoom')"
+              :title="t('canvas.tool.zoom')"
               @click.stop="emit('open-lightbox', index)"
             >
               <Icon name="zoomIn" :size="13" />
@@ -436,6 +514,7 @@ function openInpaint(index: number) {
               type="button"
               class="pointer-events-auto canvas-mosaic__tool"
               :aria-label="t('canvas.tool.download')"
+              :title="t('canvas.tool.download')"
               @click.stop="emit('download', image, index)"
             >
               <Icon name="download" :size="13" />
@@ -449,7 +528,18 @@ function openInpaint(index: number) {
           type="button"
           class="canvas-action canvas-action--primary"
           :aria-disabled="imageEditAriaDisabled"
-          :aria-label="imageEditAriaLabel(t('canvas.action.inpaint'))"
+          :aria-label="imageEditAriaLabel(t('canvas.action.continueLabel'))"
+          :title="imageEditTitle"
+          @click="continueImage(activeImageIndex)"
+        >
+          <Icon name="sparkle" :size="14" />
+          {{ t('canvas.action.continue') }}
+        </button>
+        <button
+          type="button"
+          class="canvas-action"
+          :aria-disabled="imageEditAriaDisabled"
+          :aria-label="imageEditAriaLabel(t('canvas.action.inpaintLabel'))"
           :title="imageEditTitle"
           @click="openInpaint(activeImageIndex)"
         >
@@ -476,7 +566,15 @@ function openInpaint(index: number) {
         <button
           type="button"
           class="canvas-action"
-          @click="emit('copy', activeImage.revisedPrompt || promptPreview, t('toast.copyPrompt'))"
+          @click="reuseActivePrompt"
+        >
+          <Icon name="upload" :size="14" />
+          {{ t('canvas.action.reusePrompt') }}
+        </button>
+        <button
+          type="button"
+          class="canvas-action"
+          @click="emit('copy', reusablePrompt, t('toast.copyPrompt'))"
         >
           <Icon name="copy" :size="14" />
           {{ t('canvas.action.copyPrompt') }}
@@ -511,7 +609,7 @@ function openInpaint(index: number) {
       :data-orient="orient"
     >
       <div class="absolute inset-0 grid place-items-center text-center">
-        <div class="max-w-md px-6">
+        <div class="canvas-empty-content px-5 sm:px-6">
           <template v-if="!providerConfigured">
             <div
               class="canvas-hero__badge mx-auto mb-5 grid h-14 w-14 place-items-center rounded-[var(--radius-card)]"
@@ -551,7 +649,29 @@ function openInpaint(index: number) {
               {{ t('canvas.empty.body') }}
             </p>
 
-            <div class="mt-6 flex flex-col items-center gap-2.5 sm:flex-row sm:justify-center">
+            <div class="canvas-empty-starters mt-6" :aria-label="t('canvas.empty.startersLabel')">
+              <button
+                v-for="starter in starterCards"
+                :key="starter.id"
+                type="button"
+                class="canvas-empty-starter"
+                @click="emit('use-starter', starter.prompt)"
+              >
+                <span class="canvas-empty-starter__icon" aria-hidden="true">
+                  <Icon :name="starter.icon" :size="15" />
+                </span>
+                <span class="canvas-empty-starter__copy">
+                  <span class="canvas-empty-starter__title">{{ starter.title }}</span>
+                  <span class="canvas-empty-starter__body">{{ starter.body }}</span>
+                </span>
+                <span class="canvas-empty-starter__action">
+                  {{ t('canvas.empty.useStarter') }}
+                  <Icon name="arrowRight" :size="12" />
+                </span>
+              </button>
+            </div>
+
+            <div class="mt-5 flex flex-col items-center gap-2.5 sm:flex-row sm:justify-center">
               <button
                 v-if="hasPrompt"
                 type="button"
@@ -611,14 +731,14 @@ function openInpaint(index: number) {
   transition: transform 160ms var(--motion-press), background-color 160ms var(--motion-soft), border-color 160ms var(--motion-soft), box-shadow 180ms var(--motion-soft), color 160ms var(--motion-soft);
 }
 
-.canvas-tool-cluster {
-  display: flex;
-  gap: 0.4rem;
+.canvas-result-toolbar {
   z-index: 4;
-  /* Permanent. We add a soft halo so it remains legible against bright images. */
+  display: flex;
+  justify-content: center;
+  gap: 0.4rem;
   opacity: 1;
   transform: translateY(0);
-  transition: opacity 200ms var(--motion-soft), transform 200ms var(--motion-soft);
+  transition: opacity 180ms var(--motion-soft), transform 180ms var(--motion-soft);
 }
 
 .canvas-image-pager {
@@ -646,35 +766,92 @@ function openInpaint(index: number) {
   box-shadow: 0 0 0 1px rgb(var(--color-ink) / 0.32);
 }
 
-.canvas-tool-btn {
-  display: inline-grid;
-  place-items: center;
-  width: 36px;
-  height: 36px;
+.canvas-result-tool {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.38rem;
+  min-width: 38px;
+  height: 38px;
+  max-width: 11rem;
+  padding: 0 0.78rem;
   border-radius: 9px;
-  border: 1px solid rgb(var(--color-paper) / 0.18);
-  background: rgb(18 24 25 / 0.72);
+  border: 1px solid rgb(var(--color-paper) / 0.2);
+  background: rgb(18 24 25 / 0.76);
   color: rgb(255 255 255 / 0.94);
-  box-shadow: 0 8px 18px -14px rgb(0 0 0 / 0.65), inset 0 1px 0 rgb(255 255 255 / 0.14);
+  font-size: 11px;
+  font-weight: 740;
+  box-shadow: 0 8px 18px -14px rgb(0 0 0 / 0.66), inset 0 1px 0 rgb(255 255 255 / 0.14);
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
-  transition: transform 160ms var(--motion-press), background-color 160ms var(--motion-soft), border-color 160ms ease, box-shadow 180ms var(--motion-soft);
+  transition: transform 150ms var(--motion-press), background-color 150ms var(--motion-soft), border-color 150ms ease, box-shadow 170ms var(--motion-soft), opacity 150ms var(--motion-soft);
 }
 
-.canvas-tool-btn:hover {
+.canvas-result-tool span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-result-tool--icon {
+  width: 38px;
+  padding: 0;
+}
+
+.canvas-result-tool--primary {
   background: rgb(var(--color-action) / 0.9);
+}
+
+.canvas-result-tool:hover {
+  background: rgb(var(--color-action) / 0.92);
   border-color: rgb(255 255 255 / 0.34);
   box-shadow: 0 10px 22px -16px rgb(0 0 0 / 0.72), inset 0 1px 0 rgb(255 255 255 / 0.18);
   transform: translateY(-1px);
 }
 
-.canvas-tool-btn:active {
+.canvas-result-tool:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgb(255 255 255 / 0.92), 0 0 0 4px rgb(var(--color-action) / 0.64);
+}
+
+.canvas-result-tool:active {
   transform: translateY(0);
 }
 
+.canvas-result-tool[aria-disabled='true'] {
+  cursor: help;
+  opacity: 0.62;
+  filter: saturate(0.5);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .canvas-frame:hover .canvas-result-toolbar,
+  .canvas-frame:focus-within .canvas-result-toolbar {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  .canvas-result-toolbar {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+@media (max-width: 520px) {
+  .canvas-result-toolbar {
+    inset-inline: 0.55rem;
+    justify-content: flex-end;
+  }
+
+  .canvas-result-tool:not(.canvas-result-tool--primary) span {
+    display: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .canvas-tool-cluster,
-  .canvas-tool-btn {
+  .canvas-result-toolbar,
+  .canvas-result-tool {
     transition: none;
   }
 }
@@ -902,6 +1079,136 @@ function openInpaint(index: number) {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+.canvas-empty-content {
+  width: min(100%, 42rem);
+  max-height: 100%;
+  overflow-y: auto;
+  padding-block: 1rem;
+  scrollbar-width: thin;
+  scrollbar-color: rgb(var(--color-line-strong) / 0.32) transparent;
+}
+
+.canvas-frame[data-orient="portrait"] .canvas-empty-content {
+  width: min(100%, 23rem);
+}
+
+.canvas-empty-starters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+  gap: 0.55rem;
+  text-align: left;
+}
+
+.canvas-frame[data-orient="portrait"] .canvas-empty-starters {
+  grid-template-columns: 1fr;
+}
+
+.canvas-empty-starter {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-areas:
+    "icon copy"
+    "icon action";
+  align-items: center;
+  gap: 0.18rem 0.65rem;
+  min-height: 74px;
+  border: 1px solid rgb(var(--color-line) / 0.78);
+  border-radius: 9px;
+  background: rgb(var(--color-surface-raised) / 0.78);
+  color: rgb(var(--color-ink));
+  padding: 0.62rem 0.68rem;
+  box-shadow: var(--shadow-inner-glass);
+  transition: border-color 150ms var(--motion-soft), background-color 150ms var(--motion-soft), transform 150ms var(--motion-press), box-shadow 170ms var(--motion-soft);
+}
+
+.canvas-empty-starter:hover {
+  border-color: rgb(var(--color-action) / 0.38);
+  background: rgb(var(--color-surface-raised));
+  box-shadow: var(--shadow-glass-sm), var(--shadow-inner-glass);
+  transform: translateY(-1px);
+}
+
+.canvas-empty-starter:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.canvas-empty-starter:active {
+  transform: translateY(0);
+}
+
+.canvas-empty-starter__icon {
+  grid-area: icon;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  border: 1px solid rgb(var(--color-line) / 0.68);
+  background: rgb(var(--color-surface-muted) / 0.82);
+  color: rgb(var(--color-action));
+}
+
+.canvas-empty-starter__copy {
+  grid-area: copy;
+  display: grid;
+  min-width: 0;
+  gap: 0.12rem;
+}
+
+.canvas-empty-starter__title {
+  overflow: hidden;
+  color: rgb(var(--color-ink));
+  font-size: 12.5px;
+  font-weight: 780;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-empty-starter__body {
+  display: -webkit-box;
+  overflow: hidden;
+  color: rgb(var(--color-muted));
+  font-size: 11px;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.canvas-empty-starter__action {
+  grid-area: action;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.22rem;
+  min-width: 0;
+  color: rgb(var(--color-action));
+  font-size: 11px;
+  font-weight: 760;
+  line-height: 1.2;
+}
+
+@media (max-height: 720px) and (min-width: 1024px) {
+  .canvas-empty-content {
+    padding-block: 0.65rem;
+  }
+
+  .canvas-hero__badge {
+    width: 46px;
+    height: 46px;
+    margin-bottom: 0.75rem;
+  }
+
+  .canvas-empty-starters {
+    margin-top: 0.9rem;
+  }
+
+  .canvas-empty-starter {
+    min-height: 62px;
+    padding-block: 0.48rem;
+  }
 }
 
 .canvas-stage-root {
@@ -1180,6 +1487,19 @@ function openInpaint(index: number) {
   background: rgb(var(--color-accent) / 0.78);
   border-color: rgb(var(--color-surface-raised) / 0.4);
   transform: translateY(-1px);
+}
+
+.canvas-mosaic__tool[aria-disabled='true'] {
+  cursor: help;
+  opacity: 0.58;
+  filter: saturate(0.5);
+}
+
+.canvas-mosaic__tool[aria-disabled='true']:hover,
+.canvas-mosaic__tool[aria-disabled='true']:active {
+  background: rgb(var(--color-ink) / 0.55);
+  border-color: rgb(var(--color-surface-raised) / 0.22);
+  transform: none;
 }
 
 @media (max-width: 1023px) {

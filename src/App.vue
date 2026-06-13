@@ -230,9 +230,13 @@ const canUseStreamingWait = computed(() =>
   provider.isConfigured.value
   && provider.state.imageGeneration.sseStream === 'supported',
 )
-const canUsePartialPreview = computed(() =>
+const supportsPartialPreview = computed(() =>
   canUseStreamingWait.value
   && provider.state.imageGeneration.partialPreview === 'supported',
+)
+const canUsePartialPreview = computed(() =>
+  supportsPartialPreview.value
+  && streamingWait.value,
 )
 const canUseTransparentBackground = computed(() =>
   provider.isConfigured.value
@@ -245,9 +249,13 @@ const transparentBackgroundDisabledReason = computed(() =>
     : t('capability.transparentUnsupported'),
 )
 const partialPreviewDisabledReason = computed(() =>
-  canUseStreamingWait.value
-    ? t('capability.previewUnsupported')
-    : t('capability.streamingUnsupported'),
+  !canUseStreamingWait.value
+    ? t('capability.streamingUnsupported')
+    : provider.state.imageGeneration.partialPreview !== 'supported'
+      ? t('capability.previewUnsupported')
+      : !streamingWait.value
+        ? t('capability.previewRequiresStreaming')
+        : t('capability.previewUnsupported'),
 )
 const selectedExplicitModel = computed(() => {
   if (modelChoice.value === customModelSentinel) return customModel.value.trim()
@@ -344,6 +352,7 @@ const displayHealthMessage = computed(() => {
 })
 
 type DesktopCapabilityState = 'supported' | 'unsupported' | 'partial' | 'pending'
+type ToggleState = 'on' | 'off' | 'blocked'
 
 interface DesktopCapabilityItem {
   key: string
@@ -432,6 +441,16 @@ function desktopCapabilityStateLabel(state: DesktopCapabilityState): string {
   return t('desktop.capabilities.unsupported')
 }
 
+function toggleState(value: boolean, enabled: boolean): ToggleState {
+  if (!enabled) return 'blocked'
+  return value ? 'on' : 'off'
+}
+
+function toggleStateLabel(value: boolean, enabled: boolean): string {
+  if (!enabled) return t('settings.toggle.unavailable')
+  return value ? t('settings.toggle.on') : t('settings.toggle.off')
+}
+
 function configuredCapabilityState(supported: boolean): DesktopCapabilityState {
   if (!provider.isConfigured.value) return 'pending'
   return supported ? 'supported' : 'unsupported'
@@ -441,7 +460,7 @@ const desktopCapabilityItems = computed<DesktopCapabilityItem[]>(() => {
   const generationState = configuredCapabilityState(provider.state.imageGeneration.textToImage === 'supported')
   const editState = configuredCapabilityState(canEditImages.value)
   const streamingState = configuredCapabilityState(canUseStreamingWait.value)
-  const previewState = configuredCapabilityState(canUsePartialPreview.value)
+  const previewState = configuredCapabilityState(supportsPartialPreview.value)
   const qualityState = configuredCapabilityState(resolutionSupport.state.supportsQuality)
   const detailFor = (state: DesktopCapabilityState, supportedDetail: string) => {
     if (state === 'pending') return t('desktop.capabilities.pendingDetail')
@@ -615,6 +634,90 @@ function openImageEditor(targetImages: GeneratedImage[], index: number) {
 
 function openActiveImageEditor(index: number) {
   openImageEditor(images.value, index)
+}
+
+function findSourceMessageIdForImage(image: GeneratedImage, index: number) {
+  const source = resolveImageSource(image)
+  for (let i = messages.value.length - 1; i >= 0; i -= 1) {
+    const message = messages.value[i]
+    if (message.role !== 'assistant' || !message.images?.length) continue
+    const candidate = message.images[index]
+    if (candidate === image) return message.id
+    if (candidate?.id && image.id && candidate.id === image.id) return message.id
+    if (source && message.images.some((item) => resolveImageSource(item) === source)) return message.id
+  }
+  return ''
+}
+
+async function continueFromImage(
+  targetImages: GeneratedImage[],
+  index: number,
+  sourceMessageId = '',
+  sourcePrompt = '',
+) {
+  if (!canEditImages.value) {
+    notifyImageEditUnavailable()
+    return
+  }
+
+  if (isGenerating.value) {
+    toast.info(t('toast.generatingWait'))
+    return
+  }
+
+  const safeIndex = Math.max(0, Math.min(index, targetImages.length - 1))
+  const image = targetImages[safeIndex]
+  const source = image ? resolveImageSource(image) : ''
+  if (!image || !source) {
+    toast.error(t('toast.continueSourceMissing'), t('toast.continueSourceMissingHint'))
+    return
+  }
+
+  vibrate('tap')
+  const preparingId = toast.info(t('toast.continuePreparing'), t('toast.continuePreparingHint'))
+
+  let blob: Blob
+  try {
+    blob = await fetchContinuationBlob(source)
+  } catch (err) {
+    toast.dismiss(preparingId)
+    console.error('Continuation source fetch failed:', err)
+    toast.error(t('toast.imageReadFailed'), t('toast.imageReadCorsHint'))
+    return
+  }
+
+  toast.dismiss(preparingId)
+
+  const mimeType = (blob.type || image.mimeType || 'image/png').split(';')[0] || 'image/png'
+  const ext = mimeType.split('/')[1] || 'png'
+  const sourceFile = new File([blob], `continue-source-${Date.now()}.${ext}`, { type: mimeType })
+  const sourcePreview = URL.createObjectURL(sourceFile)
+  trackReferencePreviewUrl(sourcePreview)
+  const referenceImage: ReferenceImageAttachment = {
+    id: createId(),
+    name: sourceFile.name,
+    mimeType: sourceFile.type,
+    sizeBytes: sourceFile.size,
+    previewUrl: sourcePreview,
+    file: sourceFile,
+  }
+
+  clearComposerReferenceImages()
+  referenceImages.value = [referenceImage]
+  pendingContinuation.value = {
+    fromMessageId: sourceMessageId || findSourceMessageIdForImage(image, safeIndex),
+    fromImageId: image.id,
+    fromImageIndex: safeIndex,
+    thumbnailUrl: source,
+    promptPreview: image.revisedPrompt?.trim() || sourcePrompt.trim() || promptPreview.value,
+  }
+
+  toast.success(t('toast.continueReady'), t('toast.continueReadyHint'))
+  focusPrompt()
+}
+
+function continueFromCanvasImage(index: number) {
+  void continueFromImage(images.value, index, '', prompt.value)
 }
 
 async function fetchContinuationBlob(source: string): Promise<Blob> {
@@ -820,6 +923,43 @@ function handleImportPrompt(text: string) {
     treeLabel: t('toast.importPromptLabel'),
     successTitle: t('toast.importPromptSuccess'),
     successHint: t('toast.importPromptHint'),
+  })
+  focusPrompt()
+}
+
+function handleReusePrompt(text: string) {
+  const trimmed = text.trim()
+  if (!trimmed) {
+    toast.error(t('toast.importPromptEmpty'))
+    return
+  }
+
+  if (trimmed === prompt.value) {
+    toast.info(t('toast.importPromptSame'))
+    focusPrompt()
+    return
+  }
+
+  vibrate('tap')
+  replacePromptWithUndo(trimmed, {
+    treeAction: 'import',
+    treeLabel: t('toast.reusePromptLabel'),
+    successTitle: t('toast.reusePromptSuccess'),
+    successHint: t('toast.reusePromptHint'),
+  })
+  focusPrompt()
+}
+
+function handleUseStarterPrompt(text: string) {
+  const trimmed = text.trim()
+  if (!trimmed) return
+  pendingContinuation.value = null
+  vibrate('tap')
+  replacePromptWithUndo(trimmed, {
+    treeAction: 'import',
+    treeLabel: t('toast.starterPromptLabel'),
+    successTitle: t('toast.starterApplied'),
+    successHint: t('toast.starterAppliedHint'),
   })
   focusPrompt()
 }
@@ -1635,25 +1775,70 @@ watch(sw.updateAvailable, (available) => {
           </div>
 
           <div class="rail-switch-list">
-            <label class="rail-switch-row" :class="{ 'is-disabled': !canUseTransparentBackground }">
-              <input v-model="transparentBackground" type="checkbox" :disabled="!canUseTransparentBackground" />
+            <label
+              class="rail-switch-row"
+              :class="{ 'is-disabled': !canUseTransparentBackground }"
+              :data-state="toggleState(transparentBackground, canUseTransparentBackground)"
+            >
+              <input
+                v-model="transparentBackground"
+                type="checkbox"
+                :disabled="!canUseTransparentBackground"
+                aria-describedby="rail-transparent-hint"
+              />
+              <span class="rail-switch-row__icon" aria-hidden="true">
+                <Icon name="image" :size="12" />
+              </span>
               <span class="rail-switch-row__copy">
-                <span>{{ t('settings.transparentBackground') }}</span>
-                <small>{{ desktopTransparentHint }}</small>
+                <span class="rail-switch-row__top">
+                  <span class="rail-switch-row__title">{{ t('settings.transparentBackground') }}</span>
+                  <strong class="rail-switch-row__state">{{ toggleStateLabel(transparentBackground, canUseTransparentBackground) }}</strong>
+                </span>
+                <small id="rail-transparent-hint">{{ desktopTransparentHint }}</small>
               </span>
             </label>
-            <label class="rail-switch-row" :class="{ 'is-disabled': !canUseStreamingWait }">
-              <input v-model="streamingWait" type="checkbox" :disabled="!canUseStreamingWait" />
+            <label
+              class="rail-switch-row"
+              :class="{ 'is-disabled': !canUseStreamingWait }"
+              :data-state="toggleState(streamingWait, canUseStreamingWait)"
+            >
+              <input
+                v-model="streamingWait"
+                type="checkbox"
+                :disabled="!canUseStreamingWait"
+                aria-describedby="rail-streaming-hint"
+              />
+              <span class="rail-switch-row__icon" aria-hidden="true">
+                <Icon name="clock" :size="12" />
+              </span>
               <span class="rail-switch-row__copy">
-                <span>{{ t('settings.streamingWait') }}</span>
-                <small>{{ desktopStreamingHint }}</small>
+                <span class="rail-switch-row__top">
+                  <span class="rail-switch-row__title">{{ t('settings.streamingWait') }}</span>
+                  <strong class="rail-switch-row__state">{{ toggleStateLabel(streamingWait, canUseStreamingWait) }}</strong>
+                </span>
+                <small id="rail-streaming-hint">{{ desktopStreamingHint }}</small>
               </span>
             </label>
-            <label class="rail-switch-row" :class="{ 'is-disabled': !canUsePartialPreview }">
-              <input v-model="partialPreview" type="checkbox" :disabled="!canUsePartialPreview" />
+            <label
+              class="rail-switch-row"
+              :class="{ 'is-disabled': !canUsePartialPreview }"
+              :data-state="toggleState(partialPreview, canUsePartialPreview)"
+            >
+              <input
+                v-model="partialPreview"
+                type="checkbox"
+                :disabled="!canUsePartialPreview"
+                aria-describedby="rail-preview-hint"
+              />
+              <span class="rail-switch-row__icon" aria-hidden="true">
+                <Icon name="pulse" :size="12" />
+              </span>
               <span class="rail-switch-row__copy">
-                <span>{{ t('settings.stagePreview') }}</span>
-                <small>{{ desktopPartialPreviewHint }}</small>
+                <span class="rail-switch-row__top">
+                  <span class="rail-switch-row__title">{{ t('settings.stagePreview') }}</span>
+                  <strong class="rail-switch-row__state">{{ toggleStateLabel(partialPreview, canUsePartialPreview) }}</strong>
+                </span>
+                <small id="rail-preview-hint">{{ desktopPartialPreviewHint }}</small>
               </span>
             </label>
           </div>
@@ -1769,6 +1954,7 @@ watch(sw.updateAvailable, (available) => {
             :count="count"
             :history="history"
             :prompt-preview="promptPreview"
+            :prompt-text="prompt"
             :has-prompt="trimmedPrompt.length >= 4"
             :provider-configured="provider.isConfigured.value"
             :can-edit-images="canEditImages"
@@ -1782,6 +1968,9 @@ watch(sw.updateAvailable, (available) => {
             @copy="copyToClipboard"
             @export="exportCurrentConfig"
             @go-compose="focusPrompt"
+            @use-starter="handleUseStarterPrompt"
+            @reuse-prompt="handleReusePrompt"
+            @continue-image="continueFromCanvasImage"
             @generate="handleGenerate"
             @abort="handleAbortGeneration"
             @open-settings="settingsOpen = true"
@@ -1923,17 +2112,65 @@ watch(sw.updateAvailable, (available) => {
             </div>
 
             <div class="mobile-generation-switches">
-              <label class="mobile-generation-toggle" :class="{ 'is-disabled': !canUseTransparentBackground }">
-                <input v-model="transparentBackground" type="checkbox" :disabled="!canUseTransparentBackground" />
-                <span>{{ t('settings.transparentBackground') }}</span>
+              <label
+                class="mobile-generation-toggle"
+                :class="{ 'is-disabled': !canUseTransparentBackground }"
+                :data-state="toggleState(transparentBackground, canUseTransparentBackground)"
+              >
+                <input
+                  v-model="transparentBackground"
+                  type="checkbox"
+                  :disabled="!canUseTransparentBackground"
+                  aria-describedby="mobile-transparent-hint"
+                />
+                <span class="mobile-generation-toggle__copy">
+                  <span class="mobile-generation-toggle__top">
+                    <Icon name="image" :size="12" />
+                    <span>{{ t('settings.transparentBackground') }}</span>
+                    <strong>{{ toggleStateLabel(transparentBackground, canUseTransparentBackground) }}</strong>
+                  </span>
+                  <small id="mobile-transparent-hint">{{ desktopTransparentHint }}</small>
+                </span>
               </label>
-              <label class="mobile-generation-toggle" :class="{ 'is-disabled': !canUseStreamingWait }">
-                <input v-model="streamingWait" type="checkbox" :disabled="!canUseStreamingWait" />
-                <span>{{ t('settings.streamingWait') }}</span>
+              <label
+                class="mobile-generation-toggle"
+                :class="{ 'is-disabled': !canUseStreamingWait }"
+                :data-state="toggleState(streamingWait, canUseStreamingWait)"
+              >
+                <input
+                  v-model="streamingWait"
+                  type="checkbox"
+                  :disabled="!canUseStreamingWait"
+                  aria-describedby="mobile-streaming-hint"
+                />
+                <span class="mobile-generation-toggle__copy">
+                  <span class="mobile-generation-toggle__top">
+                    <Icon name="clock" :size="12" />
+                    <span>{{ t('settings.streamingWait') }}</span>
+                    <strong>{{ toggleStateLabel(streamingWait, canUseStreamingWait) }}</strong>
+                  </span>
+                  <small id="mobile-streaming-hint">{{ desktopStreamingHint }}</small>
+                </span>
               </label>
-              <label class="mobile-generation-toggle" :class="{ 'is-disabled': !canUsePartialPreview }">
-                <input v-model="partialPreview" type="checkbox" :disabled="!canUsePartialPreview" />
-                <span>{{ t('settings.stagePreview') }}</span>
+              <label
+                class="mobile-generation-toggle"
+                :class="{ 'is-disabled': !canUsePartialPreview }"
+                :data-state="toggleState(partialPreview, canUsePartialPreview)"
+              >
+                <input
+                  v-model="partialPreview"
+                  type="checkbox"
+                  :disabled="!canUsePartialPreview"
+                  aria-describedby="mobile-preview-hint"
+                />
+                <span class="mobile-generation-toggle__copy">
+                  <span class="mobile-generation-toggle__top">
+                    <Icon name="pulse" :size="12" />
+                    <span>{{ t('settings.stagePreview') }}</span>
+                    <strong>{{ toggleStateLabel(partialPreview, canUsePartialPreview) }}</strong>
+                  </span>
+                  <small id="mobile-preview-hint">{{ desktopPartialPreviewHint }}</small>
+                </span>
               </label>
             </div>
 
@@ -1957,10 +2194,12 @@ watch(sw.updateAvailable, (available) => {
         @retry="regenerateFromMessage"
         @open-image="lightbox.open"
         @edit-image="openImageEditor"
+        @continue-image="continueFromImage"
         @image-edit-unavailable="notifyImageEditUnavailable"
         @download="downloadImage"
         @copy="copyToClipboard"
         @import-prompt="handleImportPrompt"
+        @use-starter="handleUseStarterPrompt"
         @scroll-to-message="handleScrollToMessage"
         @abort="handleAbortGeneration"
         @open-settings="settingsOpen = true"
@@ -2264,21 +2503,97 @@ watch(sw.updateAvailable, (available) => {
 }
 
 .rail-switch-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.55rem;
+  display: grid;
+  grid-template-columns: 32px 24px minmax(0, 1fr);
+  align-items: center;
+  gap: 0.5rem;
   border-radius: 8px;
+  border: 1px solid transparent;
   background: rgb(var(--color-surface-muted) / 0.58);
-  padding: 0.5rem 0.55rem;
+  padding: 0.5rem 0.55rem 0.5rem 0.5rem;
+  transition: border-color 140ms var(--motion-soft), background-color 140ms var(--motion-soft), transform 120ms var(--motion-press);
 }
 
-.rail-switch-row input {
-  margin-top: 0.15rem;
-  accent-color: rgb(var(--color-action));
+.rail-switch-row:hover:not(.is-disabled) {
+  border-color: rgb(var(--color-line-strong) / 0.44);
+  background: rgb(var(--color-surface-muted) / 0.78);
+}
+
+.rail-switch-row:focus-within {
+  border-color: rgb(var(--color-accent) / 0.54);
+  box-shadow: var(--focus-ring);
+}
+
+.rail-switch-row:active:not(.is-disabled) {
+  transform: translateY(1px);
+}
+
+.rail-switch-row input[type='checkbox'] {
+  appearance: none;
+  position: relative;
+  width: 32px;
+  height: 18px;
+  border: 1px solid rgb(var(--color-line));
+  border-radius: 999px;
+  background: rgb(var(--color-paper-soft));
+  cursor: pointer;
+  transition: background-color 140ms var(--motion-soft), border-color 140ms var(--motion-soft);
+}
+
+.rail-switch-row input[type='checkbox']::after {
+  content: '';
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: rgb(var(--color-ivory));
+  box-shadow: 0 1px 2px rgb(var(--color-ink) / 0.18);
+  transition: transform 140ms var(--motion-soft);
+}
+
+.rail-switch-row input[type='checkbox']:checked {
+  border-color: rgb(var(--color-action));
+  background: rgb(var(--color-action));
+}
+
+.rail-switch-row input[type='checkbox']:checked::after {
+  transform: translateX(14px);
+}
+
+.rail-switch-row input[type='checkbox']:focus-visible {
+  outline: none;
+}
+
+.rail-switch-row input[type='checkbox']:disabled {
+  cursor: not-allowed;
 }
 
 .rail-switch-row.is-disabled {
-  opacity: 0.62;
+  border-color: rgb(var(--color-line) / 0.54);
+  background: rgb(var(--color-surface-muted) / 0.46);
+  cursor: not-allowed;
+}
+
+.rail-switch-row__icon {
+  display: inline-grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border-radius: 7px;
+  background: rgb(var(--color-line) / 0.18);
+  color: rgb(var(--color-muted));
+}
+
+.rail-switch-row[data-state='on'] .rail-switch-row__icon,
+.rail-switch-row[data-state='on'] .rail-switch-row__state {
+  color: rgb(var(--color-forest));
+}
+
+.rail-switch-row[data-state='blocked'] .rail-switch-row__icon,
+.rail-switch-row[data-state='blocked'] .rail-switch-row__state {
+  color: rgb(var(--color-ochre));
 }
 
 .rail-switch-row__copy {
@@ -2287,10 +2602,31 @@ watch(sw.updateAvailable, (available) => {
   gap: 0.1rem;
 }
 
-.rail-switch-row__copy span {
+.rail-switch-row__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  gap: 0.35rem;
+}
+
+.rail-switch-row__title {
+  min-width: 0;
   color: rgb(var(--color-ink));
   font-size: 11.5px;
   font-weight: 730;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rail-switch-row__state {
+  flex: 0 0 auto;
+  color: rgb(var(--color-muted));
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 9px;
+  font-weight: 760;
+  line-height: 1.2;
 }
 
 .rail-switch-row__copy small {
@@ -2685,41 +3021,130 @@ watch(sw.updateAvailable, (available) => {
   }
 
   .mobile-generation-switches {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: 1fr;
     gap: 0.45rem;
   }
 
   .mobile-generation-toggle {
-    display: inline-flex;
+    display: grid;
+    grid-template-columns: 36px minmax(0, 1fr);
     align-items: center;
-    flex: 1 1 130px;
     min-width: 0;
-    min-height: 34px;
-    gap: 0.45rem;
+    min-height: 48px;
+    gap: 0.55rem;
     border-radius: 8px;
+    border: 1px solid transparent;
     background: rgb(var(--color-surface-muted) / 0.72);
-    padding: 0.35rem 0.55rem;
+    padding: 0.45rem 0.6rem;
+    color: rgb(var(--color-ink));
+    transition: border-color 140ms var(--motion-soft), background-color 140ms var(--motion-soft);
+  }
+
+  .mobile-generation-toggle:focus-within {
+    border-color: rgb(var(--color-accent) / 0.54);
+    box-shadow: var(--focus-ring);
+  }
+
+  .mobile-generation-toggle input[type='checkbox'] {
+    appearance: none;
+    position: relative;
+    flex: 0 0 auto;
+    width: 36px;
+    height: 20px;
+    border: 1px solid rgb(var(--color-line));
+    border-radius: 999px;
+    background: rgb(var(--color-paper-soft));
+  }
+
+  .mobile-generation-toggle input[type='checkbox']::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 14px;
+    height: 14px;
+    border-radius: 999px;
+    background: rgb(var(--color-ivory));
+    box-shadow: 0 1px 2px rgb(var(--color-ink) / 0.18);
+    transition: transform 140ms var(--motion-soft);
+  }
+
+  .mobile-generation-toggle input[type='checkbox']:checked {
+    border-color: rgb(var(--color-action));
+    background: rgb(var(--color-action));
+  }
+
+  .mobile-generation-toggle input[type='checkbox']:checked::after {
+    transform: translateX(16px);
+  }
+
+  .mobile-generation-toggle input[type='checkbox']:focus-visible {
+    outline: none;
+  }
+
+  .mobile-generation-toggle__copy {
+    display: grid;
+    min-width: 0;
+    gap: 0.16rem;
+  }
+
+  .mobile-generation-toggle__top {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    gap: 0.32rem;
     color: rgb(var(--color-ink));
     font-size: 11.5px;
-    font-weight: 680;
+    font-weight: 720;
     line-height: 1.2;
   }
 
-  .mobile-generation-toggle input {
-    flex: 0 0 auto;
-    accent-color: rgb(var(--color-action));
-  }
-
-  .mobile-generation-toggle span {
+  .mobile-generation-toggle__top > span {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
+  .mobile-generation-toggle__top > svg {
+    flex: 0 0 auto;
+    color: rgb(var(--color-muted));
+  }
+
+  .mobile-generation-toggle__top strong {
+    flex: 0 0 auto;
+    margin-left: auto;
+    color: rgb(var(--color-muted));
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 9px;
+    font-weight: 760;
+  }
+
+  .mobile-generation-toggle small {
+    min-width: 0;
+    overflow: hidden;
+    color: rgb(var(--color-muted));
+    font-size: 10px;
+    line-height: 1.3;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .mobile-generation-toggle[data-state='on'] .mobile-generation-toggle__top > svg,
+  .mobile-generation-toggle[data-state='on'] .mobile-generation-toggle__top strong {
+    color: rgb(var(--color-forest));
+  }
+
+  .mobile-generation-toggle[data-state='blocked'] .mobile-generation-toggle__top > svg,
+  .mobile-generation-toggle[data-state='blocked'] .mobile-generation-toggle__top strong {
+    color: rgb(var(--color-ochre));
+  }
+
   .mobile-generation-toggle.is-disabled {
-    opacity: 0.58;
+    border-color: rgb(var(--color-line) / 0.54);
+    background: rgb(var(--color-surface-muted) / 0.5);
+    cursor: not-allowed;
   }
 
   .mobile-generation-more {
@@ -2818,4 +3243,3 @@ watch(sw.updateAvailable, (available) => {
   }
 }
 </style>
-

@@ -242,9 +242,11 @@ function onListKeydown(event: KeyboardEvent) {
       break
     }
     case 'Escape':
-    case 'Tab':
       event.preventDefault()
       closePopover()
+      break
+    case 'Tab':
+      closePopover(false)
       break
     default:
       if (event.key.length === 1 && /\S/.test(event.key)) {

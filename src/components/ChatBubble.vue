@@ -30,6 +30,7 @@ const emit = defineEmits<{
   (e: 'retry', id: string): void
   (e: 'open-image', images: GeneratedImage[], index: number): void
   (e: 'edit-image', images: GeneratedImage[], index: number): void
+  (e: 'continue-image', images: GeneratedImage[], index: number, messageId: string, prompt: string): void
   (e: 'download', image: GeneratedImage, index: number): void
   (e: 'copy', text: string, message: string): void
   (e: 'image-edit-unavailable', reason?: string): void
@@ -67,6 +68,23 @@ function editImage(index: number) {
     return
   }
   emit('edit-image', images, Math.max(0, Math.min(index, images.length - 1)))
+}
+
+function continueImage(index: number) {
+  if (props.message.role !== 'assistant') return
+  const images = props.message.images ?? []
+  if (!images.length) return
+  if (!props.canEditImages) {
+    announceImageEditUnavailable()
+    return
+  }
+  emit(
+    'continue-image',
+    images,
+    Math.max(0, Math.min(index, images.length - 1)),
+    props.message.id,
+    props.message.content || '',
+  )
 }
 
 const isUser = computed(() => props.message.role === 'user')
@@ -393,6 +411,17 @@ function isImageReady(image: GeneratedImage, index: number) {
                 type="button"
                 class="chat-image-action chat-image-action--primary"
                 :aria-disabled="imageEditAriaDisabled"
+                :aria-label="imageEditAriaLabel(t('chat.actionContinueLabel'))"
+                :title="imageEditTitle"
+                @click.stop="continueImage(index)"
+              >
+                <Icon name="sparkle" :size="13" />
+                <span>{{ t('chat.actionContinue') }}</span>
+              </button>
+              <button
+                type="button"
+                class="chat-image-action"
+                :aria-disabled="imageEditAriaDisabled"
                 :aria-label="imageEditAriaLabel(t('chat.actionEditImageLabel'))"
                 :title="imageEditTitle"
                 @click.stop="editImage(index)"
@@ -402,7 +431,15 @@ function isImageReady(image: GeneratedImage, index: number) {
               </button>
               <button
                 type="button"
-                class="chat-image-action"
+                class="chat-image-action chat-image-action--icon"
+                :aria-label="t('chat.imageZoom', { n: index + 1 })"
+                @click.stop="openImage(index)"
+              >
+                <Icon name="zoomIn" :size="13" />
+              </button>
+              <button
+                type="button"
+                class="chat-image-action chat-image-action--icon"
                 :aria-label="t('chat.actionDownload', { n: index + 1 })"
                 @click.stop="emit('download', image, index)"
               >
@@ -423,18 +460,6 @@ function isImageReady(image: GeneratedImage, index: number) {
             <span>{{ t('chat.actionRetry') }}</span>
           </button>
           <button
-            v-if="(message.images?.length ?? 0) > 0"
-            type="button"
-            class="chat-action-chip"
-            :aria-disabled="imageEditAriaDisabled"
-            :aria-label="imageEditAriaLabel(t('chat.actionFreeEditLabel'))"
-            :title="imageEditTitle"
-            @click="editImage(0)"
-          >
-            <Icon name="brush" :size="12" />
-            <span>{{ t('chat.actionFreeEdit') }}</span>
-          </button>
-          <button
             type="button"
             class="chat-action-chip chat-action-chip--quiet"
             :aria-label="t('chat.actionCopyPrompt')"
@@ -446,7 +471,7 @@ function isImageReady(image: GeneratedImage, index: number) {
           <button
             v-if="importablePrompt"
             type="button"
-            class="chat-action-chip chat-action-chip--quiet"
+            class="chat-action-chip"
             :aria-label="t('chat.actionImportPromptLabel')"
             @click="emit('import-prompt', importablePrompt)"
           >
@@ -788,6 +813,19 @@ function isImageReady(image: GeneratedImage, index: number) {
   transition: background 160ms var(--motion-soft), transform 160ms var(--motion-press), box-shadow 160ms var(--motion-soft);
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
+}
+
+.chat-image-action span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-image-action--icon {
+  flex: 0 0 36px;
+  width: 36px;
+  padding: 0;
 }
 
 .chat-image-action::before {
@@ -1481,6 +1519,12 @@ function isImageReady(image: GeneratedImage, index: number) {
     color: #fff;
   }
 
+  .chat-image-action--icon {
+    flex: 0 0 44px;
+    width: 44px;
+    padding: 0;
+  }
+
   .chat-image-action span,
   .chat-action-chip span {
     min-width: 0;
@@ -1525,6 +1569,10 @@ function isImageReady(image: GeneratedImage, index: number) {
   .chat-image-action:not(.chat-image-action--primary) {
     flex: 0 0 44px;
     padding: 0;
+  }
+
+  .chat-image-action:not(.chat-image-action--primary) span {
+    display: none;
   }
 
   .chat-bubble-assistant--pending :deep(.epulse__tag) {

@@ -489,7 +489,7 @@
 
   .paper-bg {
     background:
-      linear-gradient(132deg, rgb(var(--color-vellum) / 0.92) 0%, rgb(var(--color-paper)) 46%, rgb(var(--color-paper-soft)) 100%);
+      linear-gradient(180deg, rgb(var(--color-vellum) / 0.82) 0%, rgb(var(--color-paper)) 44%, rgb(var(--color-paper-soft)) 100%);
     position: relative;
     isolation: isolate;
     overflow: hidden;
@@ -506,26 +506,26 @@
 
   .paper-bg::before {
     background-image:
-      linear-gradient(to right, rgb(var(--color-blueprint) / 0.03) 1px, transparent 1px),
-      linear-gradient(to bottom, rgb(var(--color-ink) / 0.022) 1px, transparent 1px);
-    background-size: 32px 32px;
-    mask-image: linear-gradient(to bottom, rgb(0 0 0 / 0.58), transparent 72%);
-    opacity: 0.42;
+      linear-gradient(to right, rgb(var(--color-ink) / 0.026) 1px, transparent 1px),
+      linear-gradient(to bottom, rgb(var(--color-ink) / 0.02) 1px, transparent 1px);
+    background-size: 36px 36px;
+    mask-image: linear-gradient(to bottom, rgb(0 0 0 / 0.42), transparent 74%);
+    opacity: 0.34;
   }
 
   .paper-bg::after {
     background:
-      linear-gradient(115deg, transparent 0%, rgb(var(--color-blueprint) / 0.04) 42%, transparent 74%),
-      linear-gradient(90deg, rgb(var(--color-shadow) / 0.018), transparent 28%, transparent 72%, rgb(var(--color-shadow) / 0.024));
-    opacity: 1;
+      linear-gradient(180deg, rgb(var(--color-surface-raised) / 0.22), transparent 34%),
+      linear-gradient(90deg, rgb(var(--color-shadow) / 0.012), transparent 26%, transparent 74%, rgb(var(--color-shadow) / 0.016));
+    opacity: 0.78;
   }
 
   :root.theme-night .paper-bg::before {
-    opacity: 0.22;
+    opacity: 0.16;
   }
 
   :root.theme-night .paper-bg::after {
-    opacity: 0.75;
+    opacity: 0.48;
   }
 
   /* ─── Desktop Panels ─── */
@@ -670,10 +670,10 @@
   /* ─── Canvas Grid ─── */
   .canvas-grid {
     border-radius: var(--radius-card);
-    background-color: rgb(var(--color-canvas) / 0.34);
+    background-color: rgb(var(--color-canvas) / 0.3);
     background-image:
-      linear-gradient(180deg, rgb(var(--color-surface-raised) / 0.52), transparent 42%),
-      linear-gradient(155deg, rgb(var(--color-canvas) / 0.42), rgb(var(--color-paper-soft) / 0.72) 48%, rgb(var(--color-surface-muted) / 0.86));
+      linear-gradient(180deg, rgb(var(--color-surface-raised) / 0.42), transparent 44%),
+      linear-gradient(180deg, rgb(var(--color-canvas) / 0.22), rgb(var(--color-surface-muted) / 0.62));
   }
 
   /* ─── Loading Dots ─── */
@@ -838,20 +838,24 @@
   }
 
   .paper-bg::before {
-    background-size: 28px 28px;
-    opacity: 0.34;
+    background-size: 40px 40px;
+    mask-image: linear-gradient(to bottom, rgb(0 0 0 / 0.22), transparent 58%);
+    opacity: 0.14;
   }
 
   .paper-bg::after {
-    opacity: 0.82;
+    background:
+      linear-gradient(180deg, rgb(var(--color-surface-raised) / 0.14), transparent 32%),
+      linear-gradient(90deg, rgb(var(--color-shadow) / 0.01), transparent 30%, transparent 70%, rgb(var(--color-shadow) / 0.012));
+    opacity: 0.34;
   }
 
   :root.theme-night .paper-bg::before {
-    opacity: 0.18;
+    opacity: 0.08;
   }
 
   :root.theme-night .paper-bg::after {
-    opacity: 0.68;
+    opacity: 0.22;
   }
 
   /* Mobile field sizing — larger touch targets */
@@ -919,11 +923,11 @@
   }
 
   .paper-bg::before {
-    opacity: 0.24;
+    opacity: 0.08;
   }
 
   .paper-bg::after {
-    opacity: 0.72;
+    opacity: 0.18;
   }
 }
 
