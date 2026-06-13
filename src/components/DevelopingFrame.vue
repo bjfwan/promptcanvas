@@ -214,10 +214,10 @@ const epulseStyle = computed<Record<string, string>>(() => ({
     radial-gradient(circle, rgb(var(--color-clay) / 0.1), transparent 78%);
   filter: blur(18px) saturate(1.22);
   opacity: 0.92;
-  transform: translate3d(-116%, -84%, 0) scale(1.22);
+  transform: translate3d(-104%, -82%, 0) scale(1.34);
   animation:
-    epulse-orb-drift 6.4s var(--motion-soft) infinite,
-    epulse-orb-gradient 7.2s ease-in-out infinite;
+    epulse-orb-drift 14s ease-in-out infinite,
+    epulse-orb-gradient 10s ease-in-out infinite;
   mix-blend-mode: multiply;
   pointer-events: none;
   will-change: transform, filter, opacity;
@@ -466,16 +466,28 @@ const epulseStyle = computed<Record<string, string>>(() => ({
 
 @keyframes epulse-orb-drift {
   0%, 100% {
-    transform: translate3d(-116%, -84%, 0) scale(1.26);
+    transform: translate3d(-104%, -82%, 0) scale(1.34);
   }
-  28% {
-    transform: translate3d(54%, -104%, 0) scale(0.64);
+  12.5% {
+    transform: translate3d(-25%, -92%, 0) scale(0.96);
   }
-  52% {
-    transform: translate3d(76%, 42%, 0) scale(1.16);
+  25% {
+    transform: translate3d(54%, -82%, 0) scale(0.54);
   }
-  76% {
-    transform: translate3d(-98%, 58%, 0) scale(0.7);
+  37.5% {
+    transform: translate3d(64%, -18%, 0) scale(0.96);
+  }
+  50% {
+    transform: translate3d(54%, 44%, 0) scale(1.34);
+  }
+  62.5% {
+    transform: translate3d(-25%, 54%, 0) scale(0.96);
+  }
+  75% {
+    transform: translate3d(-104%, 44%, 0) scale(0.54);
+  }
+  87.5% {
+    transform: translate3d(-114%, -18%, 0) scale(0.96);
   }
 }
 

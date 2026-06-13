@@ -1489,8 +1489,8 @@ defineExpose({ focusInput })
   z-index: 2;
   display: block;
   width: 100%;
-  min-height: 46px;
-  padding: 13px 62px 10px 15px;
+  min-height: 54px;
+  padding: 14px 58px 13px 15px;
   resize: none;
   background: transparent;
   border: 0;
@@ -1518,7 +1518,7 @@ defineExpose({ focusInput })
 .chat-dock__indicator {
   position: absolute;
   top: 10px;
-  right: 58px;
+  right: 52px;
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -1884,13 +1884,14 @@ defineExpose({ focusInput })
 
 .chat-dock__send {
   position: absolute;
-  right: 8px;
-  bottom: 8px;
+  right: 9px;
+  bottom: 9px;
   z-index: 4;
   display: grid;
   place-items: center;
-  width: 42px;
-  height: 42px;
+  width: 36px;
+  height: 36px;
+  min-height: 36px;
   border-radius: 999px;
   border: 1px solid rgb(var(--color-line) / 0.78);
   background: rgb(var(--color-surface-muted) / 0.96);
@@ -1967,9 +1968,11 @@ defineExpose({ focusInput })
   }
 
   .chat-dock__send {
-    width: 100%;
-    height: auto;
-    min-height: 50px;
+    right: 9px;
+    bottom: 9px;
+    width: 36px;
+    height: 36px;
+    min-height: 36px;
   }
 
   .chat-dock__chip {
@@ -2050,7 +2053,9 @@ defineExpose({ focusInput })
   }
 
   .chat-dock__send {
-    min-height: 46px;
+    width: 34px;
+    height: 34px;
+    min-height: 34px;
   }
 }
 
