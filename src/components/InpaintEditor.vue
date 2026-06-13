@@ -409,12 +409,16 @@ const canSubmit = computed(() => promptText.value.trim().length > 0 && mask.hasC
 
 <style scoped>
 .inpaint-editor {
+  --inpaint-bg: 14 17 16;
+  --inpaint-fg: 236 237 240;
+
   display: flex;
   flex-direction: column;
   height: 100%;
   width: 100%;
-  background: rgb(14 17 16 / 0.98);
-  color: rgb(var(--color-paper));
+  color-scheme: dark;
+  background: rgb(var(--inpaint-bg) / 0.98);
+  color: rgb(var(--inpaint-fg));
   overflow: hidden;
 }
 
@@ -424,7 +428,7 @@ const canSubmit = computed(() => promptText.value.trim().length > 0 && mask.hasC
   align-items: center;
   gap: 0.75rem;
   padding: 0.6rem 0.85rem;
-  border-bottom: 1px solid rgb(var(--color-paper) / 0.1);
+  border-bottom: 1px solid rgb(var(--inpaint-fg) / 0.1);
   flex-shrink: 0;
   flex-wrap: wrap;
 }
@@ -441,9 +445,9 @@ const canSubmit = computed(() => promptText.value.trim().length > 0 && mask.hasC
   min-height: 36px;
   padding: 0.4rem 0.65rem;
   border-radius: 8px;
-  border: 1px solid rgb(var(--color-paper) / 0.15);
+  border: 1px solid rgb(var(--inpaint-fg) / 0.15);
   background: transparent;
-  color: rgb(var(--color-paper) / 0.75);
+  color: rgb(var(--inpaint-fg) / 0.75);
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
@@ -452,8 +456,8 @@ const canSubmit = computed(() => promptText.value.trim().length > 0 && mask.hasC
 }
 
 .inpaint-toolbar__btn:hover:not(:disabled) {
-  background: rgb(var(--color-paper) / 0.08);
-  color: rgb(var(--color-paper));
+  background: rgb(var(--inpaint-fg) / 0.08);
+  color: rgb(var(--inpaint-fg));
 }
 
 .inpaint-toolbar__btn:disabled {
@@ -462,9 +466,9 @@ const canSubmit = computed(() => promptText.value.trim().length > 0 && mask.hasC
 }
 
 .inpaint-toolbar__btn--active {
-  background: rgb(var(--color-paper) / 0.14);
-  border-color: rgb(var(--color-paper) / 0.35);
-  color: rgb(var(--color-paper));
+  background: rgb(var(--inpaint-fg) / 0.14);
+  border-color: rgb(var(--inpaint-fg) / 0.35);
+  color: rgb(var(--inpaint-fg));
 }
 
 .inpaint-toolbar__btn-label {
@@ -487,7 +491,7 @@ const canSubmit = computed(() => promptText.value.trim().length > 0 && mask.hasC
 .inpaint-toolbar__size-label {
   font-family: 'JetBrains Mono', ui-monospace, monospace;
   font-size: 10px;
-  color: rgb(var(--color-paper) / 0.55);
+  color: rgb(var(--inpaint-fg) / 0.55);
   min-width: 3.5ch;
   text-align: right;
 }
@@ -506,13 +510,13 @@ const canSubmit = computed(() => promptText.value.trim().length > 0 && mask.hasC
 .inpaint-toolbar__slider::-webkit-slider-runnable-track {
   height: 4px;
   border-radius: 999px;
-  background: rgb(var(--color-paper) / 0.18);
+  background: rgb(var(--inpaint-fg) / 0.18);
 }
 
 .inpaint-toolbar__slider::-moz-range-track {
   height: 4px;
   border-radius: 999px;
-  background: rgb(var(--color-paper) / 0.18);
+  background: rgb(var(--inpaint-fg) / 0.18);
 }
 
 .inpaint-toolbar__slider::-webkit-slider-thumb {
@@ -521,7 +525,7 @@ const canSubmit = computed(() => promptText.value.trim().length > 0 && mask.hasC
   height: 14px;
   margin-top: -5px;
   border-radius: 999px;
-  background: rgb(var(--color-paper));
+  background: rgb(var(--inpaint-fg));
   box-shadow: 0 2px 6px rgb(0 0 0 / 0.4);
   cursor: pointer;
 }
@@ -531,7 +535,7 @@ const canSubmit = computed(() => promptText.value.trim().length > 0 && mask.hasC
   height: 14px;
   border: none;
   border-radius: 999px;
-  background: rgb(var(--color-paper));
+  background: rgb(var(--inpaint-fg));
   box-shadow: 0 2px 6px rgb(0 0 0 / 0.4);
   cursor: pointer;
 }
@@ -557,7 +561,7 @@ const canSubmit = computed(() => promptText.value.trim().length > 0 && mask.hasC
   position: relative;
   border-radius: 8px;
   overflow: hidden;
-  box-shadow: 0 0 0 1px rgb(var(--color-paper) / 0.1);
+  box-shadow: 0 0 0 1px rgb(var(--inpaint-fg) / 0.1);
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
@@ -585,7 +589,7 @@ const canSubmit = computed(() => promptText.value.trim().length > 0 && mask.hasC
   top: 0;
   left: 0;
   border-radius: 999px;
-  border: 2px solid rgb(var(--color-paper) / 0.7);
+  border: 2px solid rgb(var(--inpaint-fg) / 0.7);
   pointer-events: none;
   transform: translate(-50%, -50%);
   opacity: 0;
@@ -610,10 +614,10 @@ const canSubmit = computed(() => promptText.value.trim().length > 0 && mask.hasC
   gap: 0.4rem;
   padding: 0.45rem 0.85rem;
   border-radius: 999px;
-  background: rgb(var(--color-paper) / 0.12);
+  background: rgb(var(--inpaint-fg) / 0.12);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  color: rgb(var(--color-paper) / 0.7);
+  color: rgb(var(--inpaint-fg) / 0.7);
   font-size: 12px;
   pointer-events: none;
 }
@@ -623,15 +627,15 @@ const canSubmit = computed(() => promptText.value.trim().length > 0 && mask.hasC
   flex-shrink: 0;
   padding: 0.6rem 0.75rem;
   padding-bottom: max(env(safe-area-inset-bottom, 0px), 0.6rem);
-  border-top: 1px solid rgb(var(--color-paper) / 0.1);
+  border-top: 1px solid rgb(var(--inpaint-fg) / 0.1);
 }
 
 .inpaint-prompt-bar__inner {
   display: flex;
   align-items: flex-end;
   gap: 0.5rem;
-  background: rgb(var(--color-paper) / 0.06);
-  border: 1px solid rgb(var(--color-paper) / 0.15);
+  background: rgb(var(--inpaint-fg) / 0.06);
+  border: 1px solid rgb(var(--inpaint-fg) / 0.15);
   border-radius: 14px;
   padding: 0.5rem 0.6rem;
 }
@@ -643,7 +647,7 @@ const canSubmit = computed(() => promptText.value.trim().length > 0 && mask.hasC
   resize: none;
   border: none;
   background: transparent;
-  color: rgb(var(--color-paper));
+  color: rgb(var(--inpaint-fg));
   font-size: 14px;
   line-height: 1.5;
   outline: none;
@@ -651,7 +655,7 @@ const canSubmit = computed(() => promptText.value.trim().length > 0 && mask.hasC
 }
 
 .inpaint-prompt-bar__input::placeholder {
-  color: rgb(var(--color-paper) / 0.4);
+  color: rgb(var(--inpaint-fg) / 0.4);
 }
 
 .inpaint-prompt-bar__cancel {
@@ -661,9 +665,9 @@ const canSubmit = computed(() => promptText.value.trim().length > 0 && mask.hasC
   min-height: 36px;
   padding: 0.4rem 0.7rem;
   border-radius: 8px;
-  border: 1px solid rgb(var(--color-paper) / 0.2);
+  border: 1px solid rgb(var(--inpaint-fg) / 0.2);
   background: transparent;
-  color: rgb(var(--color-paper) / 0.7);
+  color: rgb(var(--inpaint-fg) / 0.7);
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
@@ -673,8 +677,8 @@ const canSubmit = computed(() => promptText.value.trim().length > 0 && mask.hasC
 }
 
 .inpaint-prompt-bar__cancel:hover {
-  background: rgb(var(--color-paper) / 0.08);
-  color: rgb(var(--color-paper));
+  background: rgb(var(--inpaint-fg) / 0.08);
+  color: rgb(var(--inpaint-fg));
 }
 
 .inpaint-prompt-bar__submit {
@@ -686,8 +690,8 @@ const canSubmit = computed(() => promptText.value.trim().length > 0 && mask.hasC
   padding: 0.45rem 0.85rem;
   border-radius: 8px;
   border: none;
-  background: rgb(var(--color-paper));
-  color: rgb(14 17 16);
+  background: rgb(var(--inpaint-fg));
+  color: rgb(var(--inpaint-bg));
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;
@@ -709,14 +713,14 @@ const canSubmit = computed(() => promptText.value.trim().length > 0 && mask.hasC
   margin-top: 0.35rem;
   text-align: center;
   font-size: 11px;
-  color: rgb(var(--color-paper) / 0.4);
+  color: rgb(var(--inpaint-fg) / 0.4);
 }
 
 .inpaint-prompt-bar__hint kbd {
   display: inline-flex;
   padding: 0.05rem 0.3rem;
   border-radius: 4px;
-  border: 1px solid rgb(var(--color-paper) / 0.2);
+  border: 1px solid rgb(var(--inpaint-fg) / 0.2);
   font-family: 'JetBrains Mono', ui-monospace, monospace;
   font-size: 10px;
 }
