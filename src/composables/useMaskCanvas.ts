@@ -1,6 +1,6 @@
 import { shallowRef } from 'vue'
 
-export type MaskTool = 'brush' | 'rect'
+export type MaskTool = 'brush' | 'eraser' | 'rect'
 
 export interface CanvasPoint {
   x: number
@@ -24,23 +24,25 @@ interface UnitPoint {
   y: number
 }
 
-interface BrushStroke {
-  tool: 'brush'
+export interface BrushStroke {
+  tool: 'brush' | 'eraser'
   points: UnitPoint[]
   radiusX: number
   radiusY: number
 }
 
-interface RectStroke {
+export interface RectStroke {
   tool: 'rect'
   rect: { x: number; y: number; w: number; h: number }
 }
 
-type Stroke = BrushStroke | RectStroke
+export type MaskStroke = BrushStroke | RectStroke
 
 const DISPLAY_FILL = 'rgba(255, 60, 80, 0.38)'
 const DISPLAY_STROKE = 'rgba(255, 60, 80, 0.55)'
+const DISPLAY_ERASE_FILL = '#000000'
 const MASK_FILL = '#ffffff'
+const MASK_KEEP = '#000000'
 
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value))
@@ -82,8 +84,8 @@ export function useMaskCanvas() {
   let canvasH = 0
   let dpr = 1
 
-  let strokes: Stroke[] = []
-  let currentStroke: Stroke | null = null
+  let strokes: MaskStroke[] = []
+  let currentStroke: MaskStroke | null = null
   let rectStart: UnitPoint | null = null
 
   let brushRadius = 24
@@ -131,9 +133,9 @@ export function useMaskCanvas() {
   function startStroke(x: number, y: number) {
     const point = toUnitPoint(x, y)
 
-    if (activeTool.value === 'brush') {
+    if (activeTool.value === 'brush' || activeTool.value === 'eraser') {
       currentStroke = {
-        tool: 'brush',
+        tool: activeTool.value,
         points: [point],
         radiusX: brushRadius / safeSize(canvasW),
         radiusY: brushRadius / safeSize(canvasH),
@@ -154,9 +156,9 @@ export function useMaskCanvas() {
 
     const point = toUnitPoint(x, y)
 
-    if (currentStroke.tool === 'brush') {
+    if (currentStroke.tool === 'brush' || currentStroke.tool === 'eraser') {
       currentStroke.points.push(point)
-    } else if (rectStart) {
+    } else if (currentStroke.tool === 'rect' && rectStart) {
       currentStroke.rect = {
         x: Math.min(rectStart.x, point.x),
         y: Math.min(rectStart.y, point.y),
@@ -172,7 +174,7 @@ export function useMaskCanvas() {
     if (!currentStroke) return
 
     let valid = false
-    if (currentStroke.tool === 'brush' && currentStroke.points.length > 0) {
+    if ((currentStroke.tool === 'brush' || currentStroke.tool === 'eraser') && currentStroke.points.length > 0) {
       valid = true
     } else if (currentStroke.tool === 'rect') {
       valid = currentStroke.rect.w * canvasW > 3 && currentStroke.rect.h * canvasH > 3
@@ -217,7 +219,7 @@ export function useMaskCanvas() {
     oc.fillRect(0, 0, outputW, outputH)
 
     for (const stroke of strokes) {
-      drawStroke(oc, stroke, outputW, outputH, true)
+      drawMaskStroke(oc, stroke, outputW, outputH, true)
     }
 
     return new Promise<Blob>((resolve, reject) => {
@@ -236,66 +238,14 @@ export function useMaskCanvas() {
     ctx.clearRect(0, 0, canvasW, canvasH)
 
     for (const stroke of strokes) {
-      drawStroke(ctx, stroke, canvasW, canvasH, false)
+      drawMaskStroke(ctx, stroke, canvasW, canvasH, false)
     }
 
     if (currentStroke) {
-      drawStroke(ctx, currentStroke, canvasW, canvasH, false)
+      drawMaskStroke(ctx, currentStroke, canvasW, canvasH, false)
     }
 
     ctx.restore()
-  }
-
-  function drawStroke(
-    c: CanvasRenderingContext2D,
-    stroke: Stroke,
-    targetW: number,
-    targetH: number,
-    maskMode: boolean,
-  ) {
-    c.fillStyle = maskMode ? MASK_FILL : DISPLAY_FILL
-    c.strokeStyle = maskMode ? MASK_FILL : DISPLAY_STROKE
-
-    if (stroke.tool === 'brush') {
-      const rx = Math.max(0.5, stroke.radiusX * targetW)
-      const ry = Math.max(0.5, stroke.radiusY * targetH)
-
-      c.beginPath()
-      for (const p of stroke.points) {
-        const px = p.x * targetW
-        const py = p.y * targetH
-        c.moveTo(px + rx, py)
-        c.ellipse(px, py, rx, ry, 0, 0, Math.PI * 2)
-      }
-      c.fill()
-
-      if (stroke.points.length > 1) {
-        c.lineWidth = Math.max(1, rx + ry)
-        c.lineCap = 'round'
-        c.lineJoin = 'round'
-        c.strokeStyle = maskMode ? MASK_FILL : DISPLAY_FILL
-        c.beginPath()
-        c.moveTo(stroke.points[0].x * targetW, stroke.points[0].y * targetH)
-        for (let i = 1; i < stroke.points.length; i++) {
-          c.lineTo(stroke.points[i].x * targetW, stroke.points[i].y * targetH)
-        }
-        c.stroke()
-      }
-
-      return
-    }
-
-    const { x, y, w, h } = stroke.rect
-    const px = x * targetW
-    const py = y * targetH
-    const pw = w * targetW
-    const ph = h * targetH
-    c.fillRect(px, py, pw, ph)
-
-    if (!maskMode) {
-      c.lineWidth = 1.5
-      c.strokeRect(px, py, pw, ph)
-    }
   }
 
   function toUnitPoint(x: number, y: number): UnitPoint {
@@ -328,5 +278,66 @@ export function useMaskCanvas() {
     undo,
     clear,
     exportMask,
+  }
+}
+
+export function drawMaskStroke(
+  c: CanvasRenderingContext2D,
+  stroke: MaskStroke,
+  targetW: number,
+  targetH: number,
+  maskMode: boolean,
+) {
+  if (stroke.tool !== 'rect') {
+    const isEraser = stroke.tool === 'eraser'
+    const rx = Math.max(0.5, stroke.radiusX * targetW)
+    const ry = Math.max(0.5, stroke.radiusY * targetH)
+
+    c.save()
+    if (isEraser && !maskMode) {
+      c.globalCompositeOperation = 'destination-out'
+    }
+    c.fillStyle = isEraser ? (maskMode ? MASK_KEEP : DISPLAY_ERASE_FILL) : (maskMode ? MASK_FILL : DISPLAY_FILL)
+    c.strokeStyle = isEraser ? (maskMode ? MASK_KEEP : DISPLAY_ERASE_FILL) : (maskMode ? MASK_FILL : DISPLAY_STROKE)
+
+    c.beginPath()
+    for (const p of stroke.points) {
+      const px = p.x * targetW
+      const py = p.y * targetH
+      c.moveTo(px + rx, py)
+      c.ellipse(px, py, rx, ry, 0, 0, Math.PI * 2)
+    }
+    c.fill()
+
+    if (stroke.points.length > 1) {
+      c.lineWidth = Math.max(1, rx + ry)
+      c.lineCap = 'round'
+      c.lineJoin = 'round'
+      c.strokeStyle = isEraser ? (maskMode ? MASK_KEEP : DISPLAY_ERASE_FILL) : (maskMode ? MASK_FILL : DISPLAY_FILL)
+      c.beginPath()
+      c.moveTo(stroke.points[0].x * targetW, stroke.points[0].y * targetH)
+      for (let i = 1; i < stroke.points.length; i++) {
+        c.lineTo(stroke.points[i].x * targetW, stroke.points[i].y * targetH)
+      }
+      c.stroke()
+    }
+
+    c.restore()
+    return
+  }
+
+  c.fillStyle = maskMode ? MASK_FILL : DISPLAY_FILL
+  c.strokeStyle = maskMode ? MASK_FILL : DISPLAY_STROKE
+
+  const { x, y, w, h } = stroke.rect
+  const px = x * targetW
+  const py = y * targetH
+  const pw = w * targetW
+  const ph = h * targetH
+  c.fillRect(px, py, pw, ph)
+
+  if (!maskMode) {
+    c.lineWidth = 1.5
+    c.strokeRect(px, py, pw, ph)
   }
 }

@@ -10,6 +10,7 @@
     "src/lib/imagesApi.ts",
     "src/lib/imageGenerationDetection.ts",
     "src/lib/modelCapabilities.ts",
-    "src/lib/chatMessage.ts"
+    "src/lib/chatMessage.ts",
+    "src/composables/useMaskCanvas.ts"
   ]
 }

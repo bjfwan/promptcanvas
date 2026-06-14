@@ -46,18 +46,23 @@ const mask = useMaskCanvas()
 
 const toolOptions = computed<Array<{ value: MaskTool; icon: string; label: string }>>(() => [
   { value: 'brush', icon: 'brush', label: t('inpaint.tool.brush') },
+  { value: 'eraser', icon: 'eraser', label: t('inpaint.tool.eraser') },
   { value: 'rect', icon: 'rectSelect', label: t('inpaint.tool.rect') },
 ])
 
 const brushSizes = [16, 32, 48, 72, 100, 120]
 const brushSizeIndex = shallowRef(2) // default 48
 const sourceAspect = computed(() => (sourceHeight.value > 0 ? sourceWidth.value / sourceHeight.value : 1))
+const usesRoundTool = computed(() => mask.activeTool.value === 'brush' || mask.activeTool.value === 'eraser')
 const cursorPreview = ref({ x: 0, y: 0, visible: false })
 const cursorRingStyle = computed(() => ({
   width: `${brushSizes[brushSizeIndex.value]}px`,
   height: `${brushSizes[brushSizeIndex.value]}px`,
   transform: `translate(${cursorPreview.value.x}px, ${cursorPreview.value.y}px) translate(-50%, -50%)`,
   opacity: cursorPreview.value.visible ? 1 : 0,
+}))
+const cursorRingClass = computed(() => ({
+  'inpaint-cursor-ring--eraser': mask.activeTool.value === 'eraser',
 }))
 
 // ─── Responsively size the canvas to fit the container ─────────────────────
@@ -162,7 +167,7 @@ function updateCursorPreview(coords: { x: number; y: number }, visible: boolean)
   cursorPreview.value = {
     x: coords.x,
     y: coords.y,
-    visible: visible && mask.activeTool.value === 'brush',
+    visible: visible && usesRoundTool.value,
   }
 }
 
@@ -286,7 +291,7 @@ const canSubmit = computed(() => promptText.value.trim().length > 0 && mask.hasC
         </button>
       </div>
 
-      <div v-if="mask.activeTool.value === 'brush'" class="inpaint-toolbar__size">
+      <div v-if="usesRoundTool" class="inpaint-toolbar__size">
         <span class="inpaint-toolbar__size-label">{{ brushSizes[brushSizeIndex] }}px</span>
         <input
           type="range"
@@ -295,8 +300,8 @@ const canSubmit = computed(() => promptText.value.trim().length > 0 && mask.hasC
           step="1"
           :value="brushSizeIndex"
           class="inpaint-toolbar__slider"
-          :aria-label="t('inpaint.brushSize')"
-          :title="t('inpaint.brushSize')"
+          :aria-label="t('inpaint.toolSize')"
+          :title="t('inpaint.toolSize')"
           @input="brushSizeIndex = Number(($event.target as HTMLInputElement).value)"
         />
       </div>
@@ -354,8 +359,9 @@ const canSubmit = computed(() => promptText.value.trim().length > 0 && mask.hasC
 
         <!-- Visual cursor preview for brush mode (desktop only) -->
         <div
-          v-if="mask.activeTool.value === 'brush'"
+          v-if="usesRoundTool"
           class="inpaint-cursor-ring"
+          :class="cursorRingClass"
           :style="cursorRingStyle"
           aria-hidden="true"
         ></div>
@@ -595,6 +601,11 @@ const canSubmit = computed(() => promptText.value.trim().length > 0 && mask.hasC
   opacity: 0;
   transition: opacity 120ms ease;
   will-change: transform, opacity;
+}
+
+.inpaint-cursor-ring--eraser {
+  border-style: dashed;
+  background: rgb(var(--inpaint-fg) / 0.08);
 }
 
 @media (hover: hover) and (pointer: fine) {
