@@ -670,6 +670,8 @@ watch(
 .prompt-composer--draft .prompt-field-textarea {
   min-height: 70px;
   height: 70px;
+  max-height: 60vh;
+  resize: vertical;
   padding-block: 0.72rem 0.58rem;
   font-size: 14px;
   line-height: 1.55;

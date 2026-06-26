@@ -4,6 +4,8 @@ import Icon from './Icon.vue'
 import Select, { type SelectOption } from './Select.vue'
 import { qualityOptions, sizeOptions } from '../presets'
 import { useProviderConfig } from '../composables/useProviderConfig'
+import { useProviderPresets } from '../composables/useProviderPresets'
+import { useSpeedTest } from '../composables/useSpeedTest'
 import { useDiscoveredModels, detectCapabilities } from '../composables/useDiscoveredModels'
 import { useResolutionSupport } from '../composables/useResolutionSupport'
 import { useFocusTrap } from '../composables/useFocusTrap'
@@ -57,6 +59,71 @@ const resolutionSupport = useResolutionSupport()
 const i18n = useI18n()
 const minCount = 1
 const maxCount = 4
+
+const {
+  presets: providerPresets,
+  activePresetId,
+  switchToPreset,
+  removePreset,
+  importCurrentAsPreset,
+} = useProviderPresets()
+const {
+  results: speedTestResults,
+  running: speedTestRunning,
+  runSpeedTest,
+  rankedResults: rankedSpeedResults,
+} = useSpeedTest()
+const newPresetLabel = ref('')
+
+function shortBaseUrl(url: string): string {
+  const trimmed = (url ?? '').trim()
+  if (!trimmed) return ''
+  try {
+    const u = new URL(trimmed)
+    const path = u.pathname && u.pathname !== '/' ? u.pathname.replace(/\/+$/, '') : ''
+    return path ? `${u.host}${path}` : u.host
+  } catch {
+    return trimmed
+  }
+}
+
+function presetDisplayLabel(preset: { label?: string; baseUrl: string }): string {
+  return preset.label?.trim() || shortBaseUrl(preset.baseUrl) || preset.baseUrl
+}
+
+function handleSaveCurrentPreset() {
+  const created = importCurrentAsPreset(newPresetLabel.value.trim() || undefined)
+  if (created) {
+    newPresetLabel.value = ''
+  }
+}
+
+function handleSwitchPreset(id: string) {
+  switchToPreset(id)
+}
+
+function handleTestPreset(id: string) {
+  const target = providerPresets.value.find((p) => p.id === id)
+  if (!target) return
+  void runSpeedTest([target])
+}
+
+function handleTestAllPresets() {
+  if (!providerPresets.value.length) return
+  void runSpeedTest(providerPresets.value)
+}
+
+function handleDeletePreset(id: string) {
+  const target = providerPresets.value.find((p) => p.id === id)
+  if (!target) return
+  if (!window.confirm(i18n.t('settings.presets.deleteConfirm'))) return
+  removePreset(id)
+}
+
+function speedRankFor(id: string): number | null {
+  const match = rankedSpeedResults.value.find((entry) => entry.id === id)
+  return match ? match.rank : null
+}
 
 type ToggleState = 'on' | 'off' | 'blocked'
 type CapabilityTileState = 'supported' | 'unsupported' | 'partial' | 'pending'
@@ -714,6 +781,172 @@ onBeforeUnmount(() => {
                   </div>
                 </div>
               </section>
+
+              <details class="settings-advanced surface-1 p-4">
+                <summary class="settings-advanced__summary">
+                  <span class="settings-advanced__summary-copy">
+                    <span class="display-eyebrow text-[10px]">{{ i18n.t('settings.presets.eyebrow') }}</span>
+                    <span class="mt-1 text-[13px] font-medium text-ink">{{ i18n.t('settings.presets.title') }}</span>
+                    <span class="mt-1 text-[11px] leading-[1.5] text-muted">{{ i18n.t('settings.presets.body') }}</span>
+                  </span>
+                  <Icon name="chevronDown" :size="14" class="settings-advanced__chevron" />
+                </summary>
+
+                <div class="settings-advanced__body">
+                  <section class="flex flex-wrap items-center gap-2">
+                    <input
+                      v-model="newPresetLabel"
+                      class="field-input min-w-0 flex-1 font-mono text-[12px]"
+                      :placeholder="i18n.t('settings.presets.savePlaceholder')"
+                      maxlength="60"
+                      autocomplete="off"
+                      spellcheck="false"
+                    />
+                    <button
+                      type="button"
+                      class="btn-quiet text-[11px]"
+                      :disabled="!provider.state.baseUrl || !provider.state.apiKey"
+                      @click="handleSaveCurrentPreset"
+                    >
+                      <Icon name="bookmark" :size="12" />
+                      {{ i18n.t('settings.presets.save') }}
+                    </button>
+                    <button
+                      type="button"
+                      class="btn-quiet text-[11px]"
+                      :disabled="!providerPresets.length || speedTestRunning"
+                      @click="handleTestAllPresets"
+                    >
+                      <Icon
+                        :name="speedTestRunning ? 'refresh' : 'pulse'"
+                        :size="12"
+                        :class="speedTestRunning ? 'animate-spin' : ''"
+                      />
+                      {{ speedTestRunning ? i18n.t('settings.speedTest.running') : i18n.t('settings.presets.testAll') }}
+                    </button>
+                  </section>
+
+                  <p
+                    v-if="rankedSpeedResults.length"
+                    class="mt-3 text-[10px] uppercase tracking-[0.16em] text-muted"
+                  >
+                    {{ i18n.t('settings.speedTest.summary') }}
+                  </p>
+
+                  <p v-if="!providerPresets.length" class="mt-3 text-[11px] leading-[1.6] text-muted">
+                    {{ i18n.t('settings.presets.empty') }}
+                  </p>
+
+                  <ul v-else class="mt-3 space-y-2">
+                    <li
+                      v-for="preset in providerPresets"
+                      :key="preset.id"
+                      class="rounded-xl border px-3 py-2 text-[11px] leading-[1.6]"
+                      :class="activePresetId === preset.id
+                        ? 'border-forest/40 bg-forest/[0.08]'
+                        : 'border-line/40 bg-ivory/40'"
+                    >
+                      <div class="flex flex-wrap items-center justify-between gap-2">
+                        <div class="min-w-0 flex-1">
+                          <div class="flex items-center gap-1.5">
+                            <Icon
+                              v-if="activePresetId === preset.id"
+                              name="check"
+                              :size="12"
+                              class="text-forest"
+                            />
+                            <span class="truncate font-medium text-ink">{{ presetDisplayLabel(preset) }}</span>
+                            <span
+                              v-if="activePresetId === preset.id"
+                              class="rounded-full bg-forest/12 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-[0.16em] text-forest"
+                            >
+                              {{ i18n.t('settings.presets.active') }}
+                            </span>
+                          </div>
+                          <div class="mt-0.5 truncate font-mono text-[10px] text-muted">
+                            {{ shortBaseUrl(preset.baseUrl) || preset.baseUrl }}
+                          </div>
+                        </div>
+
+                        <div class="flex flex-shrink-0 items-center gap-1.5">
+                          <button
+                            type="button"
+                            class="btn-quiet text-[10px]"
+                            :disabled="activePresetId === preset.id"
+                            @click="handleSwitchPreset(preset.id)"
+                          >
+                            <Icon name="refresh" :size="11" />
+                            {{ i18n.t('settings.presets.switch') }}
+                          </button>
+                          <button
+                            type="button"
+                            class="btn-quiet text-[10px]"
+                            :disabled="speedTestRunning"
+                            @click="handleTestPreset(preset.id)"
+                          >
+                            <Icon
+                              :name="speedTestResults[preset.id]?.status === 'testing' ? 'refresh' : 'pulse'"
+                              :size="11"
+                              :class="speedTestResults[preset.id]?.status === 'testing' ? 'animate-spin' : ''"
+                            />
+                            {{ i18n.t('settings.presets.test') }}
+                          </button>
+                          <button
+                            type="button"
+                            class="btn-quiet text-[10px]"
+                            @click="handleDeletePreset(preset.id)"
+                          >
+                            <Icon name="trash" :size="11" />
+                            {{ i18n.t('settings.presets.delete') }}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div
+                        v-if="speedTestResults[preset.id] && speedTestResults[preset.id].status !== 'testing'"
+                        class="mt-1.5 flex flex-wrap items-center gap-2 font-mono text-[10px]"
+                      >
+                        <span
+                          v-if="speedTestResults[preset.id].status === 'success'"
+                          class="inline-flex items-center gap-1.5 rounded-full bg-forest/12 px-2 py-0.5 text-forest"
+                        >
+                          <Icon name="check" :size="10" />
+                          <span v-if="speedRankFor(preset.id)">
+                            {{ i18n.t('settings.speedTest.rank', { rank: speedRankFor(preset.id) ?? 0 }) }}
+                          </span>
+                          <span>{{ i18n.t('settings.speedTest.duration', { ms: speedTestResults[preset.id].durationMs ?? 0 }) }}</span>
+                        </span>
+                        <span
+                          v-if="speedTestResults[preset.id].status === 'success' && typeof speedTestResults[preset.id].modelCount === 'number'"
+                          class="text-muted"
+                        >
+                          {{ i18n.t('settings.speedTest.models', { count: speedTestResults[preset.id].modelCount ?? 0 }) }}
+                        </span>
+                        <span
+                          v-if="speedTestResults[preset.id].status === 'error'"
+                          class="inline-flex items-center gap-1.5 rounded-full bg-accent/12 px-2 py-0.5 text-accent"
+                        >
+                          <Icon name="warning" :size="10" />
+                          {{ i18n.t('settings.speedTest.failed') }}
+                          <span
+                            v-if="speedTestResults[preset.id].error"
+                            class="max-w-[200px] truncate opacity-80"
+                          >
+                            {{ speedTestResults[preset.id].error }}
+                          </span>
+                        </span>
+                      </div>
+                      <div
+                        v-else-if="speedTestResults[preset.id]?.status === 'testing'"
+                        class="mt-1.5 inline-flex items-center gap-1.5 font-mono text-[10px] text-muted"
+                      >
+                        <Icon name="refresh" :size="10" class="animate-spin" />
+                        {{ i18n.t('settings.presets.testing') }}
+                      </div>
+                    </li>
+                  </ul>
+                </div>
+              </details>
 
               <section class="surface-1 p-4">
                 <div class="mb-3 flex items-center justify-between gap-2">

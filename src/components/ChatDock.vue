@@ -194,6 +194,12 @@ const hasReferenceImages = computed(() => props.referenceImages.length > 0)
 const canAddReferenceImages = computed(() => props.referenceImages.length < maxReferenceImages)
 const keyboardIsOpen = computed(() => props.keyboardInset > 0)
 
+// Auto-collapse the quick-settings panel when the on-screen keyboard opens,
+// so the composer stays usable without the panel stealing viewport space.
+watch(keyboardIsOpen, (isOpen) => {
+  if (isOpen) closeQuickSettings()
+})
+
 const sendDisabled = computed(() => !props.isGenerating && !props.canGenerate)
 const inputPlaceholder = computed(() =>
   props.continuation ? t('dock.placeholderRemix') : t('dock.placeholder'),
@@ -1044,6 +1050,7 @@ defineExpose({ focusInput })
   border: 1px solid rgb(var(--color-line) / 0.72);
   background: rgb(var(--color-vellum) / 0.96);
   box-shadow: var(--shadow-glass-sm), var(--shadow-inner-glass);
+  max-height: 45dvh;
   overflow: auto;
   overscroll-behavior: contain;
   scrollbar-width: none;
@@ -1291,6 +1298,136 @@ defineExpose({ focusInput })
 .chat-dock__quick-toggle.is-disabled {
   background: rgb(var(--color-surface-muted) / 0.56);
   cursor: not-allowed;
+}
+
+/* Advanced controls: negative prompt, seed, creativity slider. */
+.chat-dock__quick-advanced {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.chat-dock__quick-field--full {
+  grid-column: 1 / -1;
+}
+
+.chat-dock__quick-label--split {
+  justify-content: space-between;
+}
+
+.chat-dock__quick-value {
+  flex: 0 0 auto;
+  color: rgb(var(--color-muted));
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 10px;
+  font-weight: 760;
+}
+
+.chat-dock__quick-textarea {
+  width: 100%;
+  min-height: 44px;
+  max-height: 96px;
+  resize: none;
+  border-radius: 8px;
+  border: 1px solid rgb(var(--color-line) / 0.78);
+  background: rgb(var(--color-surface-raised) / 0.92);
+  padding: 8px 10px;
+  color: rgb(var(--color-ink));
+  font-size: 12px;
+  line-height: 1.35;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.chat-dock__quick-textarea:focus-visible {
+  border-color: rgb(var(--color-accent) / 0.54);
+  box-shadow: var(--focus-ring);
+}
+
+.chat-dock__quick-seed {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 44px;
+  gap: 6px;
+  align-items: stretch;
+}
+
+.chat-dock__quick-input {
+  width: 100%;
+  min-height: 44px;
+  border-radius: 8px;
+  border: 1px solid rgb(var(--color-line) / 0.78);
+  background: rgb(var(--color-surface-raised) / 0.92);
+  padding: 0 10px;
+  color: rgb(var(--color-ink));
+  font-size: 12px;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  outline: none;
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.chat-dock__quick-input:focus-visible {
+  border-color: rgb(var(--color-accent) / 0.54);
+  box-shadow: var(--focus-ring);
+}
+
+.chat-dock__quick-dice {
+  display: grid;
+  place-items: center;
+  min-width: 44px;
+  min-height: 44px;
+  border-radius: 8px;
+  border: 1px solid rgb(var(--color-line) / 0.7);
+  background: rgb(var(--color-surface-raised) / 0.78);
+  color: rgb(var(--color-muted));
+  -webkit-tap-highlight-color: transparent;
+  transition: background 140ms ease, color 140ms ease;
+}
+
+.chat-dock__quick-dice:active {
+  color: rgb(var(--color-ink));
+  background: rgb(var(--color-surface-raised));
+}
+
+.chat-dock__quick-range {
+  width: 100%;
+  height: 44px;
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  outline: none;
+  cursor: pointer;
+}
+
+.chat-dock__quick-range::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: rgb(var(--color-line) / 0.5);
+}
+
+.chat-dock__quick-range::-moz-range-track {
+  height: 4px;
+  border-radius: 999px;
+  background: rgb(var(--color-line) / 0.5);
+}
+
+.chat-dock__quick-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 22px;
+  height: 22px;
+  margin-top: -9px;
+  border-radius: 999px;
+  background: rgb(var(--color-action));
+  box-shadow: 0 1px 3px rgb(var(--color-ink) / 0.24);
+}
+
+.chat-dock__quick-range::-moz-range-thumb {
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 999px;
+  background: rgb(var(--color-action));
+  box-shadow: 0 1px 3px rgb(var(--color-ink) / 0.24);
 }
 
 .chat-dock__refs {

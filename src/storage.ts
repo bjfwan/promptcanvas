@@ -411,6 +411,80 @@ export function rawApiKeyIsEncrypted(): boolean {
   return isEncrypted(apiKeyField)
 }
 
+/**
+ * 多中转站预设：用户可保存多组 { label, baseUrl, apiKey, proxyUrl }，一键切换 / 测速。
+ * apiKey 复用与单 provider 相同的 AES-GCM 加密逻辑。
+ */
+export interface ProviderPreset {
+  id: string
+  label?: string
+  baseUrl: string
+  apiKey: string
+  proxyUrl: string
+}
+
+const providerPresetsKey = 'promptcanvas:provider-presets-v1'
+
+interface StoredProviderPreset {
+  id?: unknown
+  label?: unknown
+  baseUrl?: unknown
+  apiKey?: unknown
+  proxyUrl?: unknown
+}
+
+export async function loadProviderPresets(): Promise<ProviderPreset[]> {
+  try {
+    const raw = localStorage.getItem(providerPresetsKey)
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+
+    const presets: ProviderPreset[] = []
+    for (const entry of parsed) {
+      if (!entry || typeof entry !== 'object') continue
+      const record = entry as StoredProviderPreset
+      const id = typeof record.id === 'string' ? record.id : ''
+      if (!id) continue
+      const baseUrl = typeof record.baseUrl === 'string' ? record.baseUrl : ''
+      const label = typeof record.label === 'string' && record.label.trim() ? record.label : undefined
+      const proxyUrl = typeof record.proxyUrl === 'string' ? record.proxyUrl : ''
+      const apiKeyField = typeof record.apiKey === 'string' ? record.apiKey : ''
+      let apiKey = ''
+      if (apiKeyField) {
+        try {
+          apiKey = await decryptString(apiKeyField)
+        } catch {
+          apiKey = ''
+        }
+      }
+      presets.push({ id, label, baseUrl, apiKey, proxyUrl })
+    }
+    return presets
+  } catch {
+    return []
+  }
+}
+
+export async function saveProviderPresets(presets: ProviderPreset[]): Promise<void> {
+  try {
+    const stored = await Promise.all(
+      presets.map(async (preset) => {
+        const plaintextKey = (preset.apiKey ?? '').trim()
+        const apiKey = plaintextKey ? await encryptString(plaintextKey) : ''
+        return {
+          id: preset.id,
+          label: preset.label ?? '',
+          baseUrl: preset.baseUrl ?? '',
+          apiKey,
+          proxyUrl: preset.proxyUrl ?? '',
+        }
+      }),
+    )
+    localStorage.setItem(providerPresetsKey, JSON.stringify(stored))
+  } catch {}
+}
+
 const rewriteModelKey = 'promptcanvas:rewrite-model-v1'
 
 export function loadRewriteModelChoice(): string {

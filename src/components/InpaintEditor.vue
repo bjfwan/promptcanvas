@@ -785,7 +785,7 @@ const canSubmit = computed(() => promptText.value.trim().length > 0 && mask.hasC
 
   .inpaint-toolbar__slider {
     width: 100%;
-    height: 34px;
+    height: 44px;
   }
 
   .inpaint-toolbar__slider::-webkit-slider-runnable-track,
