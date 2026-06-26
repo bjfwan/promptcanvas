@@ -3,7 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import Icon from './Icon.vue'
 import Select, { type SelectOption } from './Select.vue'
 import { maxReferenceImages } from '../lib/imagesApi'
-import { qualityOptions, sizeOptions } from '../presets'
+import { autoModelSentinel, qualityOptions, sizeOptions } from '../presets'
 import { useDiscoveredModels } from '../composables/useDiscoveredModels'
 import { useVibration } from '../composables/useVibration'
 import { rafThrottle } from '../lib/rafThrottle'
@@ -72,10 +72,13 @@ const emit = defineEmits<{
 const dockRef = ref<HTMLDivElement | null>(null)
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
 const referenceInputRef = ref<HTMLInputElement | null>(null)
+const modelSheetListRef = ref<HTMLDivElement | null>(null)
 const focused = ref(false)
-const quickSettingsOpen = ref(false)
+const advancedOpen = ref(false)
+const modelSheetOpen = ref(false)
 const isComposing = ref(false)
-const quickSettingsPanelId = 'chat-dock-quick-settings'
+const advancedPanelId = 'chat-dock-advanced'
+const modelSheetId = 'chat-dock-model-sheet'
 let dockResizeObserver: ResizeObserver | null = null
 let lastReportedHeight = 0
 let layoutFrame = 0
@@ -104,6 +107,14 @@ const modelSelectOptions = computed<SelectOption<string>[]>(() =>
       kind: option.kind,
     })),
 )
+
+// Compact label shown on the model card in the composer row.
+const modelCardLabel = computed(() => {
+  if (modelChoice.value === autoModelSentinel) return t('model.auto.label')
+  const match = modelSelectOptions.value.find((option) => option.value === modelChoice.value)
+  if (match) return match.label
+  return modelChoice.value.trim() || t('settings.model')
+})
 
 const sizeSelectOptions = computed<SelectOption<ImageSize>[]>(() =>
   sizeOptions.map((option) => ({
@@ -194,10 +205,13 @@ const hasReferenceImages = computed(() => props.referenceImages.length > 0)
 const canAddReferenceImages = computed(() => props.referenceImages.length < maxReferenceImages)
 const keyboardIsOpen = computed(() => props.keyboardInset > 0)
 
-// Auto-collapse the quick-settings panel when the on-screen keyboard opens,
-// so the composer stays usable without the panel stealing viewport space.
+// Auto-collapse the advanced modal + model sheet when the on-screen keyboard
+// opens, so the composer stays usable without overlays stealing viewport space.
 watch(keyboardIsOpen, (isOpen) => {
-  if (isOpen) closeQuickSettings()
+  if (isOpen) {
+    closeAdvanced()
+    closeModelSheet()
+  }
 })
 
 const sendDisabled = computed(() => !props.isGenerating && !props.canGenerate)
@@ -241,7 +255,8 @@ const dockOuterStyle = computed(() => {
 
 function openReferencePicker() {
   vibrate('tap')
-  closeQuickSettings()
+  closeAdvanced()
+  closeModelSheet()
   closeKeyboard()
   referenceInputRef.value?.click()
 }
@@ -325,22 +340,45 @@ function closeKeyboard() {
   focused.value = false
 }
 
-function closeQuickSettings() {
-  if (!quickSettingsOpen.value) return
-  quickSettingsOpen.value = false
+function closeAdvanced() {
+  if (!advancedOpen.value) return
+  advancedOpen.value = false
   syncLayoutSoon()
 }
 
-function toggleQuickSettings() {
+function openAdvanced() {
   vibrate('tap')
-  quickSettingsOpen.value = !quickSettingsOpen.value
-  if (quickSettingsOpen.value) closeKeyboard()
-  nextTick(syncLayoutSoon)
+  closeKeyboard()
+  closeModelSheet()
+  advancedOpen.value = true
+  syncLayoutSoon()
 }
 
-function prepareToolbarPopover() {
-  closeQuickSettings()
+function closeModelSheet() {
+  if (!modelSheetOpen.value) return
+  modelSheetOpen.value = false
+  syncLayoutSoon()
+}
+
+function openModelSheet() {
+  vibrate('tap')
   closeKeyboard()
+  closeAdvanced()
+  modelSheetOpen.value = true
+  nextTick(() => {
+    const list = modelSheetListRef.value
+    if (!list) return
+    const active = list.querySelector<HTMLElement>('[data-selected="true"]')
+    if (active) active.scrollIntoView({ block: 'center' })
+  })
+  syncLayoutSoon()
+}
+
+function selectModel(option: SelectOption<string>) {
+  if (option.disabled || option.kind === 'group') return
+  vibrate('tap')
+  modelChoice.value = option.value
+  closeModelSheet()
 }
 
 function adjustCount(delta: number) {
@@ -354,7 +392,8 @@ function adjustCount(delta: number) {
 }
 
 function focusInput() {
-  closeQuickSettings()
+  closeAdvanced()
+  closeModelSheet()
   nextTick(() => {
     textareaRef.value?.focus()
     autosize()
@@ -364,7 +403,8 @@ function focusInput() {
 function send() {
   if (props.isGenerating) {
     vibrate('tap')
-    closeQuickSettings()
+    closeAdvanced()
+    closeModelSheet()
     closeKeyboard()
     emit('abort')
     return
@@ -378,7 +418,8 @@ function send() {
     vibrate('error')
     return
   }
-  closeQuickSettings()
+  closeAdvanced()
+  closeModelSheet()
   closeKeyboard()
   emit('send')
 }
@@ -426,7 +467,8 @@ watch(
 watch(focused, (isFocused) => {
   autosize()
   if (isFocused) {
-    closeQuickSettings()
+    closeAdvanced()
+    closeModelSheet()
     ensureCaretVisible()
   }
 })
@@ -435,7 +477,10 @@ watch(() => props.referenceImages.length, syncLayoutSoon)
 watch(() => props.continuation?.fromMessageId, syncLayoutSoon)
 watch(() => props.healthOffline, syncLayoutSoon)
 watch(() => props.modelWarning, syncLayoutSoon)
-watch(quickSettingsOpen, () => {
+watch(advancedOpen, () => {
+  syncLayoutSoon()
+})
+watch(modelSheetOpen, () => {
   syncLayoutSoon()
 })
 watch(
@@ -538,144 +583,6 @@ defineExpose({ focusInput })
         </div>
       </Transition>
 
-      <!-- reference images strip — placed ABOVE the input (key fix) -->
-      <!-- quick generation settings stay close to the composer without taking over the view -->
-      <Transition name="dock-fade">
-        <section
-          v-if="quickSettingsOpen"
-          :id="quickSettingsPanelId"
-          class="chat-dock__quick-settings"
-          :aria-label="t('desktop.render.settings')"
-        >
-          <div class="chat-dock__quick-head">
-            <span>
-              <Icon name="sliders" :size="13" />
-              <span>{{ t('desktop.render.settings') }}</span>
-            </span>
-            <button
-              type="button"
-              class="chat-dock__quick-close"
-              :aria-label="t('settings.close')"
-              @click.stop="closeQuickSettings"
-            >
-              <Icon name="close" :size="12" />
-            </button>
-          </div>
-
-          <div class="chat-dock__quick-grid">
-            <label class="chat-dock__quick-field">
-              <span class="chat-dock__quick-label">
-                <Icon name="ratio" :size="12" />
-                <span>{{ t('settings.size') }}</span>
-              </span>
-              <Select
-                v-model="size"
-                :options="sizeSelectOptions"
-                size="sm"
-                :aria-label="t('settings.size.label')"
-                :show-hints="false"
-              />
-            </label>
-
-            <label class="chat-dock__quick-field">
-              <span class="chat-dock__quick-label">
-                <Icon name="image" :size="12" />
-                <span>{{ t('settings.format') }}</span>
-              </span>
-              <Select
-                v-model="outputFormat"
-                :options="formatSelectOptions"
-                size="sm"
-                :aria-label="t('settings.format.label')"
-                :show-hints="false"
-              />
-            </label>
-
-            <label class="chat-dock__quick-field">
-              <span class="chat-dock__quick-label">
-                <Icon name="star" :size="12" />
-                <span>{{ t('settings.quality') }}</span>
-              </span>
-              <Select
-                v-model="quality"
-                :options="qualitySelectOptions"
-                size="sm"
-                :aria-label="t('settings.quality.label')"
-                :show-hints="false"
-              />
-            </label>
-
-            <div class="chat-dock__quick-field">
-              <span class="chat-dock__quick-label">
-                <Icon name="layers" :size="12" />
-                <span>{{ t('settings.count') }}</span>
-              </span>
-              <div class="chat-dock__count-stepper" role="group" :aria-label="t('settings.count')">
-                <button
-                  type="button"
-                  :disabled="count <= 1"
-                  :aria-label="t('settings.count.decrease')"
-                  @click.stop="adjustCount(-1)"
-                >
-                  <Icon name="minus" :size="13" />
-                </button>
-                <span aria-live="polite">{{ count }}</span>
-                <button
-                  type="button"
-                  :disabled="count >= 4"
-                  :aria-label="t('settings.count.increase')"
-                  @click.stop="adjustCount(1)"
-                >
-                  <Icon name="plus" :size="13" />
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <div class="chat-dock__quick-switches">
-            <label
-              class="chat-dock__quick-toggle"
-              :class="{ 'is-disabled': !canStreamingWait }"
-              :data-state="toggleState(streamingWait, canStreamingWait)"
-            >
-              <input
-                v-model="streamingWait"
-                type="checkbox"
-                :disabled="!canStreamingWait"
-              />
-              <span class="chat-dock__quick-toggle-copy">
-                <span>
-                  <Icon name="clock" :size="12" />
-                  <span>{{ t('settings.streamingWait') }}</span>
-                  <strong>{{ toggleStateLabel(streamingWait, canStreamingWait) }}</strong>
-                </span>
-                <small>{{ streamingWaitHint || t('settings.streamingWait.hint') }}</small>
-              </span>
-            </label>
-
-            <label
-              class="chat-dock__quick-toggle"
-              :class="{ 'is-disabled': !canPartialPreview }"
-              :data-state="toggleState(partialPreview, canPartialPreview)"
-            >
-              <input
-                v-model="partialPreview"
-                type="checkbox"
-                :disabled="!canPartialPreview"
-              />
-              <span class="chat-dock__quick-toggle-copy">
-                <span>
-                  <Icon name="pulse" :size="12" />
-                  <span>{{ t('settings.stagePreview') }}</span>
-                  <strong>{{ toggleStateLabel(partialPreview, canPartialPreview) }}</strong>
-                </span>
-                <small>{{ partialPreviewHint || t('settings.stagePreview.hint') }}</small>
-              </span>
-            </label>
-          </div>
-        </section>
-      </Transition>
-
       <!-- reference images strip stays above the input -->
       <Transition name="dock-fade">
         <div
@@ -707,7 +614,7 @@ defineExpose({ focusInput })
               :aria-label="t('dock.refContinue')"
               @click.stop="openReferencePicker"
             >
-              <Icon name="upload" :size="14" />
+              <Icon name="plus" :size="16" />
             </button>
           </div>
           <span class="chat-dock__refs-count">
@@ -716,8 +623,48 @@ defineExpose({ focusInput })
         </div>
       </Transition>
 
-      <!-- main composer card -->
+      <!-- generation settings summary — tap to open the centered advanced modal -->
+      <Transition name="dock-fade">
+        <button
+          v-if="!keyboardIsOpen"
+          type="button"
+          class="chat-dock__summary"
+          :aria-label="`${t('desktop.render.settings')}: ${quickSettingsSummary}`"
+          :title="quickSettingsSummary"
+          @click.stop="openAdvanced"
+        >
+          <Icon name="sliders" :size="13" :stroke-width="1.8" />
+          <span class="chat-dock__summary-pills" aria-hidden="true">
+            <span
+              v-for="item in quickSettingPills"
+              :key="item.key"
+              class="chat-dock__summary-pill"
+            >
+              <Icon :name="item.icon" :size="11" :stroke-width="1.8" />
+              <span>{{ item.label }}</span>
+            </span>
+          </span>
+          <Icon name="chevronRight" :size="12" class="chat-dock__summary-arrow" aria-hidden="true" />
+        </button>
+      </Transition>
+
+      <!-- main composer row: [+] [textarea] [model card] [send] -->
       <div class="chat-dock__shell" :class="{ 'is-focused': focused }">
+        <button
+          type="button"
+          class="chat-dock__attach"
+          :class="{ 'has-refs': hasReferenceImages }"
+          :disabled="!canAddReferenceImages"
+          :aria-label="referenceUploadLabel"
+          :title="referenceUploadLabel"
+          @click.stop="openReferencePicker"
+        >
+          <Icon name="plus" :size="20" :stroke-width="1.8" />
+          <span v-if="hasReferenceImages" class="chat-dock__attach-badge">
+            {{ props.referenceImages.length }}
+          </span>
+        </button>
+
         <textarea
           ref="textareaRef"
           v-model="prompt"
@@ -758,6 +705,17 @@ defineExpose({ focusInput })
 
         <button
           type="button"
+          class="chat-dock__model-card"
+          :aria-label="t('dock.modelLabel')"
+          :title="t('dock.modelLabel')"
+          @click.stop="openModelSheet"
+        >
+          <span class="chat-dock__model-card-label">{{ modelCardLabel }}</span>
+          <Icon name="chevronDown" :size="13" class="chat-dock__model-card-arrow" aria-hidden="true" />
+        </button>
+
+        <button
+          type="button"
           class="chat-dock__send"
           :class="{
             'chat-dock__send--ready': promptHasContent && !sendDisabled && !isGenerating,
@@ -771,77 +729,221 @@ defineExpose({ focusInput })
           <Icon v-if="isGenerating" name="close" :size="18" />
           <Icon v-else name="send" :size="18" />
         </button>
-
-        <p v-if="modelWarning" class="chat-dock__model-warning" role="status">
-          <Icon name="warning" :size="11" />
-          <span>{{ modelWarning }}</span>
-        </p>
       </div>
 
-      <!-- Context row: reference picker, model, and quick parameters. -->
-      <div class="chat-dock__toolbar">
-        <div class="chat-dock__toolbar-scroll" role="toolbar" :aria-label="t('composer.prompt')">
-          <button
-            type="button"
-            class="chat-dock__chip chat-dock__chip--reference"
-            :class="{ 'has-refs': hasReferenceImages }"
-            :disabled="!canAddReferenceImages"
-            :aria-label="referenceUploadLabel"
-            :title="referenceUploadLabel"
-            @click.stop="openReferencePicker"
-          >
-            <span class="chat-dock__reference-glyph" aria-hidden="true">
-              <Icon name="image" :size="15" :stroke-width="1.7" />
-              <span class="chat-dock__reference-plus">
-                <Icon name="plus" :size="8" :stroke-width="2.2" />
-              </span>
-            </span>
-            <span class="chat-dock__chip-label chat-dock__chip-label--reference">
-              <span v-if="hasReferenceImages" class="chat-dock__chip-count">
-                {{ props.referenceImages.length }}/{{ maxReferenceImages }}
-              </span>
-              <span v-else>{{ t('dock.refOpen') }}</span>
-            </span>
-          </button>
-
-          <div class="chat-dock__model-chip" @pointerdown.capture="prepareToolbarPopover">
-            <Select
-              v-model="modelChoice"
-              :options="modelSelectOptions"
-              size="sm"
-              :placeholder="t('settings.model')"
-              :aria-label="t('dock.modelLabel')"
-              :show-hints="true"
-            />
-          </div>
-
-          <button
-            type="button"
-            class="chat-dock__chip chat-dock__chip--settings"
-            :class="{ 'is-open': quickSettingsOpen }"
-            :aria-label="`${t('desktop.render.settings')}: ${quickSettingsSummary}`"
-            :aria-expanded="quickSettingsOpen"
-            :aria-controls="quickSettingsPanelId"
-            :title="quickSettingsSummary"
-            @click.stop="toggleQuickSettings"
-          >
-            <Icon name="sliders" :size="15" :stroke-width="1.7" />
-            <span class="chat-dock__param-pills" aria-hidden="true">
-              <span
-                v-for="item in quickSettingPills"
-                :key="item.key"
-                class="chat-dock__param-pill"
-                :title="item.title"
-              >
-                <Icon :name="item.icon" :size="11" :stroke-width="1.8" />
-                <span>{{ item.label }}</span>
-              </span>
-            </span>
-          </button>
-        </div>
-      </div>
+      <p v-if="modelWarning" class="chat-dock__model-warning" role="status">
+        <Icon name="warning" :size="11" />
+        <span>{{ modelWarning }}</span>
+      </p>
 
     </div>
+
+    <!-- model selection — bottom sheet -->
+    <Teleport to="body">
+      <Transition name="sheet">
+        <div
+          v-if="modelSheetOpen"
+          class="chat-dock__overlay"
+          role="dialog"
+          aria-modal="true"
+          :aria-label="t('dock.modelLabel')"
+          @click.self="closeModelSheet"
+          @pointerdown.self="closeModelSheet"
+        >
+          <div class="chat-dock__sheet-panel" :id="modelSheetId">
+            <div class="chat-dock__sheet-handle" aria-hidden="true"></div>
+            <div class="chat-dock__sheet-head">
+              <span class="chat-dock__sheet-title">
+                <Icon name="aperture" :size="14" />
+                <span>{{ t('dock.modelLabel') }}</span>
+              </span>
+              <button
+                type="button"
+                class="chat-dock__sheet-close"
+                :aria-label="t('settings.close')"
+                @click.stop="closeModelSheet"
+              >
+                <Icon name="close" :size="14" />
+              </button>
+            </div>
+            <div ref="modelSheetListRef" class="chat-dock__sheet-list" role="listbox" :aria-label="t('dock.modelLabel')">
+              <button
+                v-for="option in modelSelectOptions"
+                :key="option.value"
+                type="button"
+                role="option"
+                class="chat-dock__sheet-item"
+                :data-selected="option.value === modelChoice || undefined"
+                :data-disabled="option.disabled || option.kind === 'group' || undefined"
+                :aria-selected="option.value === modelChoice"
+                @click.stop="selectModel(option)"
+              >
+                <span class="chat-dock__sheet-item-check" aria-hidden="true">
+                  <Icon v-if="option.value === modelChoice" name="check" :size="14" />
+                </span>
+                <span class="chat-dock__sheet-item-copy">
+                  <span class="chat-dock__sheet-item-label">{{ option.label }}</span>
+                  <span v-if="option.hint" class="chat-dock__sheet-item-hint">{{ option.hint }}</span>
+                </span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <!-- advanced generation settings — centered modal -->
+    <Teleport to="body">
+      <Transition name="modal">
+        <div
+          v-if="advancedOpen"
+          class="chat-dock__overlay chat-dock__overlay--modal"
+          role="dialog"
+          aria-modal="true"
+          :aria-label="t('desktop.render.settings')"
+          :id="advancedPanelId"
+          @click.self="closeAdvanced"
+          @pointerdown.self="closeAdvanced"
+        >
+          <div class="chat-dock__modal-box" @pointerdown.stop>
+            <div class="chat-dock__modal-head">
+              <span class="chat-dock__modal-title">
+                <Icon name="sliders" :size="14" />
+                <span>{{ t('desktop.render.settings') }}</span>
+              </span>
+              <button
+                type="button"
+                class="chat-dock__modal-close"
+                :aria-label="t('settings.close')"
+                @click.stop="closeAdvanced"
+              >
+                <Icon name="close" :size="14" />
+              </button>
+            </div>
+
+            <div class="chat-dock__modal-body">
+              <div class="chat-dock__quick-grid">
+                <label class="chat-dock__quick-field">
+                  <span class="chat-dock__quick-label">
+                    <Icon name="ratio" :size="12" />
+                    <span>{{ t('settings.size') }}</span>
+                  </span>
+                  <Select
+                    v-model="size"
+                    :options="sizeSelectOptions"
+                    size="sm"
+                    :aria-label="t('settings.size.label')"
+                    :show-hints="false"
+                  />
+                </label>
+
+                <label class="chat-dock__quick-field">
+                  <span class="chat-dock__quick-label">
+                    <Icon name="image" :size="12" />
+                    <span>{{ t('settings.format') }}</span>
+                  </span>
+                  <Select
+                    v-model="outputFormat"
+                    :options="formatSelectOptions"
+                    size="sm"
+                    :aria-label="t('settings.format.label')"
+                    :show-hints="false"
+                  />
+                </label>
+
+                <label class="chat-dock__quick-field">
+                  <span class="chat-dock__quick-label">
+                    <Icon name="star" :size="12" />
+                    <span>{{ t('settings.quality') }}</span>
+                  </span>
+                  <Select
+                    v-model="quality"
+                    :options="qualitySelectOptions"
+                    size="sm"
+                    :aria-label="t('settings.quality.label')"
+                    :show-hints="false"
+                  />
+                </label>
+
+                <div class="chat-dock__quick-field">
+                  <span class="chat-dock__quick-label">
+                    <Icon name="layers" :size="12" />
+                    <span>{{ t('settings.count') }}</span>
+                  </span>
+                  <div class="chat-dock__count-stepper" role="group" :aria-label="t('settings.count')">
+                    <button
+                      type="button"
+                      :disabled="count <= 1"
+                      :aria-label="t('settings.count.decrease')"
+                      @click.stop="adjustCount(-1)"
+                    >
+                      <Icon name="minus" :size="13" />
+                    </button>
+                    <span aria-live="polite">{{ count }}</span>
+                    <button
+                      type="button"
+                      :disabled="count >= 4"
+                      :aria-label="t('settings.count.increase')"
+                      @click.stop="adjustCount(1)"
+                    >
+                      <Icon name="plus" :size="13" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="chat-dock__quick-switches">
+                <label
+                  class="chat-dock__quick-toggle"
+                  :class="{ 'is-disabled': !canStreamingWait }"
+                  :data-state="toggleState(streamingWait, canStreamingWait)"
+                >
+                  <input
+                    v-model="streamingWait"
+                    type="checkbox"
+                    :disabled="!canStreamingWait"
+                  />
+                  <span class="chat-dock__quick-toggle-copy">
+                    <span>
+                      <Icon name="clock" :size="12" />
+                      <span>{{ t('settings.streamingWait') }}</span>
+                      <strong>{{ toggleStateLabel(streamingWait, canStreamingWait) }}</strong>
+                    </span>
+                    <small>{{ streamingWaitHint || t('settings.streamingWait.hint') }}</small>
+                  </span>
+                </label>
+
+                <label
+                  class="chat-dock__quick-toggle"
+                  :class="{ 'is-disabled': !canPartialPreview }"
+                  :data-state="toggleState(partialPreview, canPartialPreview)"
+                >
+                  <input
+                    v-model="partialPreview"
+                    type="checkbox"
+                    :disabled="!canPartialPreview"
+                  />
+                  <span class="chat-dock__quick-toggle-copy">
+                    <span>
+                      <Icon name="pulse" :size="12" />
+                      <span>{{ t('settings.stagePreview') }}</span>
+                      <strong>{{ toggleStateLabel(partialPreview, canPartialPreview) }}</strong>
+                    </span>
+                    <small>{{ partialPreviewHint || t('settings.stagePreview.hint') }}</small>
+                  </span>
+                </label>
+              </div>
+            </div>
+
+            <div class="chat-dock__modal-foot">
+              <button type="button" class="chat-dock__modal-done" @click.stop="closeAdvanced">
+                {{ t('settings.close') }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
   </div>
 </template>
 
@@ -910,7 +1012,7 @@ defineExpose({ focusInput })
   align-items: center;
   gap: 8px;
   padding: 6px 8px 6px 6px;
-  border-radius: 16px;
+  border-radius: 10px;
   border: 1px solid rgb(var(--color-forest) / 0.32);
   background:
     linear-gradient(90deg, rgb(var(--color-forest) / 0.1), transparent 50%),
@@ -1437,7 +1539,7 @@ defineExpose({ focusInput })
   align-items: center;
   gap: 8px;
   padding: 6px 8px;
-  border-radius: 12px;
+  border-radius: 10px;
   border: 1px solid rgb(var(--color-line) / 0.7);
   background: rgb(var(--color-vellum) / 0.96);
   box-shadow: var(--shadow-inner-paper);
@@ -1466,7 +1568,7 @@ defineExpose({ focusInput })
   flex: 0 0 auto;
   width: 48px;
   height: 48px;
-  border-radius: 12px;
+  border-radius: 10px;
   overflow: hidden;
   border: 1px solid rgb(var(--color-line-strong) / 0.6);
   background: rgb(var(--color-paper-soft));
@@ -1508,7 +1610,7 @@ defineExpose({ focusInput })
   place-items: center;
   width: 48px;
   height: 48px;
-  border-radius: 12px;
+  border-radius: 10px;
   border: 1px dashed rgb(var(--color-line-strong));
   background: rgb(var(--color-paper) / 0.4);
   color: rgb(var(--color-muted));
@@ -1585,8 +1687,11 @@ defineExpose({ focusInput })
   order: 1;
   position: relative;
   display: flex;
-  flex-direction: column;
-  border-radius: 14px;
+  flex-direction: row;
+  align-items: flex-end;
+  gap: 6px;
+  padding: 6px 6px 6px 6px;
+  border-radius: 10px;
   border: 1px solid rgb(var(--color-line) / 0.72);
   background: rgb(var(--color-surface-raised) / 0.98);
   box-shadow: var(--shadow-glass-sm), var(--shadow-inner-glass);
@@ -1621,13 +1726,89 @@ defineExpose({ focusInput })
   opacity: 1;
 }
 
+/* attach / plus button — sits inside the input row, opens the image picker */
+.chat-dock__attach {
+  position: relative;
+  z-index: 3;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  min-height: 40px;
+  border-radius: 10px;
+  border: 1px solid rgb(var(--color-line) / 0.72);
+  background: rgb(var(--color-surface-muted) / 0.62);
+  color: rgb(var(--color-muted));
+  cursor: pointer;
+  box-shadow: var(--shadow-inner-glass);
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    background-color 140ms var(--motion-soft),
+    border-color 140ms var(--motion-soft),
+    color 140ms var(--motion-soft),
+    transform 140ms var(--motion-press);
+}
+
+.chat-dock__attach::before {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border-radius: inherit;
+}
+
+.chat-dock__attach:not(:disabled):active {
+  transform: scale(0.94);
+  background: rgb(var(--color-surface-muted));
+  color: rgb(var(--color-ink));
+}
+
+.chat-dock__attach.has-refs {
+  color: rgb(var(--color-forest));
+  border-color: rgb(var(--color-forest) / 0.32);
+  background: rgb(var(--color-forest) / 0.08);
+}
+
+.chat-dock__attach:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring), var(--shadow-inner-glass);
+}
+
+.chat-dock__attach:disabled {
+  background: rgb(var(--color-line) / 0.1);
+  color: rgb(var(--color-muted) / 0.5);
+  cursor: not-allowed;
+}
+
+.chat-dock__attach-badge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  display: grid;
+  place-items: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: rgb(var(--color-forest));
+  color: rgb(var(--color-paper));
+  border: 1.5px solid rgb(var(--color-vellum));
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+  font-feature-settings: 'tnum';
+}
+
 .chat-dock__textarea {
   position: relative;
   z-index: 2;
+  flex: 1 1 auto;
+  min-width: 0;
   display: block;
   width: 100%;
-  min-height: 54px;
-  padding: 14px 58px 13px 15px;
+  min-height: 40px;
+  padding: 9px 2px;
   resize: none;
   background: transparent;
   border: 0;
@@ -1654,14 +1835,15 @@ defineExpose({ focusInput })
 
 .chat-dock__indicator {
   position: absolute;
-  top: 10px;
-  right: 52px;
+  top: 5px;
+  left: 50%;
+  transform: translateX(-50%);
   display: inline-flex;
   align-items: center;
   gap: 4px;
   padding: 2px 8px;
-  border-radius: 999px;
-  background: rgb(var(--color-paper) / 0.7);
+  border-radius: 6px;
+  background: rgb(var(--color-paper) / 0.86);
   border: 1px solid rgb(var(--color-line) / 0.6);
   font-family: 'JetBrains Mono', ui-monospace, monospace;
   font-size: 9px;
@@ -1669,6 +1851,7 @@ defineExpose({ focusInput })
   letter-spacing: 0.06em;
   color: rgb(var(--color-muted));
   pointer-events: none;
+  z-index: 5;
 }
 
 .chat-dock__indicator--quiet {
@@ -1678,34 +1861,19 @@ defineExpose({ focusInput })
   color: rgb(var(--color-muted) / 0.62);
 }
 
-/* ------------------------------------------------------------------
- * Toolbar — single horizontal row, scrolls when chips overflow.
- * ------------------------------------------------------------------ */
-
-.chat-dock__toolbar {
-  order: 4;
-  position: relative;
-  z-index: 2;
-  min-width: 0;
-  overflow: hidden;
-  border: 1px solid rgb(var(--color-line) / 0.72);
-  border-radius: 12px;
-  background: rgb(var(--color-vellum) / 0.96);
-  box-shadow: var(--shadow-inner-glass);
-  padding: 6px;
-}
-
 .chat-dock__model-warning {
+  order: 5;
   position: relative;
   z-index: 2;
   display: flex;
   align-items: flex-start;
   gap: 5px;
   margin: 0;
-  border-top: 1px solid rgb(var(--color-line) / 0.34);
-  padding: 6px 10px 8px;
+  padding: 7px 11px;
+  border-radius: 8px;
+  border: 1px solid rgb(var(--color-ochre) / 0.26);
   color: rgb(var(--color-ochre));
-  background: rgb(var(--color-ochre) / 0.06);
+  background: rgb(var(--color-ochre) / 0.07);
   font-size: 10.5px;
   font-weight: 560;
   line-height: 1.35;
@@ -1961,11 +2129,10 @@ defineExpose({ focusInput })
 }
 
 .chat-dock[data-keyboard-open="true"] .chat-dock__refs,
-.chat-dock[data-keyboard-open="true"] .chat-dock__quick-settings,
 .chat-dock[data-keyboard-open="true"] .chat-dock__custom,
 .chat-dock[data-keyboard-open="true"] .chat-dock__continuation,
 .chat-dock[data-keyboard-open="true"] .chat-dock__offline {
-  border-radius: 12px;
+  border-radius: 10px;
   padding-block: 5px;
 }
 
@@ -1985,16 +2152,12 @@ defineExpose({ focusInput })
 }
 
 .chat-dock[data-keyboard-open="true"] .chat-dock__shell {
-  border-radius: 12px;
+  border-radius: 10px;
 }
 
 .chat-dock[data-keyboard-open="true"] .chat-dock__textarea {
-  min-height: 42px;
-  padding-top: 10px;
-}
-
-.chat-dock[data-keyboard-open="true"] .chat-dock__toolbar {
-  padding: 5px;
+  min-height: 40px;
+  padding-top: 9px;
 }
 
 .chat-dock__chip-prefix {
@@ -2019,27 +2182,93 @@ defineExpose({ focusInput })
   padding: 0 10px;
 }
 
-.chat-dock__send {
+.chat-dock__model-card {
+  position: relative;
+  z-index: 3;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 9.5rem;
+  min-height: 40px;
+  height: 40px;
+  padding: 0 8px 0 10px;
+  border-radius: 10px;
+  border: 1px solid rgb(var(--color-line) / 0.72);
+  background: rgb(var(--color-vellum) / 0.96);
+  color: rgb(var(--color-ink));
+  font-size: 12px;
+  font-weight: 640;
+  letter-spacing: 0;
+  cursor: pointer;
+  box-shadow: var(--shadow-inner-glass);
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    background-color 140ms var(--motion-soft),
+    border-color 140ms var(--motion-soft),
+    color 140ms var(--motion-soft),
+    box-shadow 160ms var(--motion-soft),
+    transform 140ms var(--motion-press);
+}
+
+.chat-dock__model-card::before {
+  content: '';
   position: absolute;
-  right: 9px;
-  bottom: 9px;
+  inset: -6px;
+  border-radius: inherit;
+}
+
+.chat-dock__model-card:active {
+  transform: scale(0.97);
+}
+
+.chat-dock__model-card:focus-visible {
+  outline: none;
+  border-color: rgb(var(--color-accent) / 0.5);
+  box-shadow: var(--focus-ring), var(--shadow-inner-glass);
+}
+
+.chat-dock__model-card-label {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chat-dock__model-card-arrow {
+  flex: 0 0 auto;
+  color: rgb(var(--color-muted));
+  transition: transform 200ms var(--motion-soft), color 160ms ease;
+}
+
+.chat-dock__send {
+  position: relative;
   z-index: 4;
+  flex: 0 0 auto;
   display: grid;
   place-items: center;
-  width: 36px;
-  height: 36px;
-  min-height: 36px;
-  border-radius: 999px;
+  width: 40px;
+  height: 40px;
+  min-height: 40px;
+  border-radius: 10px;
   border: 1px solid rgb(var(--color-line) / 0.78);
   background: rgb(var(--color-surface-muted) / 0.96);
   color: rgb(var(--color-muted));
   cursor: not-allowed;
   box-shadow: var(--shadow-inner-glass);
+  -webkit-tap-highlight-color: transparent;
   transition:
     transform 140ms var(--motion-press),
     background-color 140ms var(--motion-soft),
     color 140ms var(--motion-soft),
     box-shadow 160ms var(--motion-soft);
+}
+
+.chat-dock__send::before {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border-radius: inherit;
 }
 
 .chat-dock__send:focus-visible {
@@ -2074,6 +2303,417 @@ defineExpose({ focusInput })
 
 
 /* ------------------------------------------------------------------
+ * Summary strip — compact tappable row that opens the advanced modal
+ * ------------------------------------------------------------------ */
+
+.chat-dock__summary {
+  order: 2;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  min-height: 34px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid rgb(var(--color-line) / 0.6);
+  background: rgb(var(--color-vellum) / 0.62);
+  color: rgb(var(--color-ink));
+  font-size: 11px;
+  cursor: pointer;
+  box-shadow: var(--shadow-inner-paper);
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 140ms var(--motion-soft), border-color 140ms var(--motion-soft);
+}
+
+.chat-dock__summary > svg:first-child {
+  flex: 0 0 auto;
+  color: rgb(var(--color-muted));
+}
+
+.chat-dock__summary:active {
+  background: rgb(var(--color-vellum) / 0.94);
+  border-color: rgb(var(--color-line-strong) / 0.6);
+}
+
+.chat-dock__summary:focus-visible {
+  outline: none;
+  border-color: rgb(var(--color-accent) / 0.5);
+  box-shadow: var(--focus-ring);
+}
+
+.chat-dock__summary-pills {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 14px), transparent 100%);
+          mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 14px), transparent 100%);
+}
+
+.chat-dock__summary-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex: 0 0 auto;
+  height: 22px;
+  max-width: 76px;
+  padding: 0 6px;
+  border-radius: 6px;
+  background: rgb(var(--color-surface-muted) / 0.92);
+  color: rgb(var(--color-ink));
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.chat-dock__summary-pill span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-dock__summary-pill svg {
+  flex: 0 0 auto;
+  color: rgb(var(--color-muted));
+}
+
+.chat-dock__summary-arrow {
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: rgb(var(--color-muted));
+}
+
+
+/* ------------------------------------------------------------------
+ * Overlays — model bottom sheet & advanced centered modal
+ * ------------------------------------------------------------------ */
+
+.chat-dock__overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgb(var(--color-ink) / 0.42);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.chat-dock__overlay--modal {
+  align-items: center;
+  padding: 16px;
+}
+
+/* bottom sheet panel */
+.chat-dock__sheet-panel {
+  position: relative;
+  width: 100%;
+  max-width: 520px;
+  max-height: 78dvh;
+  display: flex;
+  flex-direction: column;
+  background: rgb(var(--color-vellum) / 0.99);
+  border: 1px solid rgb(var(--color-line) / 0.7);
+  border-bottom: 0;
+  border-radius: 14px 14px 0 0;
+  box-shadow: var(--shadow-glass-lg);
+  overflow: hidden;
+  margin-bottom: max(env(safe-area-inset-bottom, 0px), 0px);
+}
+
+.chat-dock__sheet-handle {
+  flex: 0 0 auto;
+  align-self: center;
+  width: 38px;
+  height: 4px;
+  margin: 8px 0 4px;
+  border-radius: 999px;
+  background: rgb(var(--color-line-strong) / 0.6);
+}
+
+.chat-dock__sheet-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 10px 8px;
+  border-bottom: 1px solid rgb(var(--color-line) / 0.5);
+}
+
+.chat-dock__sheet-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: rgb(var(--color-ink));
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.chat-dock__sheet-title svg {
+  color: rgb(var(--color-accent));
+}
+
+.chat-dock__sheet-close,
+.chat-dock__modal-close {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  border: 1px solid rgb(var(--color-line) / 0.7);
+  background: rgb(var(--color-surface-raised) / 0.82);
+  color: rgb(var(--color-muted));
+  -webkit-tap-highlight-color: transparent;
+}
+
+.chat-dock__sheet-close::before,
+.chat-dock__modal-close::before {
+  content: '';
+  position: absolute;
+  inset: -6px;
+}
+
+.chat-dock__sheet-close:active,
+.chat-dock__modal-close:active {
+  color: rgb(var(--color-ink));
+  background: rgb(var(--color-surface-raised));
+}
+
+.chat-dock__sheet-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 6px;
+  scrollbar-width: thin;
+  scrollbar-color: rgb(var(--color-ink) / 0.22) transparent;
+}
+
+.chat-dock__sheet-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.chat-dock__sheet-list::-webkit-scrollbar-thumb {
+  background: rgb(var(--color-ink) / 0.22);
+  border-radius: 999px;
+}
+
+.chat-dock__sheet-item {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 11px 10px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: rgb(var(--color-ink));
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 150ms var(--motion-soft);
+}
+
+.chat-dock__sheet-item:active {
+  background: rgb(var(--color-surface-muted) / 0.8);
+}
+
+.chat-dock__sheet-item[data-selected] {
+  background: rgb(var(--color-accent) / 0.08);
+  border-color: rgb(var(--color-accent) / 0.28);
+}
+
+.chat-dock__sheet-item[data-disabled] {
+  cursor: default;
+  padding-top: 14px;
+  padding-bottom: 6px;
+  background: transparent;
+}
+
+.chat-dock__sheet-item[data-disabled] .chat-dock__sheet-item-check {
+  display: none;
+}
+
+.chat-dock__sheet-item[data-disabled] .chat-dock__sheet-item-label {
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgb(var(--color-muted));
+}
+
+.chat-dock__sheet-item-check {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  margin-top: 1px;
+  width: 16px;
+  height: 16px;
+  color: rgb(var(--color-accent));
+}
+
+.chat-dock__sheet-item-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 2px;
+}
+
+.chat-dock__sheet-item-label {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.25;
+  word-break: break-word;
+}
+
+.chat-dock__sheet-item-hint {
+  font-size: 11px;
+  line-height: 1.35;
+  color: rgb(var(--color-muted));
+}
+
+.chat-dock__sheet-item[data-selected] .chat-dock__sheet-item-hint {
+  color: rgb(var(--color-accent) / 0.8);
+}
+
+/* centered modal box */
+.chat-dock__modal-box {
+  position: relative;
+  width: 100%;
+  max-width: 460px;
+  max-height: 86dvh;
+  display: flex;
+  flex-direction: column;
+  background: rgb(var(--color-vellum) / 0.99);
+  border: 1px solid rgb(var(--color-line) / 0.7);
+  border-radius: 12px;
+  box-shadow: var(--shadow-glass-lg);
+  overflow: hidden;
+}
+
+.chat-dock__modal-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgb(var(--color-line) / 0.5);
+}
+
+.chat-dock__modal-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: rgb(var(--color-ink));
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.chat-dock__modal-title svg {
+  color: rgb(var(--color-accent));
+}
+
+.chat-dock__modal-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 12px;
+  display: grid;
+  gap: 12px;
+  scrollbar-width: thin;
+  scrollbar-color: rgb(var(--color-ink) / 0.22) transparent;
+}
+
+.chat-dock__modal-body::-webkit-scrollbar {
+  width: 6px;
+}
+
+.chat-dock__modal-body::-webkit-scrollbar-thumb {
+  background: rgb(var(--color-ink) / 0.22);
+  border-radius: 999px;
+}
+
+.chat-dock__modal-foot {
+  flex: 0 0 auto;
+  padding: 10px 12px;
+  border-top: 1px solid rgb(var(--color-line) / 0.5);
+}
+
+.chat-dock__modal-done {
+  width: 100%;
+  min-height: 42px;
+  border-radius: 8px;
+  border: 1px solid rgb(var(--color-line) / 0.7);
+  background: rgb(var(--color-surface-raised) / 0.92);
+  color: rgb(var(--color-ink));
+  font-size: 13px;
+  font-weight: 660;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 140ms var(--motion-soft);
+}
+
+.chat-dock__modal-done:active {
+  background: rgb(var(--color-surface-raised));
+}
+
+/* sheet slide transition */
+.sheet-enter-from,
+.sheet-leave-to {
+  opacity: 0;
+}
+
+.sheet-enter-from .chat-dock__sheet-panel,
+.sheet-leave-to .chat-dock__sheet-panel {
+  transform: translateY(100%);
+}
+
+.sheet-enter-active .chat-dock__sheet-panel,
+.sheet-leave-active .chat-dock__sheet-panel {
+  transition: transform 280ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.sheet-enter-active,
+.sheet-leave-active {
+  transition: opacity 220ms var(--motion-soft);
+}
+
+/* modal fade/scale transition */
+.modal-enter-from,
+.modal-leave-to {
+  opacity: 0;
+}
+
+.modal-enter-from .chat-dock__modal-box,
+.modal-leave-to .chat-dock__modal-box {
+  transform: scale(0.96) translateY(8px);
+}
+
+.modal-enter-active .chat-dock__modal-box,
+.modal-leave-active .chat-dock__modal-box {
+  transition: transform 240ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.modal-enter-active,
+.modal-leave-active {
+  transition: opacity 200ms var(--motion-soft);
+}
+
+
+/* ------------------------------------------------------------------
  * Transitions — opacity + transform only (no max-height animations,
  * which trigger layout work and cause jank on mobile).
  * ------------------------------------------------------------------ */
@@ -2100,27 +2740,28 @@ defineExpose({ focusInput })
  * ------------------------------------------------------------------ */
 
 @media (max-width: 430px) {
-  .chat-dock__toolbar {
+  .chat-dock__shell {
+    gap: 5px;
     padding: 5px;
   }
 
+  .chat-dock__attach,
   .chat-dock__send {
-    right: 9px;
-    bottom: 9px;
-    width: 36px;
-    height: 36px;
-    min-height: 36px;
+    width: 38px;
+    height: 38px;
+    min-height: 38px;
   }
 
-  .chat-dock__chip {
-    min-width: 44px;
-    height: 44px;
+  .chat-dock__model-card {
+    height: 38px;
+    min-height: 38px;
+    max-width: 8rem;
+    padding: 0 7px 0 9px;
   }
 
-  .chat-dock__chip--settings {
-    min-width: 222px;
+  .chat-dock__textarea {
+    min-height: 38px;
   }
-
 }
 
 @media (max-width: 360px) {
@@ -2129,30 +2770,14 @@ defineExpose({ focusInput })
     padding-right: 8px;
   }
 
-  .chat-dock__chip {
-    padding: 0 8px;
-    gap: 4px;
+  .chat-dock__model-card {
+    max-width: 6.5rem;
+    font-size: 11.5px;
   }
 
-  .chat-dock__chip--settings {
-    min-width: 210px;
-  }
-
-  .chat-dock__param-pill {
-    max-width: 64px;
+  .chat-dock__summary-pill {
+    max-width: 60px;
     padding-inline: 5px;
-  }
-
-  .chat-dock__chip--undo .chat-dock__chip-label {
-    display: none;
-  }
-
-  .chat-dock__model-chip :deep(.select-trigger) {
-    max-width: clamp(4.5rem, 22vw, 7rem);
-  }
-
-  .chat-dock__chip--settings .chat-dock__chip-label {
-    max-width: 5.6rem;
   }
 }
 
@@ -2184,13 +2809,18 @@ defineExpose({ focusInput })
     display: none;
   }
 
-  .chat-dock__refs,
-  .chat-dock__toolbar {
+  .chat-dock__refs {
     padding-block: 5px;
   }
 
+  .chat-dock__attach,
   .chat-dock__send {
     width: 34px;
+    height: 34px;
+    min-height: 34px;
+  }
+
+  .chat-dock__model-card {
     height: 34px;
     min-height: 34px;
   }
@@ -2199,11 +2829,16 @@ defineExpose({ focusInput })
 @media (prefers-reduced-motion: reduce) {
   .chat-dock,
   .chat-dock__shell,
-  .chat-dock__chip,
+  .chat-dock__attach,
+  .chat-dock__model-card,
   .chat-dock__send,
   .chat-dock__icon-btn,
   .dock-fade-enter-active,
-  .dock-fade-leave-active {
+  .dock-fade-leave-active,
+  .sheet-enter-active,
+  .sheet-leave-active,
+  .modal-enter-active,
+  .modal-leave-active {
     transition: none;
   }
 
