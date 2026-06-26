@@ -770,11 +770,13 @@ function reuseActivePrompt() {
   background: rgb(var(--color-action) / 0.9);
 }
 
-.canvas-result-tool:hover {
-  background: rgb(var(--color-action) / 0.92);
-  border-color: rgb(255 255 255 / 0.34);
-  box-shadow: 0 10px 22px -16px rgb(0 0 0 / 0.72), inset 0 1px 0 rgb(255 255 255 / 0.18);
-  transform: translateY(-1px);
+@media (hover: hover) and (pointer: fine) {
+  .canvas-result-tool:hover {
+    background: rgb(var(--color-action) / 0.92);
+    border-color: rgb(255 255 255 / 0.34);
+    box-shadow: 0 10px 22px -16px rgb(0 0 0 / 0.72), inset 0 1px 0 rgb(255 255 255 / 0.18);
+    transform: translateY(-1px);
+  }
 }
 
 .canvas-result-tool:focus-visible {
@@ -823,11 +825,13 @@ function reuseActivePrompt() {
   }
 }
 
-.canvas-action:hover {
-  transform: translateY(-1px);
-  border-color: rgb(var(--color-line-strong) / 0.7);
-  background: rgb(var(--color-surface-raised) / 1);
-  box-shadow: var(--shadow-glass-sm), var(--shadow-inner-glass);
+@media (hover: hover) and (pointer: fine) {
+  .canvas-action:hover {
+    transform: translateY(-1px);
+    border-color: rgb(var(--color-line-strong) / 0.7);
+    background: rgb(var(--color-surface-raised) / 1);
+    box-shadow: var(--shadow-glass-sm), var(--shadow-inner-glass);
+  }
 }
 
 .canvas-action:active {
@@ -841,9 +845,11 @@ function reuseActivePrompt() {
   box-shadow: var(--shadow-glass-sm), inset 0 1px 0 rgb(255 255 255 / 0.16);
 }
 
-.canvas-action--primary:hover {
-  background: var(--gradient-primary);
-  box-shadow: var(--shadow-glass), inset 0 1px 0 rgb(255 255 255 / 0.18);
+@media (hover: hover) and (pointer: fine) {
+  .canvas-action--primary:hover {
+    background: var(--gradient-primary);
+    box-shadow: var(--shadow-glass), inset 0 1px 0 rgb(255 255 255 / 0.18);
+  }
 }
 
 .canvas-action[aria-disabled='true'] {
@@ -855,15 +861,26 @@ function reuseActivePrompt() {
   opacity: 0.62;
 }
 
-.canvas-action[aria-disabled='true']:hover,
+/* Disabled reset — :active and the non-hover primary selector must apply on
+   touch too; only the :hover variants are gated behind hover capability. */
 .canvas-action[aria-disabled='true']:active,
-.canvas-action--primary[aria-disabled='true'],
-.canvas-action--primary[aria-disabled='true']:hover {
+.canvas-action--primary[aria-disabled='true'] {
   color: rgb(var(--color-muted));
   border: 1px solid rgb(var(--color-line) / 0.54);
   background: rgb(var(--color-surface-muted) / 0.76);
   transform: none;
   box-shadow: var(--shadow-inner-glass);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .canvas-action[aria-disabled='true']:hover,
+  .canvas-action--primary[aria-disabled='true']:hover {
+    color: rgb(var(--color-muted));
+    border: 1px solid rgb(var(--color-line) / 0.54);
+    background: rgb(var(--color-surface-muted) / 0.76);
+    transform: none;
+    box-shadow: var(--shadow-inner-glass);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1194,10 +1211,12 @@ function reuseActivePrompt() {
   transition: border-color 200ms var(--motion-soft), box-shadow 220ms var(--motion-soft), transform 200ms var(--motion-press);
 }
 
-.canvas-mosaic__cell:hover {
-  border-color: rgb(var(--color-line-strong) / 0.6);
-  transform: translateY(-1px);
-  box-shadow: var(--shadow-glass-sm), var(--shadow-inner-glass);
+@media (hover: hover) and (pointer: fine) {
+  .canvas-mosaic__cell:hover {
+    border-color: rgb(var(--color-line-strong) / 0.6);
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-glass-sm), var(--shadow-inner-glass);
+  }
 }
 
 .canvas-mosaic__cell--active {
@@ -1205,8 +1224,10 @@ function reuseActivePrompt() {
   box-shadow: 0 0 0 2px rgb(var(--color-accent) / 0.18), var(--shadow-glass);
 }
 
-.canvas-mosaic__cell--active:hover {
-  transform: translateY(0);
+@media (hover: hover) and (pointer: fine) {
+  .canvas-mosaic__cell--active:hover {
+    transform: translateY(0);
+  }
 }
 
 .canvas-mosaic__surface {
@@ -1261,8 +1282,10 @@ function reuseActivePrompt() {
   filter: blur(14px) saturate(0.86);
 }
 
-.canvas-mosaic__cell:not(.canvas-mosaic__cell--active):hover .canvas-mosaic__img {
-  filter: saturate(1) brightness(1);
+@media (hover: hover) and (pointer: fine) {
+  .canvas-mosaic__cell:not(.canvas-mosaic__cell--active):hover .canvas-mosaic__img {
+    filter: saturate(1) brightness(1);
+  }
 }
 
 .canvas-mosaic__index {
@@ -1345,10 +1368,12 @@ function reuseActivePrompt() {
   transition: background-color 140ms var(--motion-soft), border-color 140ms var(--motion-soft), transform 140ms var(--motion-press);
 }
 
-.canvas-mosaic__tool:hover {
-  background: rgb(var(--color-accent) / 0.78);
-  border-color: rgb(var(--color-surface-raised) / 0.4);
-  transform: translateY(-1px);
+@media (hover: hover) and (pointer: fine) {
+  .canvas-mosaic__tool:hover {
+    background: rgb(var(--color-accent) / 0.78);
+    border-color: rgb(var(--color-surface-raised) / 0.4);
+    transform: translateY(-1px);
+  }
 }
 
 .canvas-mosaic__tool[aria-disabled='true'] {
@@ -1357,11 +1382,18 @@ function reuseActivePrompt() {
   filter: saturate(0.5);
 }
 
-.canvas-mosaic__tool[aria-disabled='true']:hover,
 .canvas-mosaic__tool[aria-disabled='true']:active {
   background: rgb(var(--color-ink) / 0.55);
   border-color: rgb(var(--color-surface-raised) / 0.22);
   transform: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .canvas-mosaic__tool[aria-disabled='true']:hover {
+    background: rgb(var(--color-ink) / 0.55);
+    border-color: rgb(var(--color-surface-raised) / 0.22);
+    transform: none;
+  }
 }
 
 @media (max-width: 1023px) {

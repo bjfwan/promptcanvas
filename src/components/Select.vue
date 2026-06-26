@@ -57,6 +57,7 @@ const heightClass = computed(() => {
 let outsideClickHandler: ((event: PointerEvent) => void) | null = null
 let scrollHandler: (() => void) | null = null
 let resizeHandler: (() => void) | null = null
+let visualViewportHandler: (() => void) | null = null
 let searchBuffer = ''
 let searchTimer: number | null = null
 
@@ -88,8 +89,12 @@ function computePosition() {
   if (!trigger) return
 
   const rect = trigger.getBoundingClientRect()
-  const viewportH = window.innerHeight
-  const viewportW = window.innerWidth
+  // visualViewport reflects the actually visible area once the software
+  // keyboard opens on mobile; fall back to the layout viewport on desktop
+  // browsers that don't expose it.
+  const vv = window.visualViewport
+  const viewportH = vv ? vv.height : window.innerHeight
+  const viewportW = vv ? vv.width : window.innerWidth
   const spaceBelow = viewportH - rect.bottom
   const spaceAbove = rect.top
   const desiredMax = 320
@@ -141,18 +146,33 @@ function bindOutside() {
     if (!open.value) return
     computePosition()
   }
+  visualViewportHandler = () => {
+    if (!open.value) return
+    // The software keyboard pushes the visual viewport around; recompute so
+    // the popover stays anchored to the trigger and clamps to the visible area.
+    computePosition()
+  }
   document.addEventListener('pointerdown', outsideClickHandler, true)
   window.addEventListener('scroll', scrollHandler, true)
   window.addEventListener('resize', resizeHandler)
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', visualViewportHandler)
+    window.visualViewport.addEventListener('scroll', visualViewportHandler)
+  }
 }
 
 function unbindOutside() {
   if (outsideClickHandler) document.removeEventListener('pointerdown', outsideClickHandler, true)
   if (scrollHandler) window.removeEventListener('scroll', scrollHandler, true)
   if (resizeHandler) window.removeEventListener('resize', resizeHandler)
+  if (visualViewportHandler && window.visualViewport) {
+    window.visualViewport.removeEventListener('resize', visualViewportHandler)
+    window.visualViewport.removeEventListener('scroll', visualViewportHandler)
+  }
   outsideClickHandler = null
   scrollHandler = null
   resizeHandler = null
+  visualViewportHandler = null
 }
 
 function openPopover() {

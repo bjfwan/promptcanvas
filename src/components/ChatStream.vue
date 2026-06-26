@@ -13,6 +13,7 @@ interface Props {
   history?: GenerationHistoryItem[]
   canEditImages?: boolean
   imageEditDisabledReason?: string
+  hasPrompt?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -22,6 +23,7 @@ const props = withDefaults(defineProps<Props>(), {
   history: () => [] as GenerationHistoryItem[],
   canEditImages: true,
   imageEditDisabledReason: '',
+  hasPrompt: false,
 })
 
 const VIRTUALIZE_THRESHOLD = 24
@@ -56,6 +58,8 @@ const emit = defineEmits<{
   (e: 'scroll-to-message', id: string): void
   (e: 'abort', id: string): void
   (e: 'open-settings'): void
+  (e: 'generate'): void
+  (e: 'go-compose'): void
 }>()
 
 const scrollerRef = ref<HTMLDivElement | null>(null)
@@ -179,6 +183,24 @@ defineExpose({ scrollToBottom, scrollToMessage })
           <p class="chat-stream__empty-copy">
             {{ t('stream.empty.body') }}
           </p>
+          <button
+            v-if="hasPrompt"
+            type="button"
+            class="empty-cta chat-stream__empty-cta"
+            @click="emit('generate')"
+          >
+            <Icon name="lightning" :size="14" />
+            <span>{{ t('stream.empty.generate') }}</span>
+          </button>
+          <button
+            v-else
+            type="button"
+            class="chat-stream__empty-cta chat-stream__empty-cta--ghost"
+            @click="emit('go-compose')"
+          >
+            <Icon name="textCursor" :size="14" />
+            <span>{{ t('stream.empty.goCompose') }}</span>
+          </button>
         </template>
       </div>
 
@@ -318,6 +340,27 @@ defineExpose({ scrollToBottom, scrollToMessage })
 
 .chat-stream__empty-cta:active {
   transform: scale(0.97);
+}
+
+/* Ghost variant — secondary CTA for the "go compose" path */
+.chat-stream__empty-cta--ghost {
+  color: rgb(var(--color-ink));
+  background: rgb(var(--color-surface-raised) / 0.62);
+  border: 1px solid rgb(var(--color-line-strong) / 0.6);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  box-shadow: var(--shadow-inner-glass);
+  transition:
+    transform 140ms var(--motion-press),
+    border-color 160ms var(--motion-soft),
+    background-color 160ms var(--motion-soft);
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.chat-stream__empty-cta--ghost:hover {
+  border-color: rgb(var(--color-accent) / 0.5);
+  background: rgb(var(--color-vellum) / 0.85);
 }
 
 .chat-stream__empty-meta {

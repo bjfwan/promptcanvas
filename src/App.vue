@@ -22,6 +22,8 @@ import AppHeader from './components/AppHeader.vue'
 import Icon from './components/Icon.vue'
 import Toaster from './components/Toaster.vue'
 import Select, { type SelectOption } from './components/Select.vue'
+import CommandPalette from './components/CommandPalette.vue'
+import InstallPromptBanner from './components/InstallPromptBanner.vue'
 import { useToast } from './composables/useToast'
 import { useTheme } from './composables/useTheme'
 import { useLightbox } from './composables/useLightbox'
@@ -41,6 +43,8 @@ import { useShortcutsDialog } from './composables/useShortcutsDialog'
 import { usePromptTree } from './composables/usePromptTree'
 import { useOnboarding } from './composables/useOnboarding'
 import { useServiceWorker } from './composables/useServiceWorker'
+import { useInstallPrompt } from './composables/useInstallPrompt'
+import { useCommandPalette } from './composables/useCommandPalette'
 import { useI18n } from './lib/i18n'
 import { lookupModelCapability } from './lib/modelCapabilities'
 
@@ -122,6 +126,8 @@ const historyOpen = ref(false)
 const shortcutsDialog = useShortcutsDialog()
 const onboarding = useOnboarding()
 const sw = useServiceWorker()
+const installPrompt = useInstallPrompt()
+const commandPalette = useCommandPalette()
 const { t, locale } = useI18n()
 const localizedDefaultPrompt = computed(() => t('defaults.prompt'))
 const localizedDefaultNegativePrompt = computed(() => t('defaults.negativePrompt'))
@@ -288,6 +294,8 @@ const canGenerate = computed(
     && !isGenerating.value,
 )
 const promptPreview = computed(() => trimmedPrompt.value.split('\n')[0]?.slice(0, 64) ?? '')
+// Surfaces PWA install nudge after the user has seen at least one result.
+const hasGenerated = computed(() => images.value.length > 0)
 
 function setMessages(next: ChatMessage[]) {
   const nextIds = new Set(next.map((message) => message.id))
@@ -618,6 +626,10 @@ const { runGeneration } = generation
 
 function handleAbortGeneration() {
   generation.abortGeneration()
+}
+
+async function handleInstallApp() {
+  await installPrompt.prompt()
 }
 
 function notifyImageEditUnavailable(reason = editDisabledReason.value) {
@@ -2041,6 +2053,7 @@ watch(sw.updateAvailable, (available) => {
         :history="history"
         :can-edit-images="canEditImages"
         :image-edit-disabled-reason="editDisabledReason"
+        :has-prompt="trimmedPrompt.length > 0"
         @retry="regenerateFromMessage"
         @open-image="lightbox.open"
         @edit-image="openImageEditor"
@@ -2052,6 +2065,8 @@ watch(sw.updateAvailable, (available) => {
         @scroll-to-message="handleScrollToMessage"
         @abort="handleAbortGeneration"
         @open-settings="settingsOpen = true"
+        @generate="handleGenerate"
+        @go-compose="focusPrompt"
       />
     </div>
 
@@ -2148,6 +2163,29 @@ watch(sw.updateAvailable, (available) => {
       :image-edit-disabled-reason="editDisabledReason"
       @image-edit-unavailable="notifyImageEditUnavailable"
       @inpaint-submit="handleInpaintSubmit"
+    />
+
+    <CommandPalette
+      :open="commandPalette.open.value"
+      :install-available="installPrompt.available.value"
+      @update:open="(value: boolean) => (commandPalette.open.value = value)"
+      @pick-size="(value: ImageSize) => (size = value)"
+      @open-history="historyOpen = true"
+      @open-settings="settingsOpen = true"
+      @open-shortcuts="shortcutsDialog.open.value = true"
+      @open-onboarding="onboarding.start()"
+      @toggle-theme="toggleTheme"
+      @reset="resetDraft"
+      @generate="handleGenerate"
+      @focus-prompt="focusPrompt"
+      @install-app="handleInstallApp"
+    />
+
+    <InstallPromptBanner
+      :install-available="installPrompt.available.value"
+      :installed="installPrompt.installed.value"
+      :has-generated="hasGenerated"
+      @install="handleInstallApp"
     />
 
     <Toaster />

@@ -89,6 +89,9 @@ function continueImage(index: number) {
 
 const isUser = computed(() => props.message.role === 'user')
 
+const expanded = ref(false)
+const needsClamp = computed(() => isUser.value && (props.message.content?.length ?? 0) > 240)
+
 const isReferenceMessage = computed(() => props.message.meta.generationMode === 'reference')
 
 const timeLabel = computed(() => {
@@ -264,7 +267,19 @@ function isImageReady(image: GeneratedImage, index: number) {
       <div
         class="chat-bubble-user rounded-[22px] rounded-br-[8px] px-4 py-3 text-[15px] leading-6 text-paper"
       >
-        <p class="whitespace-pre-wrap break-words">{{ message.content }}</p>
+        <p
+          class="whitespace-pre-wrap break-words"
+          :style="needsClamp && !expanded ? { display: '-webkit-box', WebkitLineClamp: '6', WebkitBoxOrient: 'vertical', overflow: 'hidden' } : undefined"
+        >{{ message.content }}</p>
+        <button
+          v-if="needsClamp"
+          type="button"
+          class="chat-bubble-toggle"
+          :aria-expanded="expanded"
+          @click="expanded = !expanded"
+        >
+          {{ expanded ? t('chat.collapse') : t('chat.expand') }}
+        </button>
       </div>
       <div class="chat-meta-row" :data-orientation="message.role">
         <span v-if="isReferenceMessage" class="chat-meta-row__chunk">{{ t('chat.referenceImages') }}</span>
@@ -516,6 +531,36 @@ function isImageReady(image: GeneratedImage, index: number) {
   opacity: 0.7;
   pointer-events: none;
   z-index: -1;
+}
+
+/* Expand / collapse toggle for clamped user prompts */
+.chat-bubble-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-top: 0.4rem;
+  padding: 0 0.25rem;
+  min-height: 44px;
+  background: transparent;
+  border: none;
+  color: rgb(255 255 255 / 0.82);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition: opacity 140ms var(--motion-soft);
+}
+
+.chat-bubble-toggle:active {
+  opacity: 0.6;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .chat-bubble-toggle:hover {
+    color: rgb(255 255 255);
+  }
 }
 
 .chat-bubble-assistant {

@@ -33,10 +33,32 @@
       "purpose": "any maskable"
     },
     {
+      "src": "/brand/promptcanvas-icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
       "src": "/brand/apple-touch-icon.png",
       "sizes": "180x180",
       "type": "image/png",
       "purpose": "any"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/brand/promptcanvas-icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "桌面端三栏制版台"
+    },
+    {
+      "src": "/brand/promptcanvas-icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "移动端创作 dock"
     }
   ],
   "shortcuts": [
