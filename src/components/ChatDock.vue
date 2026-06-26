@@ -2160,28 +2160,6 @@ defineExpose({ focusInput })
   padding-top: 9px;
 }
 
-.chat-dock__chip-prefix {
-  color: rgb(var(--color-muted));
-}
-
-.chat-dock__chip-current {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.chat-dock__chip-wrap {
-  position: relative;
-  flex-shrink: 0;
-}
-
-.chat-dock__chip--undo {
-  background: rgb(var(--color-accent) / 0.08);
-  border-color: rgb(var(--color-accent) / 0.3);
-  color: rgb(var(--color-accent));
-  padding: 0 10px;
-}
-
 .chat-dock__model-card {
   position: relative;
   z-index: 3;
