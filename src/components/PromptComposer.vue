@@ -87,6 +87,8 @@ const promptRef = ref<HTMLTextAreaElement | null>(null)
 const referenceInputRef = ref<HTMLInputElement | null>(null)
 const dragActive = ref(false)
 const tooltipIdBase = useId()
+const showModelSheet = ref(false)
+const showAdvancedPopup = ref(false)
 let dragDepth = 0
 
 const copyTooltipId = `${tooltipIdBase}-copy-prompt`
@@ -341,7 +343,8 @@ watch(
         </button>
       </div>
 
-      <div class="prompt-field-shell" data-tour="composer-prompt" @click="promptRef?.focus()">
+      <!-- Prompt textarea (no outer box) -->
+      <div class="prompt-field-area" data-tour="composer-prompt" @click="promptRef?.focus()">
         <textarea
           id="prompt-input"
           ref="promptRef"
@@ -353,6 +356,8 @@ watch(
           spellcheck="false"
           @click.stop="promptRef?.focus()"
         ></textarea>
+
+        <!-- Desktop toolbar (hidden on mobile) -->
         <div class="prompt-field-tools">
           <span class="prompt-model-chip">
             <button
@@ -410,11 +415,122 @@ watch(
             </button>
           </span>
         </div>
+
         <p v-if="modelWarning" class="prompt-model-warning" role="status">
           <Icon name="warning" :size="11" />
           <span>{{ modelWarning }}</span>
         </p>
       </div>
+
+      <!-- Mobile inline toolbar: plus + model card + send -->
+      <div v-if="layout !== 'draft'" class="prompt-mobile-toolbar">
+        <button
+          type="button"
+          class="prompt-mobile-btn prompt-mobile-btn--plus"
+          :disabled="!canAddReferenceImages"
+          :aria-label="t('composer.tools.refUploadLabel')"
+          @click.stop="openReferencePicker"
+        >
+          <Icon name="plus" :size="18" />
+        </button>
+        <button
+          type="button"
+          class="prompt-mobile-model-card"
+          :aria-label="t('dock.modelLabel')"
+          @click.stop="showModelSheet = true"
+        >
+          <span class="prompt-mobile-model-card__label">{{ modelChipLabel }}</span>
+          <Icon name="chevronDown" :size="11" class="prompt-mobile-model-card__arrow" />
+        </button>
+        <button
+          type="submit"
+          :disabled="!isGenerating && !canGenerate"
+          class="prompt-mobile-btn prompt-mobile-btn--send"
+          :class="{ 'prompt-mobile-btn--busy': isGenerating }"
+          @click="handleGenerateClick"
+        >
+          <Icon :name="isGenerating ? 'close' : 'send'" :size="16" />
+          <span v-if="isGenerating" class="font-mono text-[10px] tabular-nums">{{ elapsedSeconds }}s</span>
+        </button>
+      </div>
+
+      <!-- Model bottom sheet (mobile) -->
+      <Teleport to="body">
+        <Transition name="model-sheet">
+          <div v-if="showModelSheet" class="prompt-model-sheet-overlay" @click.self="showModelSheet = false">
+            <div class="prompt-model-sheet">
+              <div class="prompt-model-sheet__header">
+                <span class="prompt-model-sheet__title">{{ t('dock.modelLabel') }}</span>
+                <button type="button" class="prompt-model-sheet__close" @click="showModelSheet = false">
+                  <Icon name="close" :size="16" />
+                </button>
+              </div>
+              <div class="prompt-model-sheet__list">
+                <button
+                  v-for="option in modelChipOptions"
+                  :key="option.value"
+                  type="button"
+                  class="prompt-model-sheet__option"
+                  :class="{
+                    'prompt-model-sheet__option--active': modelChoice === option.value,
+                    'prompt-model-sheet__option--disabled': option.disabled,
+                  }"
+                  :disabled="option.disabled"
+                  @click="modelChoice = option.value; showModelSheet = false"
+                >
+                  <span class="prompt-model-sheet__option-label">{{ option.label }}</span>
+                  <span v-if="option.hint" class="prompt-model-sheet__option-hint">{{ option.hint }}</span>
+                  <Icon v-if="modelChoice === option.value" name="check" :size="14" class="prompt-model-sheet__option-check" />
+                </button>
+              </div>
+            </div>
+          </div>
+        </Transition>
+      </Teleport>
+
+      <!-- Advanced features centered popup (mobile) -->
+      <Teleport to="body">
+        <Transition name="adv-popup">
+          <div v-if="showAdvancedPopup" class="prompt-adv-popup-overlay" @click.self="showAdvancedPopup = false">
+            <div class="prompt-adv-popup">
+              <div class="prompt-adv-popup__header">
+                <span class="prompt-adv-popup__title">{{ t('composer.prompt') }}</span>
+                <button type="button" class="prompt-adv-popup__close" @click="showAdvancedPopup = false">
+                  <Icon name="close" :size="14" />
+                </button>
+              </div>
+              <div class="prompt-adv-popup__actions">
+                <button
+                  v-if="prompt.length"
+                  type="button"
+                  class="prompt-adv-popup__btn"
+                  @click="emit('copy', prompt, t('toast.copyPrompt')); showAdvancedPopup = false"
+                >
+                  <Icon name="copy" :size="14" />
+                  <span>{{ t('composer.tools.copy') }}</span>
+                </button>
+                <button
+                  v-if="prompt.length"
+                  type="button"
+                  class="prompt-adv-popup__btn"
+                  @click="clearPrompt(); showAdvancedPopup = false"
+                >
+                  <Icon name="eraser" :size="14" />
+                  <span>{{ t('composer.tools.clear') }}</span>
+                </button>
+                <button
+                  type="button"
+                  class="prompt-adv-popup__btn"
+                  @click="emit('open-settings'); showAdvancedPopup = false"
+                >
+                  <Icon name="settings" :size="14" />
+                  <span>{{ t('settings.title') }}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </Transition>
+      </Teleport>
 
       <PromptTreeline
         v-if="layout === 'panel' && (props.treeNodes?.length ?? 0) > 1"
@@ -463,7 +579,7 @@ watch(
       </button>
     </div>
 
-    <div v-else class="sticky bottom-0 -mx-5 border-t border-line/70 bg-paper/95 px-5 pb-2 pt-3 backdrop-blur">
+    <div v-else class="composer-sheet-cta sticky bottom-0 -mx-5 border-t border-line/70 bg-paper/95 px-5 pb-2 pt-3 backdrop-blur">
       <button
         type="submit"
         :disabled="!isGenerating && !canGenerate"
@@ -588,15 +704,9 @@ watch(
   box-shadow: var(--focus-ring);
 }
 
-.prompt-field-shell {
-  overflow: hidden;
-  border-radius: var(--radius-card);
-  border: 1px solid rgb(var(--color-line) / 0.4);
-  background: rgb(var(--color-ivory) / 0.5);
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  box-shadow: var(--shadow-glass), var(--shadow-inner-glass);
-  transition: border-color 200ms var(--motion-soft), background 200ms var(--motion-soft), box-shadow 220ms var(--motion-soft);
+.prompt-field-area {
+  display: flex;
+  flex-direction: column;
 }
 
 .composer-alert {
@@ -641,8 +751,10 @@ watch(
   min-width: 0;
 }
 
-.prompt-composer--draft .prompt-field-shell {
+.prompt-composer--draft .prompt-field-area {
   border-radius: var(--radius-panel);
+  overflow: hidden;
+  border: 1px solid rgb(var(--color-line) / 0.4);
   background: rgb(var(--color-surface-raised) / 0.94);
   box-shadow: var(--shadow-inner-glass);
 }
@@ -749,10 +861,8 @@ watch(
   }
 }
 
-.prompt-field-shell:focus-within {
-  border-color: rgb(var(--color-accent) / 0.5);
-  background: rgb(var(--color-ivory) / 0.62);
-  box-shadow: var(--focus-ring), var(--shadow-glow-accent);
+.prompt-field-area:focus-within {
+  /* focus handled by textarea outline or tools border */
 }
 
 .prompt-field-textarea {
@@ -1144,12 +1254,382 @@ watch(
 }
 
 @media (max-width: 720px) {
+  /* Hide desktop toolbar on mobile */
   .prompt-field-tools {
-    grid-template-columns: 1fr;
+    display: none;
+  }
+
+  /* Hide desktop CTA on mobile (send is in mobile toolbar), but keep for draft layout */
+  .prompt-composer:not(.prompt-composer--draft) .composer-cta {
+    display: none;
+  }
+
+  /* Hide sheet bottom CTA on mobile */
+  .composer-sheet-cta {
+    display: none;
+  }
+
+  /* Textarea adjustments */
+  .prompt-field-textarea {
+    padding: 0.75rem 0.85rem 0.65rem;
+    font-size: 15px;
+    border-bottom: 1px solid rgb(var(--color-line) / 0.3);
   }
 
   .prompt-action-strip {
     justify-content: flex-start;
   }
+}
+
+/* Desktop: hide mobile toolbar */
+@media (min-width: 721px) {
+  .prompt-mobile-toolbar {
+    display: none !important;
+  }
+}
+
+/* ── Mobile toolbar ── */
+.prompt-mobile-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.25rem;
+}
+
+.prompt-mobile-btn {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  border: 1px solid rgb(var(--color-line) / 0.4);
+  background: rgb(var(--color-ivory) / 0.5);
+  color: rgb(var(--color-muted));
+  cursor: pointer;
+  transition: background-color 150ms var(--motion-soft), color 150ms var(--motion-soft), transform 120ms var(--motion-press);
+}
+
+.prompt-mobile-btn:hover:not(:disabled) {
+  background: rgb(var(--color-ivory) / 0.75);
+  color: rgb(var(--color-ink));
+  transform: translateY(-1px);
+}
+
+.prompt-mobile-btn:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.prompt-mobile-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.prompt-mobile-btn--plus {
+  border-style: dashed;
+}
+
+.prompt-mobile-btn--send {
+  margin-left: auto;
+  width: 44px;
+  height: 40px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  background: linear-gradient(135deg, rgb(var(--color-action-strong)), rgb(var(--color-accent)));
+  color: rgb(var(--color-paper));
+  box-shadow: 0 2px 8px -3px rgb(var(--color-accent) / 0.5);
+}
+
+.prompt-mobile-btn--send:hover:not(:disabled) {
+  background: linear-gradient(135deg, rgb(var(--color-accent)), rgb(var(--color-action-strong)));
+  color: rgb(var(--color-paper));
+  transform: translateY(-1px);
+}
+
+.prompt-mobile-btn--send:disabled {
+  opacity: 0.5;
+  background: rgb(var(--color-muted) / 0.3);
+  box-shadow: none;
+}
+
+.prompt-mobile-btn--busy {
+  background: linear-gradient(120deg, rgb(var(--color-action-strong)), rgb(var(--color-accent)), rgb(var(--color-blueprint) / 0.9));
+  background-size: 180% 180%;
+  animation: composer-submit-gradient 2.6s ease-in-out infinite;
+}
+
+.prompt-mobile-model-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 36px;
+  padding: 0 0.75rem;
+  border-radius: 18px;
+  border: 1px solid rgb(var(--color-line) / 0.45);
+  background: rgb(var(--color-ivory) / 0.55);
+  color: rgb(var(--color-ink));
+  font-size: 12px;
+  font-weight: 620;
+  cursor: pointer;
+  max-width: 55%;
+  transition: background-color 150ms var(--motion-soft), border-color 150ms var(--motion-soft), transform 120ms var(--motion-press);
+}
+
+.prompt-mobile-model-card:hover {
+  background: rgb(var(--color-ivory) / 0.78);
+  border-color: rgb(var(--color-line-strong) / 0.6);
+  transform: translateY(-1px);
+}
+
+.prompt-mobile-model-card:active {
+  transform: translateY(0);
+}
+
+.prompt-mobile-model-card__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prompt-mobile-model-card__arrow {
+  flex: 0 0 auto;
+  color: rgb(var(--color-muted));
+  transition: transform 150ms var(--motion-soft);
+}
+
+/* ── Model bottom sheet ── */
+.prompt-model-sheet-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgb(var(--color-ink) / 0.35);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.prompt-model-sheet {
+  width: 100%;
+  max-width: 480px;
+  max-height: 65dvh;
+  display: flex;
+  flex-direction: column;
+  border-radius: 16px 16px 0 0;
+  background: rgb(var(--color-vellum));
+  box-shadow: 0 -4px 24px -8px rgb(var(--color-ink) / 0.2);
+  overflow: hidden;
+}
+
+.prompt-model-sheet__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.15rem 0.75rem;
+  padding-top: calc(env(safe-area-inset-top, 0px) + 1rem);
+  border-bottom: 1px solid rgb(var(--color-line) / 0.4);
+}
+
+.prompt-model-sheet__title {
+  font-size: 14px;
+  font-weight: 680;
+  color: rgb(var(--color-ink));
+}
+
+.prompt-model-sheet__close {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  border: 1px solid rgb(var(--color-line) / 0.5);
+  background: rgb(var(--color-ivory) / 0.5);
+  color: rgb(var(--color-muted));
+  cursor: pointer;
+  transition: background 150ms var(--motion-soft), color 150ms var(--motion-soft);
+}
+
+.prompt-model-sheet__close:hover {
+  background: rgb(var(--color-paper));
+  color: rgb(var(--color-ink));
+}
+
+.prompt-model-sheet__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.65rem 0.85rem;
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 0.85rem);
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.prompt-model-sheet__option {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-height: 48px;
+  padding: 0.55rem 0.75rem;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: rgb(var(--color-ink));
+  font-size: 13px;
+  font-weight: 580;
+  cursor: pointer;
+  text-align: left;
+  transition: background-color 140ms var(--motion-soft), border-color 140ms var(--motion-soft);
+}
+
+.prompt-model-sheet__option:hover:not(:disabled) {
+  background: rgb(var(--color-ivory) / 0.55);
+  border-color: rgb(var(--color-line) / 0.4);
+}
+
+.prompt-model-sheet__option--active {
+  background: rgb(var(--color-forest) / 0.08);
+  border-color: rgb(var(--color-forest) / 0.3);
+}
+
+.prompt-model-sheet__option--disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.prompt-model-sheet__option-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prompt-model-sheet__option-hint {
+  flex: 0 0 auto;
+  font-size: 10px;
+  color: rgb(var(--color-muted));
+  font-weight: 500;
+}
+
+.prompt-model-sheet__option-check {
+  flex: 0 0 auto;
+  color: rgb(var(--color-forest));
+}
+
+.model-sheet-enter-from {
+  opacity: 0;
+}
+.model-sheet-enter-from .prompt-model-sheet {
+  transform: translateY(100%);
+}
+.model-sheet-leave-to {
+  opacity: 0;
+}
+.model-sheet-leave-to .prompt-model-sheet {
+  transform: translateY(100%);
+}
+.model-sheet-enter-active,
+.model-sheet-leave-active {
+  transition: opacity 0.22s ease-out;
+}
+.model-sheet-enter-active .prompt-model-sheet,
+.model-sheet-leave-active .prompt-model-sheet {
+  transition: transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* ── Advanced features popup (centered) ── */
+.prompt-adv-popup-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  background: rgb(var(--color-ink) / 0.3);
+}
+
+.prompt-adv-popup {
+  width: min(320px, 85vw);
+  border-radius: 14px;
+  background: rgb(var(--color-vellum));
+  border: 1px solid rgb(var(--color-line) / 0.5);
+  box-shadow: 0 8px 32px -12px rgb(var(--color-ink) / 0.3);
+  overflow: hidden;
+}
+
+.prompt-adv-popup__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.85rem 1rem 0.65rem;
+  border-bottom: 1px solid rgb(var(--color-line) / 0.35);
+}
+
+.prompt-adv-popup__title {
+  font-size: 13px;
+  font-weight: 680;
+  color: rgb(var(--color-ink));
+}
+
+.prompt-adv-popup__close {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: 1px solid rgb(var(--color-line) / 0.4);
+  background: rgb(var(--color-ivory) / 0.5);
+  color: rgb(var(--color-muted));
+  cursor: pointer;
+}
+
+.prompt-adv-popup__close:hover {
+  background: rgb(var(--color-paper));
+  color: rgb(var(--color-ink));
+}
+
+.prompt-adv-popup__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.5rem;
+}
+
+.prompt-adv-popup__btn {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-height: 44px;
+  padding: 0.5rem 0.75rem;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: rgb(var(--color-ink));
+  font-size: 13px;
+  font-weight: 580;
+  cursor: pointer;
+  text-align: left;
+  transition: background-color 140ms var(--motion-soft), border-color 140ms var(--motion-soft);
+}
+
+.prompt-adv-popup__btn:hover {
+  background: rgb(var(--color-ivory) / 0.55);
+  border-color: rgb(var(--color-line) / 0.35);
+}
+
+.adv-popup-enter-from,
+.adv-popup-leave-to {
+  opacity: 0;
+}
+.adv-popup-enter-active,
+.adv-popup-leave-active {
+  transition: opacity 0.2s ease-out;
+}
+.adv-popup-enter-from .prompt-adv-popup,
+.adv-popup-leave-to .prompt-adv-popup {
+  transform: scale(0.95);
+}
+.adv-popup-enter-active .prompt-adv-popup,
+.adv-popup-leave-active .prompt-adv-popup {
+  transition: transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 </style>

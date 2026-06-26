@@ -618,10 +618,7 @@ onBeforeUnmount(() => {
                 :class="!provider.isConfigured.value && 'ring-1 ring-ochre/30'"
               >
                 <div class="mb-3 flex items-center justify-between gap-2">
-                  <div class="flex flex-col">
-                    <span class="display-eyebrow text-[10px]">{{ i18n.t('settings.provider.eyebrow') }}</span>
-                    <span class="mt-1 text-[13px] font-medium text-ink">{{ i18n.t('settings.provider.label') }}</span>
-                  </div>
+                  <span class="text-[13px] font-medium text-ink">{{ i18n.t('settings.provider.label') }}</span>
                   <span
                     class="inline-flex items-center gap-1 rounded-full px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em]"
                     :class="provider.isConfigured.value
@@ -633,21 +630,10 @@ onBeforeUnmount(() => {
                   </span>
                 </div>
 
-                <p class="mb-3 text-[11px] leading-[1.6] text-muted">
-                  {{ i18n.t('settings.provider.note') }}
-                </p>
-
-                <div class="mb-3 flex items-start gap-2 rounded-xl border border-line/40 bg-ivory/40 px-3 py-2 text-[11px] leading-[1.55] backdrop-blur-sm">
-                  <span class="mt-0.5 inline-grid h-5 w-5 place-items-center rounded-full bg-forest/12 text-forest">
-                    <Icon name="share" :size="11" />
-                  </span>
-                  <span class="min-w-0 flex-1">
-                    <span class="font-medium text-ink">{{ i18n.t('settings.provider.proxyOn') }}</span>
-                    <span class="ml-1 text-muted">{{ i18n.t('settings.provider.proxyOnHint') }}</span>
-                    <span class="mt-0.5 block font-mono text-[10px] uppercase tracking-[0.16em] text-muted/80">
-                      proxy.likeyou.qzz.io
-                    </span>
-                  </span>
+                <div v-if="provider.isConfigured.value" class="mb-3 flex items-center gap-2 rounded-lg border border-forest/30 bg-forest/8 px-3 py-2 text-[11px]">
+                  <Icon name="share" :size="11" class="text-forest" />
+                  <span class="text-muted">{{ i18n.t('settings.provider.proxyOn') }}</span>
+                  <span class="font-mono text-[10px] text-forest">proxy.likeyou.qzz.io</span>
                 </div>
 
                 <div class="space-y-3">
@@ -666,9 +652,6 @@ onBeforeUnmount(() => {
                       spellcheck="false"
                       maxlength="200"
                     />
-                    <p class="mt-1 text-[10px] leading-[1.5] text-muted">
-                      {{ i18n.t('settings.provider.baseUrlHint') }}
-                    </p>
                   </div>
 
                   <div>
@@ -700,7 +683,7 @@ onBeforeUnmount(() => {
                   </div>
                 </div>
 
-                <div class="mt-3 flex flex-wrap items-center justify-between gap-2">
+                <div class="mt-3 flex flex-wrap items-center gap-2">
                   <button
                     type="button"
                     class="btn-quiet text-[11px]"
@@ -756,12 +739,12 @@ onBeforeUnmount(() => {
                   </p>
                 </div>
 
-                <div class="settings-capability-map">
-                  <div class="settings-capability-map__head">
-                    <span class="display-eyebrow text-[10px]">{{ i18n.t('settings.capability.eyebrow') }}</span>
-                    <span>{{ i18n.t('settings.capability.body') }}</span>
-                  </div>
-                  <div class="settings-capability-grid" role="list">
+                <details class="settings-collapsible">
+                <summary class="settings-collapsible__summary">
+                  <span class="display-eyebrow text-[10px]">{{ i18n.t('settings.capability.eyebrow') }}</span>
+                  <Icon name="chevronDown" :size="14" class="settings-collapsible__chevron" />
+                </summary>
+                <div class="settings-capability-grid" role="list">
                     <div
                       v-for="tile in providerCapabilityTiles"
                       :key="tile.key"
@@ -779,51 +762,51 @@ onBeforeUnmount(() => {
                       <strong class="settings-capability-tile__state">{{ tile.stateLabel }}</strong>
                     </div>
                   </div>
-                </div>
+                </details>
               </section>
 
               <details class="settings-advanced surface-1 p-4">
                 <summary class="settings-advanced__summary">
                   <span class="settings-advanced__summary-copy">
-                    <span class="display-eyebrow text-[10px]">{{ i18n.t('settings.presets.eyebrow') }}</span>
-                    <span class="mt-1 text-[13px] font-medium text-ink">{{ i18n.t('settings.presets.title') }}</span>
-                    <span class="mt-1 text-[11px] leading-[1.5] text-muted">{{ i18n.t('settings.presets.body') }}</span>
+                    <span class="text-[13px] font-medium text-ink">{{ i18n.t('settings.presets.title') }}</span>
                   </span>
                   <Icon name="chevronDown" :size="14" class="settings-advanced__chevron" />
                 </summary>
 
                 <div class="settings-advanced__body">
-                  <section class="flex flex-wrap items-center gap-2">
+                  <section class="flex flex-col gap-2">
                     <input
                       v-model="newPresetLabel"
-                      class="field-input min-w-0 flex-1 font-mono text-[12px]"
+                      class="field-input w-full font-mono text-[12px]"
                       :placeholder="i18n.t('settings.presets.savePlaceholder')"
                       maxlength="60"
                       autocomplete="off"
                       spellcheck="false"
                     />
-                    <button
-                      type="button"
-                      class="btn-quiet text-[11px]"
-                      :disabled="!provider.state.baseUrl || !provider.state.apiKey"
-                      @click="handleSaveCurrentPreset"
-                    >
-                      <Icon name="bookmark" :size="12" />
-                      {{ i18n.t('settings.presets.save') }}
-                    </button>
-                    <button
-                      type="button"
-                      class="btn-quiet text-[11px]"
-                      :disabled="!providerPresets.length || speedTestRunning"
-                      @click="handleTestAllPresets"
-                    >
-                      <Icon
-                        :name="speedTestRunning ? 'refresh' : 'pulse'"
-                        :size="12"
-                        :class="speedTestRunning ? 'animate-spin' : ''"
-                      />
-                      {{ speedTestRunning ? i18n.t('settings.speedTest.running') : i18n.t('settings.presets.testAll') }}
-                    </button>
+                    <div class="flex items-center gap-2">
+                      <button
+                        type="button"
+                        class="btn-quiet text-[11px]"
+                        :disabled="!provider.state.baseUrl || !provider.state.apiKey"
+                        @click="handleSaveCurrentPreset"
+                      >
+                        <Icon name="bookmark" :size="12" />
+                        {{ i18n.t('settings.presets.save') }}
+                      </button>
+                      <button
+                        type="button"
+                        class="btn-quiet text-[11px]"
+                        :disabled="!providerPresets.length || speedTestRunning"
+                        @click="handleTestAllPresets"
+                      >
+                        <Icon
+                          :name="speedTestRunning ? 'refresh' : 'pulse'"
+                          :size="12"
+                          :class="speedTestRunning ? 'animate-spin' : ''"
+                        />
+                        {{ speedTestRunning ? i18n.t('settings.speedTest.running') : i18n.t('settings.presets.testAll') }}
+                      </button>
+                    </div>
                   </section>
 
                   <p
@@ -948,18 +931,15 @@ onBeforeUnmount(() => {
                 </div>
               </details>
 
-              <section class="surface-1 p-4">
-                <div class="mb-3 flex items-center justify-between gap-2">
-                  <div class="flex flex-col">
-                    <span class="display-eyebrow text-[10px]">{{ i18n.t('settings.image.eyebrow') }}</span>
-                    <span class="mt-1 text-[13px] font-medium text-ink">{{ i18n.t('settings.image.title') }}</span>
-                  </div>
-                </div>
+              <details class="settings-advanced surface-1 p-4">
+                <summary class="settings-advanced__summary">
+                  <span class="settings-advanced__summary-copy">
+                    <span class="text-[13px] font-medium text-ink">{{ i18n.t('settings.image.title') }}</span>
+                  </span>
+                  <Icon name="chevronDown" :size="14" class="settings-advanced__chevron" />
+                </summary>
 
-                <p class="mb-3 text-[11px] leading-[1.6] text-muted">
-                  {{ i18n.t('settings.image.body') }}
-                </p>
-
+                <div class="settings-advanced__body">
                 <div class="settings-grid">
                   <div class="settings-field settings-field--wide">
                     <label class="label mb-2 inline-flex items-center gap-1.5" for="set-size">
@@ -1114,18 +1094,11 @@ onBeforeUnmount(() => {
                     </span>
                   </label>
                 </div>
-              </section>
+                </div>
+              </details>
 
               <section class="surface-1 p-4">
-                <div class="mb-3 flex flex-col">
-                  <span class="display-eyebrow text-[10px]">{{ i18n.t('settings.display.eyebrow') }}</span>
-                  <span class="mt-1 text-[13px] font-medium text-ink">{{ i18n.t('settings.display.title') }}</span>
-                  <span class="mt-1 text-[11px] leading-[1.5] text-muted">{{ i18n.t('settings.display.body') }}</span>
-                </div>
-                <label class="label mb-2 inline-flex items-center gap-1.5" for="set-locale">
-                  <Icon name="command" :size="12" />
-                  <span>{{ i18n.t('settings.locale') }}</span>
-                </label>
+                <span class="mb-2 block text-[13px] font-medium text-ink">{{ i18n.t('settings.display.title') }}</span>
                 <Select
                   id="set-locale"
                   :model-value="i18n.preference.value"
@@ -1133,19 +1106,12 @@ onBeforeUnmount(() => {
                   :aria-label="i18n.t('settings.locale.label')"
                   @update:model-value="(value) => i18n.setLocale(value)"
                 />
-                <p class="mt-1 text-[10px] leading-[1.5] text-muted">
-                  {{ i18n.preference.value === 'auto'
-                      ? i18n.t('settings.locale.auto', { name: i18n.t(`locale.${i18n.locale.value}`) })
-                      : i18n.t('settings.locale.locked') }}
-                </p>
               </section>
 
               <details class="settings-advanced surface-1 p-4">
                 <summary class="settings-advanced__summary">
                   <span class="settings-advanced__summary-copy">
-                    <span class="display-eyebrow text-[10px]">{{ i18n.t('settings.advanced.eyebrow') }}</span>
-                    <span class="mt-1 text-[13px] font-medium text-ink">{{ i18n.t('settings.advanced.title') }}</span>
-                    <span class="mt-1 text-[11px] leading-[1.5] text-muted">{{ i18n.t('settings.advanced.body') }}</span>
+                    <span class="text-[13px] font-medium text-ink">{{ i18n.t('settings.advanced.title') }}</span>
                   </span>
                   <Icon name="chevronDown" :size="14" class="settings-advanced__chevron" />
                 </summary>
@@ -1216,20 +1182,9 @@ onBeforeUnmount(() => {
                   </section>
 
                   <section>
-                    <div class="mb-3 flex items-center justify-between gap-2">
-                      <div class="flex flex-col">
-                        <span class="display-eyebrow text-[10px]">{{ i18n.t('settings.resolution.eyebrow') }}</span>
-                        <span class="mt-1 text-[13px] font-medium text-ink">
-                          {{ resolutionSummary }}
-                        </span>
-                      </div>
-                    </div>
+                    <span class="mb-2 block text-[13px] font-medium text-ink">{{ resolutionSummary }}</span>
 
-                    <p class="mb-3 text-[11px] leading-[1.6] text-muted">
-                      {{ i18n.t('settings.resolution.body') }}
-                    </p>
-
-                    <div class="space-y-2">
+                    <div class="settings-resolution-grid">
                       <div class="settings-resolution-row">
                         <div class="flex min-w-0 items-center gap-2">
                           <Icon name="check" :size="12" class="text-muted" />
@@ -1274,10 +1229,6 @@ onBeforeUnmount(() => {
                         {{ badge }}
                       </span>
                     </div>
-
-                    <p class="mt-2 text-[10px] leading-[1.5] text-muted">
-                      {{ i18n.t('settings.resolution.note') }}
-                    </p>
                   </section>
                 </div>
               </details>
@@ -1343,20 +1294,37 @@ onBeforeUnmount(() => {
   scrollbar-gutter: stable;
 }
 
-.settings-capability-map {
-  display: grid;
-  gap: 0.65rem;
-  margin-top: 0.9rem;
-  padding-top: 0.9rem;
-  border-top: 1px solid rgb(var(--color-line) / 0.48);
+.settings-collapsible {
+  overflow: hidden;
 }
 
-.settings-capability-map__head {
-  display: grid;
-  gap: 0.25rem;
+.settings-collapsible__summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  min-height: 36px;
+  cursor: pointer;
+  padding-top: 0.75rem;
+  margin-top: 0.75rem;
+  border-top: 1px solid rgb(var(--color-line) / 0.48);
   color: rgb(var(--color-muted));
-  font-size: 10.5px;
-  line-height: 1.45;
+}
+
+.settings-collapsible__summary:focus-visible {
+  outline: none;
+  border-radius: var(--radius-field);
+  box-shadow: var(--focus-ring);
+}
+
+.settings-collapsible__chevron {
+  flex: 0 0 auto;
+  color: rgb(var(--color-muted));
+  transition: transform 180ms var(--motion-soft);
+}
+
+.settings-collapsible[open] .settings-collapsible__chevron {
+  transform: rotate(180deg);
 }
 
 .settings-capability-grid {
@@ -1731,6 +1699,12 @@ onBeforeUnmount(() => {
   gap: 0.5rem;
 }
 
+.settings-resolution-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
 .settings-seed-roll:focus-visible {
   outline: none;
   box-shadow: var(--focus-ring);
@@ -1738,20 +1712,24 @@ onBeforeUnmount(() => {
 
 @media (max-width: 639px) {
   .mobile-sheet {
-    padding-top: max(env(safe-area-inset-top, 0px), 0.5rem);
+    align-items: stretch;
+    padding: 0;
+  }
+
+  .scrim {
+    display: none;
   }
 
   .dialog-shell {
-    max-height: calc(var(--mobile-viewport-height, 100dvh) - max(env(safe-area-inset-top, 0px), 0.5rem));
-    border-bottom: 0;
-    border-top-left-radius: 16px;
-    border-top-right-radius: 16px;
-    border-bottom-left-radius: 0;
-    border-bottom-right-radius: 0;
+    max-height: var(--mobile-viewport-height, 100dvh);
+    height: var(--mobile-viewport-height, 100dvh);
+    border-radius: 0;
+    border: 0;
   }
 
   .dialog-shell__header {
     padding: 1rem 1rem 0.85rem;
+    padding-top: calc(env(safe-area-inset-top, 0px) + 0.75rem);
   }
 
   .dialog-shell__body {
@@ -1782,7 +1760,7 @@ onBeforeUnmount(() => {
   }
 
   .settings-capability-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .settings-grid {
@@ -1812,14 +1790,7 @@ onBeforeUnmount(() => {
   }
 
   .settings-resolution-row {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: 0.55rem;
-  }
-
-  .settings-resolution-row .res-toggle {
-    min-height: 44px;
-    justify-content: space-between;
+    padding: 0.45rem 0.6rem;
   }
 
   .settings-seed-roll {
