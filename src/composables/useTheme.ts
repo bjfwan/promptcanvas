@@ -30,10 +30,11 @@ function applyTheme(value: ThemeMode) {
   root.classList.toggle('theme-night', value === 'night')
   root.dataset.theme = value
 
-  const meta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')
-  if (meta) {
-    meta.content = value === 'night' ? '#121413' : '#f4f0e7'
-  }
+  const metas = document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]')
+  const themeColor = value === 'night' ? '#191f1e' : '#fcfdfb'
+  metas.forEach((meta) => {
+    meta.content = themeColor
+  })
 }
 
 function startThemeTransition() {

@@ -605,6 +605,15 @@ watch(
 </template>
 
 <style scoped>
+/* Lift the composer above the on-screen keyboard on touch viewports that hit
+ * the desktop breakpoint (e.g. iPad landscape). Mirrors ChatDock's GPU-only
+ * translate so the textarea + send stay reachable. No effect when the keyboard
+ * is closed (--keyboard-inset defaults to 0). */
+.prompt-composer {
+  transform: translate3d(0, calc(-1 * var(--keyboard-inset, 0px)), 0);
+  transition: transform 120ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
 .prompt-reference-strip {
   display: flex;
   align-items: center;
@@ -723,7 +732,7 @@ watch(
 
 .composer-cta {
   margin-inline: -1.25rem;
-  padding: 0.85rem 1.25rem max(env(safe-area-inset-bottom), 0.85rem);
+  padding: 0.85rem 1.25rem max(env(safe-area-inset-bottom, 0px), 0.85rem);
   background:
     linear-gradient(180deg, rgb(var(--color-ivory) / 0) 0%, rgb(var(--color-ivory) / 0.7) 28%, rgb(var(--color-vellum) / 0.96) 100%);
   backdrop-filter: blur(10px) saturate(140%);

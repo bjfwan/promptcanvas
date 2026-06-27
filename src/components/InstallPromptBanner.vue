@@ -40,6 +40,16 @@ const RESHOW_MS = 7 * 24 * 60 * 60 * 1000
 const FALLBACK_DELAY_MS = 10_000
 
 const visible = ref(false)
+const keyboardOpen = ref(false)
+let keyboardObserver: MutationObserver | undefined
+
+function readKeyboardInset(): number {
+  if (typeof document === 'undefined') return 0
+  const raw = getComputedStyle(document.documentElement).getPropertyValue('--keyboard-inset').trim()
+  if (!raw) return 0
+  const n = parseFloat(raw)
+  return Number.isFinite(n) ? n : 0
+}
 
 function isStandalone(): boolean {
   if (typeof window === 'undefined') return false
@@ -104,6 +114,12 @@ onMounted(() => {
     fallbackTimer = undefined
     maybeShow()
   }, FALLBACK_DELAY_MS)
+
+  keyboardOpen.value = readKeyboardInset() > 0
+  keyboardObserver = new MutationObserver(() => {
+    keyboardOpen.value = readKeyboardInset() > 0
+  })
+  keyboardObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['style'] })
 })
 
 watch(
@@ -120,6 +136,8 @@ watch(
 
 onBeforeUnmount(() => {
   if (fallbackTimer !== undefined) window.clearTimeout(fallbackTimer)
+  keyboardObserver?.disconnect()
+  keyboardObserver = undefined
 })
 
 function handleInstall() {
@@ -132,7 +150,7 @@ function handleInstall() {
   <Teleport to="body">
     <Transition name="install-pop">
       <aside
-        v-if="visible"
+        v-if="visible && !keyboardOpen"
         class="install-banner"
         role="dialog"
         aria-live="polite"

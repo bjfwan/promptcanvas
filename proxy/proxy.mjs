@@ -18,29 +18,11 @@ const HOP_BY_HOP = new Set([
 const FORBIDDEN_FORWARD = new Set([
   ...HOP_BY_HOP,
   'x-upstream-base',
-  'x-pc-identity',
-  'x-pc-builtin',
   'origin',
   'referer',
   'cookie',
   'user-agent',
 ])
-
-// Stripped only when BUILTIN mode is active (Authorization is replaced with env key).
-const FORBIDDEN_FORWARD_BUILTIN_ONLY = new Set([
-  'authorization',
-])
-const IDENTITY_PROFILES = {
-  kilocode: {
-    'user-agent': 'Kilo-Code/4.0.0',
-    'http-referer': 'https://kilocode.ai',
-    'x-title': 'Kilo Code',
-  },
-}
-
-const BUILTIN_BASE_URL = String(process.env.PC_BUILTIN_BASE_URL || '').trim()
-const BUILTIN_API_KEY = String(process.env.PC_BUILTIN_API_KEY || '').trim()
-const BUILTIN_IDENTITY = String(process.env.PC_BUILTIN_IDENTITY || '').trim().toLowerCase()
 
 const BASE_CORS_HEADERS = {
   'access-control-allow-origin': '*',
@@ -74,49 +56,20 @@ const server = http.createServer(async (req, res) => {
       ok: true,
       name: 'promptcanvas-proxy',
       version: VERSION,
-      builtinReady: Boolean(BUILTIN_BASE_URL && BUILTIN_API_KEY),
       timestamp: new Date().toISOString(),
     })
     return
   }
 
-  // ── BUILTIN mode ──
-  // X-Pc-Builtin: 1 → use the project-paid env-stored AI rewrite key.
-  // Restricted to /chat/completions to prevent abuse via image generation.
-  const isBuiltin = String(req.headers['x-pc-builtin'] || '').trim() === '1'
-  let upstreamBaseValue
-  if (isBuiltin) {
-    if (url !== '/chat/completions' && url !== '/v1/chat/completions') {
-      jsonResponse(res, 403, {
-        error: {
-          code: 'BUILTIN_PATH_NOT_ALLOWED',
-          message: '内置改写凭据仅允许用于 /chat/completions',
-        },
-      })
-      return
-    }
-    if (!BUILTIN_BASE_URL || !BUILTIN_API_KEY) {
-      jsonResponse(res, 503, {
-        error: {
-          code: 'BUILTIN_NOT_CONFIGURED',
-          message: '反代未配置内置改写凭据（PC_BUILTIN_BASE_URL / PC_BUILTIN_API_KEY）',
-        },
-      })
-      return
-    }
-    upstreamBaseValue = BUILTIN_BASE_URL
-  } else {
-    const headerValue = req.headers['x-upstream-base']
-    if (typeof headerValue !== 'string' || !headerValue.trim()) {
-      jsonResponse(res, 400, {
-        error: {
-          code: 'MISSING_UPSTREAM',
-          message: '请求头缺少 X-Upstream-Base，前端「设置」里填代理 URL 后，会自动携带这个头',
-        },
-      })
-      return
-    }
-    upstreamBaseValue = headerValue
+  const upstreamBaseValue = req.headers['x-upstream-base']
+  if (typeof upstreamBaseValue !== 'string' || !upstreamBaseValue.trim()) {
+    jsonResponse(res, 400, {
+      error: {
+        code: 'MISSING_UPSTREAM',
+        message: '请求头缺少 X-Upstream-Base，前端「设置」里填代理 URL 后，会自动携带这个头',
+      },
+    })
+    return
   }
 
   const requestId = String(req.headers['x-pc-request-id'] || '').trim()
@@ -143,29 +96,10 @@ const server = http.createServer(async (req, res) => {
   for (const [name, value] of Object.entries(req.headers)) {
     const lower = name.toLowerCase()
     if (FORBIDDEN_FORWARD.has(lower)) continue
-    if (isBuiltin && FORBIDDEN_FORWARD_BUILTIN_ONLY.has(lower)) continue
     if (Array.isArray(value)) headers[name] = value.join(',')
     else if (value !== undefined) headers[name] = String(value)
   }
   headers.host = upstreamUrl.host
-
-  if (isBuiltin) {
-    headers.authorization = `Bearer ${BUILTIN_API_KEY}`
-    const builtinProfile = BUILTIN_IDENTITY && IDENTITY_PROFILES[BUILTIN_IDENTITY]
-    if (builtinProfile) {
-      for (const [headerName, headerValue] of Object.entries(builtinProfile)) {
-        headers[headerName] = headerValue
-      }
-    }
-  } else {
-    const identityHint = String(req.headers['x-pc-identity'] || '').trim().toLowerCase()
-    const profile = identityHint && IDENTITY_PROFILES[identityHint]
-    if (profile) {
-      for (const [headerName, headerValue] of Object.entries(profile)) {
-        headers[headerName] = headerValue
-      }
-    }
-  }
 
   let body
   if (req.method !== 'GET' && req.method !== 'HEAD') {

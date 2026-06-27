@@ -350,7 +350,7 @@ onBeforeUnmount(() => {
   }
 
   .dialog-shell__header {
-    padding: 1.1rem 1rem 0.85rem;
+    padding: 1.1rem max(env(safe-area-inset-right, 0px), 1rem) 0.85rem max(env(safe-area-inset-left, 0px), 1rem);
   }
 
   .dialog-shell__body {

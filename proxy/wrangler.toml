@@ -1,4 +1,24 @@
 name = "promptcanvas-proxy"
 main = "worker.mjs"
-compatibility_date = "2025-01-01"
+compatibility_date = "2025-03-01"
 workers_dev = true
+
+# PairCode 阶段3-B 配置
+[vars]
+PC_PAIR_TTL_MS = "300000"
+PC_PAIR_MAX_ATTEMPTS = "3"
+PC_PAIR_RATE_LIMIT_INIT = "3"
+PC_PAIR_RATE_LIMIT_JOIN = "5"
+PC_PAIR_RATE_LIMIT_WINDOW_MS = "600000"
+
+[[kv_namespaces]]
+binding = "PC_PAIR_KV"
+id = "f837805aa50f4eb796d2a4928a17ef32"
+
+[[durable_objects.bindings]]
+name = "PC_PAIR_DO"
+class_name = "PairSession"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["PairSession"]

@@ -7,8 +7,20 @@ const KEYBOARD_DETECT_THRESHOLD = 88
 const KEYBOARD_HYSTERESIS = 24
 const KEYBOARD_VISIBLE_RATIO = 0.82
 // Stabilize quick bursts of resize/scroll events from visualViewport — only
-// commit changes when the value stops moving for ~60ms.
-const COMMIT_DELAY_MS = 60
+// commit changes when the value stops moving for ~16ms.
+const COMMIT_DELAY_MS = 16
+
+// Same breakpoint as App.vue's isDesktop = useMediaQuery('(min-width: 1024px)').
+// Kept on matchMedia (CSS px) so the JS gate agrees with the CSS-driven layout
+// switch even when page zoom shifts layout px away from CSS px.
+const DESKTOP_BREAKPOINT = '(min-width: 1024px)'
+
+let desktopMediaList: MediaQueryList | null = null
+function isDesktopViewport(): boolean {
+  if (typeof window === 'undefined') return false
+  if (!desktopMediaList) desktopMediaList = window.matchMedia(DESKTOP_BREAKPOINT)
+  return desktopMediaList.matches
+}
 
 export function useMobileViewport() {
   const viewportHeight = ref<number | null>(null)
@@ -55,15 +67,6 @@ export function useMobileViewport() {
   function sync() {
     if (typeof window === 'undefined') return
 
-    if (window.innerWidth >= 1024) {
-      pendingHeight = null
-      pendingInset = 0
-      layoutHeightBaseline = 0
-      lastViewportWidth = 0
-      commitNow()
-      return
-    }
-
     const visualViewport = window.visualViewport
     const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0
     const layoutHeight = window.innerHeight || document.documentElement.clientHeight || 0
@@ -82,7 +85,12 @@ export function useMobileViewport() {
     const keyboardLikely = rawInset > KEYBOARD_DETECT_THRESHOLD && visualH < baseHeight * KEYBOARD_VISIBLE_RATIO
     const detectedInset = keyboardLikely ? Math.round(rawInset) : 0
 
-    pendingHeight = nextViewportHeight > 0 ? nextViewportHeight : null
+    // Desktop (incl. iPad landscape) now runs keyboard detection too, so
+    // PromptComposer can lift itself via --keyboard-inset. Desktop must NOT
+    // publish --mobile-viewport-height: the four dialogs that consume it fall
+    // back to 100dvh, and a px value here would shrink them on real desktops.
+    const desktopViewport = isDesktopViewport()
+    pendingHeight = desktopViewport ? null : (nextViewportHeight > 0 ? nextViewportHeight : null)
 
     // Apply hysteresis: small fluctuations don't trigger updates, but state
     // transitions (open ↔ close) always pass through.

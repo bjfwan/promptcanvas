@@ -81,7 +81,7 @@ onBeforeUnmount(() => {
 <template>
   <header ref="headerRef" class="app-header sticky top-0 z-header pt-[env(safe-area-inset-top)]">
     <div
-      class="mx-auto flex w-full max-w-[1560px] items-center justify-between gap-2 px-3 py-2.5 sm:gap-4 sm:px-6 lg:px-10 lg:py-4"
+      class="mx-auto flex w-full max-w-[1560px] items-center justify-between gap-2 py-2.5 pl-[max(env(safe-area-inset-left,0px),0.75rem)] pr-[max(env(safe-area-inset-right,0px),0.75rem)] sm:gap-4 sm:pl-[max(env(safe-area-inset-left,0px),1.5rem)] sm:pr-[max(env(safe-area-inset-right,0px),1.5rem)] lg:pl-[max(env(safe-area-inset-left,0px),2.5rem)] lg:pr-[max(env(safe-area-inset-right,0px),2.5rem)] lg:py-4"
     >
       <div class="flex min-w-0 items-center gap-2.5 sm:gap-3">
         <span class="brand-mark" aria-hidden="true">

@@ -966,7 +966,7 @@ defineExpose({ focusInput })
   z-index: 45; /* matches Tailwind z-dock */
   pointer-events: none;
   /* GPU-only animation when the on-screen keyboard pushes the dock up */
-  transition: transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  transition: transform 120ms cubic-bezier(0.2, 0.8, 0.2, 1);
   will-change: transform;
   contain: layout paint style;
 }
@@ -995,6 +995,8 @@ defineExpose({ focusInput })
   gap: 7px;
   background: linear-gradient(to top, rgb(var(--color-paper)) 60%, rgb(var(--color-paper) / 0));
   overflow: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
 }
 
@@ -1684,7 +1686,7 @@ defineExpose({ focusInput })
  * ------------------------------------------------------------------ */
 
 .chat-dock__shell {
-  order: 1;
+  order: 6;
   position: relative;
   display: flex;
   flex-direction: row;
@@ -2121,7 +2123,7 @@ defineExpose({ focusInput })
 .chat-dock[data-keyboard-open="true"] .chat-dock__inner {
   gap: 6px;
   padding-top: 6px;
-  padding-bottom: max(env(safe-area-inset-bottom, 0px), 6px);
+  padding-bottom: max(env(safe-area-inset-bottom, 0px), 12px);
 }
 
 .chat-dock[data-keyboard-open="true"] .chat-dock__veil {

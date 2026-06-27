@@ -2196,7 +2196,9 @@ watch(sw.updateAvailable, (available) => {
 .desktop-workbench--tool {
   align-items: stretch;
   height: calc(100vh - 72px);
+  height: calc(100dvh - 72px);
   max-height: calc(100vh - 72px);
+  max-height: calc(100dvh - 72px);
   min-height: 0;
   overflow: hidden;
 }

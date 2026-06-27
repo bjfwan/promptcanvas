@@ -5,6 +5,7 @@ import Select, { type SelectOption } from './Select.vue'
 import { qualityOptions, sizeOptions } from '../presets'
 import { useProviderConfig } from '../composables/useProviderConfig'
 import { useProviderPresets } from '../composables/useProviderPresets'
+import { usePairTransfer } from '../composables/usePairTransfer'
 import { useSpeedTest } from '../composables/useSpeedTest'
 import { useDiscoveredModels, detectCapabilities } from '../composables/useDiscoveredModels'
 import { useResolutionSupport } from '../composables/useResolutionSupport'
@@ -74,6 +75,83 @@ const {
   rankedResults: rankedSpeedResults,
 } = useSpeedTest()
 const newPresetLabel = ref('')
+
+// PairCode · 跨设备传输
+const pair = usePairTransfer()
+// 解构给模板使用（顶层 ref 在模板里自动解包）
+const { phase: pairPhase, shortCode: pairShortCode, errorCode: pairErrorCode } = pair
+const pairTab = ref<'send' | 'receive'>('send')
+const pairSendPassphrase = ref('')
+const pairReceiveCode = ref('')
+const pairReceivePassphrase = ref('')
+const pairCodeCopied = ref(false)
+
+const pairBusy = computed(() =>
+  ['initiating', 'waiting', 'sending'].includes(pair.phase.value),
+)
+
+const pairPhaseLabel = computed(() => {
+  const p = pair.phase.value
+  const tab = pairTab.value
+  if (p === 'initiating') return i18n.t('settings.pair.phaseInitiating')
+  if (p === 'waiting')
+    return tab === 'send'
+      ? i18n.t('settings.pair.phaseWaitingSend')
+      : i18n.t('settings.pair.phaseWaitingReceive')
+  if (p === 'sending') return i18n.t('settings.pair.phaseSending')
+  if (p === 'done')
+    return tab === 'send'
+      ? i18n.t('settings.pair.phaseDoneSend')
+      : i18n.t('settings.pair.phaseDoneReceive')
+  return ''
+})
+
+const pairErrorLabel = computed(() => {
+  switch (pair.errorCode.value) {
+    case 'PASSPHRASE_MISMATCH':
+      return i18n.t('settings.pair.errorPassphrase')
+    case 'EXPIRED':
+      return i18n.t('settings.pair.errorExpired')
+    case 'NETWORK':
+      return i18n.t('settings.pair.errorNetwork')
+    case 'CANCELLED':
+      return i18n.t('settings.pair.errorCancelled')
+    default:
+      return pair.errorCode.value ? i18n.t('settings.pair.errorFailed') : ''
+  }
+})
+
+// 接收方解密成功后，把 bundle 落地为当前 provider 配置（会触发 watch 自动加密入库）
+watch(
+  () => pair.result.value,
+  (bundle) => {
+    if (bundle) provider.update(bundle)
+  },
+)
+
+function handleStartSend() {
+  void pair.startSend(pairSendPassphrase.value, provider.snapshot())
+}
+
+function handleStartReceive() {
+  void pair.startReceive(pairReceiveCode.value, pairReceivePassphrase.value)
+}
+
+function handleCopyPairCode() {
+  if (!pair.shortCode.value) return
+  const clip = navigator.clipboard
+  if (!clip) return
+  void clip.writeText(pair.shortCode.value).then(() => {
+    pairCodeCopied.value = true
+    window.setTimeout(() => {
+      pairCodeCopied.value = false
+    }, 1500)
+  })
+}
+
+function handlePairCancel() {
+  pair.cancel()
+}
 
 function shortBaseUrl(url: string): string {
   const trimmed = (url ?? '').trim()
@@ -580,6 +658,7 @@ useFocusTrap(() => props.open, dialogRef)
 useBodyLock(() => props.open)
 
 onBeforeUnmount(() => {
+  pair.cancel()
   window.removeEventListener('keydown', handleKey, { capture: true })
 })
 </script>
@@ -764,6 +843,168 @@ onBeforeUnmount(() => {
                   </div>
                 </details>
               </section>
+
+              <details class="settings-advanced surface-1 p-4">
+                <summary class="settings-advanced__summary">
+                  <span class="settings-advanced__summary-copy">
+                    <span class="text-[13px] font-medium text-ink">{{ i18n.t('settings.pair.title') }}</span>
+                  </span>
+                  <Icon name="chevronDown" :size="14" class="settings-advanced__chevron" />
+                </summary>
+
+                <div class="settings-advanced__body">
+                  <p class="text-[11px] leading-[1.6] text-muted">{{ i18n.t('settings.pair.body') }}</p>
+
+                  <div class="mt-3 inline-flex rounded-lg border border-line/40 p-0.5 text-[11px]" role="tablist">
+                    <button
+                      type="button"
+                      role="tab"
+                      class="rounded-md px-3 py-1 transition"
+                      :class="pairTab === 'send' ? 'bg-forest/12 text-forest' : 'text-muted hover:text-ink'"
+                      :aria-selected="pairTab === 'send'"
+                      @click="pairTab = 'send'"
+                    >
+                      {{ i18n.t('settings.pair.tabSend') }}
+                    </button>
+                    <button
+                      type="button"
+                      role="tab"
+                      class="rounded-md px-3 py-1 transition"
+                      :class="pairTab === 'receive' ? 'bg-forest/12 text-forest' : 'text-muted hover:text-ink'"
+                      :aria-selected="pairTab === 'receive'"
+                      @click="pairTab = 'receive'"
+                    >
+                      {{ i18n.t('settings.pair.tabReceive') }}
+                    </button>
+                  </div>
+
+                  <!-- 发送方 -->
+                  <div v-if="pairTab === 'send'" class="mt-3 space-y-3">
+                    <div v-if="!pairBusy">
+                      <p class="text-[11px] leading-[1.6] text-muted">{{ i18n.t('settings.pair.hintSend') }}</p>
+                      <label class="label mb-1.5 mt-2 inline-flex items-center gap-1.5" for="pair-send-pass">
+                        <Icon name="lightning" :size="12" />
+                        <span>{{ i18n.t('settings.pair.sendPassphrase') }}</span>
+                      </label>
+                      <input
+                        id="pair-send-pass"
+                        v-model="pairSendPassphrase"
+                        type="text"
+                        class="field-input font-mono text-[12px]"
+                        :placeholder="i18n.t('settings.pair.sendPassphraseHint')"
+                        autocomplete="off"
+                        spellcheck="false"
+                        maxlength="200"
+                      />
+                      <div class="mt-2">
+                        <button
+                          type="button"
+                          class="btn-quiet text-[11px]"
+                          :disabled="!pairSendPassphrase || pairPhase === 'initiating'"
+                          @click="handleStartSend"
+                        >
+                          <Icon name="share" :size="12" />
+                          {{ i18n.t('settings.pair.sendBtn') }}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div v-else class="space-y-2">
+                      <div v-if="pairShortCode" class="rounded-xl border border-line/40 bg-ivory/40 px-3 py-2">
+                        <div class="text-[10px] uppercase tracking-[0.16em] text-muted">{{ i18n.t('settings.pair.sendCodeLabel') }}</div>
+                        <div class="mt-1 flex items-center gap-2">
+                          <span class="font-mono text-lg tracking-[0.3em] text-ink">{{ pairShortCode }}</span>
+                          <button type="button" class="btn-quiet text-[10px]" @click="handleCopyPairCode">
+                            <Icon name="copy" :size="11" />
+                            {{ pairCodeCopied ? i18n.t('toast.copied') : i18n.t('settings.pair.sendCodeCopy') }}
+                          </button>
+                        </div>
+                      </div>
+                      <p class="inline-flex items-center gap-1.5 text-[11px] leading-[1.6] text-muted">
+                        <Icon name="refresh" :size="11" class="animate-spin" />
+                        {{ pairPhaseLabel }}
+                      </p>
+                      <button type="button" class="btn-quiet text-[11px]" @click="handlePairCancel">
+                        <Icon name="close" :size="12" />
+                        {{ i18n.t('settings.pair.cancel') }}
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- 接收方 -->
+                  <div v-else class="mt-3 space-y-3">
+                    <div v-if="!pairBusy">
+                      <p class="text-[11px] leading-[1.6] text-muted">{{ i18n.t('settings.pair.hintReceive') }}</p>
+                      <label class="label mb-1.5 mt-2 inline-flex items-center gap-1.5" for="pair-recv-code">
+                        <Icon name="link" :size="12" />
+                        <span>{{ i18n.t('settings.pair.receiveCode') }}</span>
+                      </label>
+                      <input
+                        id="pair-recv-code"
+                        v-model="pairReceiveCode"
+                        type="text"
+                        class="field-input font-mono text-[12px]"
+                        :placeholder="i18n.t('settings.pair.receiveCodePlaceholder')"
+                        autocomplete="off"
+                        spellcheck="false"
+                        maxlength="20"
+                      />
+                      <label class="label mb-1.5 mt-2 inline-flex items-center gap-1.5" for="pair-recv-pass">
+                        <Icon name="lightning" :size="12" />
+                        <span>{{ i18n.t('settings.pair.receivePassphrase') }}</span>
+                      </label>
+                      <input
+                        id="pair-recv-pass"
+                        v-model="pairReceivePassphrase"
+                        type="text"
+                        class="field-input font-mono text-[12px]"
+                        :placeholder="i18n.t('settings.pair.sendPassphraseHint')"
+                        autocomplete="off"
+                        spellcheck="false"
+                        maxlength="200"
+                      />
+                      <div class="mt-2">
+                        <button
+                          type="button"
+                          class="btn-quiet text-[11px]"
+                          :disabled="!pairReceiveCode || !pairReceivePassphrase || pairPhase === 'initiating'"
+                          @click="handleStartReceive"
+                        >
+                          <Icon name="download" :size="12" />
+                          {{ i18n.t('settings.pair.receiveBtn') }}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div v-else class="space-y-2">
+                      <p class="inline-flex items-center gap-1.5 text-[11px] leading-[1.6] text-muted">
+                        <Icon name="refresh" :size="11" class="animate-spin" />
+                        {{ pairPhaseLabel }}
+                      </p>
+                      <button type="button" class="btn-quiet text-[11px]" @click="handlePairCancel">
+                        <Icon name="close" :size="12" />
+                        {{ i18n.t('settings.pair.cancel') }}
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- 错误提示 -->
+                  <p
+                    v-if="pairPhase === 'error' && pairErrorLabel"
+                    class="mt-3 rounded-xl border border-ochre/30 bg-ochre/8 px-3 py-2 text-[11px] leading-[1.6] text-ochre"
+                  >
+                    {{ pairErrorLabel }}
+                  </p>
+
+                  <!-- 成功提示 -->
+                  <p
+                    v-if="pairPhase === 'done' && pairPhaseLabel"
+                    class="mt-3 rounded-xl border border-forest/30 bg-forest/8 px-3 py-2 text-[11px] leading-[1.6] text-forest"
+                  >
+                    {{ pairPhaseLabel }}
+                  </p>
+                </div>
+              </details>
 
               <details class="settings-advanced surface-1 p-4">
                 <summary class="settings-advanced__summary">
@@ -1728,7 +1969,7 @@ onBeforeUnmount(() => {
   }
 
   .dialog-shell__header {
-    padding: 1rem 1rem 0.85rem;
+    padding: 1rem max(env(safe-area-inset-right, 0px), 1rem) 0.85rem max(env(safe-area-inset-left, 0px), 1rem);
     padding-top: calc(env(safe-area-inset-top, 0px) + 0.75rem);
   }
 
@@ -1739,7 +1980,7 @@ onBeforeUnmount(() => {
   }
 
   .dialog-shell__footer {
-    padding: 0.85rem 1rem calc(env(safe-area-inset-bottom, 0px) + 0.85rem);
+    padding: 0.85rem max(env(safe-area-inset-right, 0px), 1rem) calc(env(safe-area-inset-bottom, 0px) + 0.85rem) max(env(safe-area-inset-left, 0px), 1rem);
   }
 
   .dialog-shell__footer .btn-quiet,
