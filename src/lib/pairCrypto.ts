@@ -16,6 +16,9 @@ const TEXT_ENCODER = new TextEncoder()
 const TEXT_DECODER = new TextDecoder()
 const HKDF_INFO = TEXT_ENCODER.encode('promptcanvas-pair-v1')
 const IV_LENGTH_BYTES = 12
+// 密文封装魔数：worker.mjs 的 validateCiphertext 要求密文以该前缀开头，
+// 作为版本/格式标识，便于将来平滑升级 envelope 格式。
+const CIPHERTEXT_PREFIX = 'pcpair:v1:'
 
 /** Uint8Array → base64 字符串 */
 export function bytesToBase64(bytes: Uint8Array): string {
@@ -98,7 +101,7 @@ export async function encryptBundle(
   const iv = crypto.getRandomValues(new Uint8Array(IV_LENGTH_BYTES))
   const plaintext = TEXT_ENCODER.encode(JSON.stringify(bundle))
   const cipher = await SUBTLE.encrypt({ name: 'AES-GCM', iv }, key, plaintext)
-  return { iv: bytesToBase64(iv), ciphertext: bytesToBase64(new Uint8Array(cipher)) }
+  return { iv: bytesToBase64(iv), ciphertext: `${CIPHERTEXT_PREFIX}${bytesToBase64(new Uint8Array(cipher))}` }
 }
 
 /** 用派生密钥解密，返回 ProviderConfig。GCM tag 校验失败会抛异常 */
@@ -109,7 +112,11 @@ export async function decryptBundle(
 ): Promise<PairPayload> {
   if (!SUBTLE) throw new Error('Web Crypto SubtleCrypto 不可用')
   const iv = base64ToBytes(ivB64)
-  const cipher = base64ToBytes(ciphertextB64)
+  // 容错剥离前缀：兼容带 / 不带 pcpair:v1: 前缀的密文
+  const rawCipher = ciphertextB64.startsWith(CIPHERTEXT_PREFIX)
+    ? ciphertextB64.slice(CIPHERTEXT_PREFIX.length)
+    : ciphertextB64
+  const cipher = base64ToBytes(rawCipher)
   const plain = await SUBTLE.decrypt({ name: 'AES-GCM', iv }, key, cipher)
   return JSON.parse(TEXT_DECODER.decode(plain)) as PairPayload
 }
