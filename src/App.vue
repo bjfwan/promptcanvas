@@ -41,7 +41,6 @@ import { useGenerationFlow } from './composables/useGenerationFlow'
 import { useMediaQuery } from './composables/useMediaQuery'
 import { useShortcutsDialog } from './composables/useShortcutsDialog'
 import { usePromptTree } from './composables/usePromptTree'
-import { useOnboarding } from './composables/useOnboarding'
 import { useServiceWorker } from './composables/useServiceWorker'
 import { useInstallPrompt } from './composables/useInstallPrompt'
 import { useCommandPalette } from './composables/useCommandPalette'
@@ -59,7 +58,6 @@ const loadHistoryDialog = () => import('./components/HistoryDialog.vue')
 const loadLightbox = () => import('./components/Lightbox.vue')
 const loadActivitySidebar = () => import('./components/ActivitySidebar.vue')
 const loadShortcutsDialog = () => import('./components/ShortcutsDialog.vue')
-const loadOnboardingTour = () => import('./components/OnboardingTour.vue')
 
 const PromptComposer = defineAsyncComponent(loadPromptComposer)
 const CanvasStage = defineAsyncComponent(loadCanvasStage)
@@ -70,7 +68,6 @@ const HistoryDialog = defineAsyncComponent(loadHistoryDialog)
 const Lightbox = defineAsyncComponent(loadLightbox)
 const ActivitySidebar = defineAsyncComponent(loadActivitySidebar)
 const ShortcutsDialog = defineAsyncComponent(loadShortcutsDialog)
-const OnboardingTour = defineAsyncComponent(loadOnboardingTour)
 
 const defaultPromptByLocale = {
   'zh-CN': '一只穿着复古宇航服的橘猫，站在月球摄影棚里，像 1970 年代科幻电影海报',
@@ -124,7 +121,6 @@ const { vibrate } = useVibration()
 const settingsOpen = ref(false)
 const historyOpen = ref(false)
 const shortcutsDialog = useShortcutsDialog()
-const onboarding = useOnboarding()
 const sw = useServiceWorker()
 const installPrompt = useInstallPrompt()
 const commandPalette = useCommandPalette()
@@ -141,7 +137,11 @@ const mobileDockHeight = ref(180)
 const promptTree = usePromptTree()
 let suppressTreeAutoCommit = false
 
-const { viewportHeight: mobileViewportHeight, keyboardInset: mobileKeyboardInset } = useMobileViewport()
+const {
+  viewportHeight: mobileViewportHeight,
+  keyboardInset: mobileKeyboardInset,
+  keyboardOpen: mobileKeyboardOpen,
+} = useMobileViewport()
 const isDesktop = useMediaQuery('(min-width: 1024px)')
 const isWideDesktop = useMediaQuery('(min-width: 1280px)')
 const refImages = useReferenceImages({ toast })
@@ -160,15 +160,15 @@ const refreshHealth = health.refresh
 const handleProviderTestResult = health.handleTestResult
 
 const mobileDockKeyboardInset = computed(() => mobileKeyboardInset.value)
+const mobileDockKeyboardOpen = computed(() => mobileKeyboardOpen.value)
 const mobileChatBottomPadding = computed(() => {
   // ChatDock is `position: fixed`, so its height does not push ChatStream.
-  // We still need padding inside the scroll container so the last message
-  // is not hidden behind the dock. Add the keyboard inset only when actually
-  // visible — keeps the resting layout calm.
-  return Math.max(140, mobileDockHeight.value + mobileKeyboardInset.value + 24)
+  // The root shell already shrinks to the visible viewport when the keyboard
+  // opens, so padding must account for the dock height only.
+  return Math.max(140, mobileDockHeight.value + 24)
 })
 const mobileJumpButtonBottom = computed(() => {
-  return Math.max(18, mobileDockHeight.value + mobileKeyboardInset.value + 14)
+  return Math.max(18, mobileDockHeight.value + 14)
 })
 const mobileRootStyle = computed(() => ({
   '--mobile-dock-height': `${mobileDockHeight.value}px`,
@@ -1573,7 +1573,6 @@ function warmLazyComponents() {
       loadLightbox(),
       loadActivitySidebar(),
       loadShortcutsDialog(),
-      loadOnboardingTour(),
     ])
   }
 
@@ -1631,7 +1630,6 @@ onMounted(() => {
     history.value = items
   })
   warmLazyComponents()
-  onboarding.startIfNeeded()
   if (!promptTree.currentNode.value && prompt.value.trim()) {
     promptTree.commit({
       prompt: prompt.value,
@@ -2091,6 +2089,7 @@ watch(sw.updateAvailable, (available) => {
       :health-offline="healthStatus === 'offline'"
       :reference-images="referenceImages"
       :keyboard-inset="mobileDockKeyboardInset"
+      :keyboard-open="mobileDockKeyboardOpen"
       :viewport-height="mobileViewportHeight ?? undefined"
       :model-warning="selectedModelWarning"
       :continuation="pendingContinuation"
@@ -2150,13 +2149,6 @@ watch(sw.updateAvailable, (available) => {
       v-model:open="shortcutsDialog.open.value"
     />
 
-    <OnboardingTour
-      v-if="onboarding.active.value"
-      :active="onboarding.active.value"
-      @finish="onboarding.finish"
-      @dismiss="onboarding.dismiss"
-    />
-
     <Lightbox
       v-if="lightbox.state.open"
       :can-edit-images="canEditImages"
@@ -2173,7 +2165,6 @@ watch(sw.updateAvailable, (available) => {
       @open-history="historyOpen = true"
       @open-settings="settingsOpen = true"
       @open-shortcuts="shortcutsDialog.open.value = true"
-      @open-onboarding="onboarding.start()"
       @toggle-theme="toggleTheme"
       @reset="resetDraft"
       @generate="handleGenerate"
@@ -2763,9 +2754,9 @@ watch(sw.updateAvailable, (available) => {
 
 @media (max-width: 1023px) {
   .app-root {
-    height: 100svh;
-    height: 100dvh;
-    max-height: 100dvh;
+    height: var(--mobile-viewport-height, 100svh);
+    min-height: var(--mobile-viewport-height, 100svh);
+    max-height: var(--mobile-viewport-height, 100svh);
     overflow: hidden;
   }
 

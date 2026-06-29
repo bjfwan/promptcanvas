@@ -29,6 +29,7 @@ interface Props {
   healthOffline: boolean
   referenceImages: ReferenceImageAttachment[]
   keyboardInset?: number
+  keyboardOpen?: boolean
   viewportHeight?: number
   continuation?: ContinuationContext | null
   modelWarning?: string
@@ -40,6 +41,7 @@ interface Props {
 
 const props = withDefaults(defineProps<Props>(), {
   keyboardInset: 0,
+  keyboardOpen: false,
   viewportHeight: 0,
   continuation: null,
   modelWarning: '',
@@ -203,7 +205,7 @@ const promptCountTone = computed(() => {
 
 const hasReferenceImages = computed(() => props.referenceImages.length > 0)
 const canAddReferenceImages = computed(() => props.referenceImages.length < maxReferenceImages)
-const keyboardIsOpen = computed(() => props.keyboardInset > 0)
+const keyboardIsOpen = computed(() => props.keyboardOpen || props.keyboardInset > 0)
 
 // Auto-collapse the advanced modal + model sheet when the on-screen keyboard
 // opens, so the composer stays usable without overlays stealing viewport space.
@@ -241,15 +243,16 @@ function toggleStateLabel(value: boolean, enabled: boolean) {
   return value ? t('settings.toggle.on') : t('settings.toggle.off')
 }
 
-// GPU-only translate when the on-screen keyboard pushes the dock up.
-// Avoids `bottom` transitions which trigger layout work each frame.
+// Manual lift is needed only on browsers that keep the layout viewport stable
+// while shrinking the visual viewport. Android browsers that resize layout get
+// keyboardOpen=true with keyboardInset=0, so this never double-lifts the dock.
 const dockOuterStyle = computed(() => {
   const visibleHeight = Math.max(0, Math.round(props.viewportHeight || 0))
   const keyboardInset = Math.max(0, Math.round(props.keyboardInset || 0))
 
   return {
     transform: keyboardInset ? `translate3d(0, -${keyboardInset}px, 0)` : 'translate3d(0,0,0)',
-    '--chat-dock-visible-height': visibleHeight ? `${visibleHeight}px` : '100dvh',
+    '--chat-dock-visible-height': visibleHeight ? `${visibleHeight}px` : '100svh',
   }
 })
 
@@ -484,7 +487,7 @@ watch(modelSheetOpen, () => {
   syncLayoutSoon()
 })
 watch(
-  () => [props.keyboardInset, props.viewportHeight] as const,
+  () => [props.keyboardInset, props.keyboardOpen, props.viewportHeight] as const,
   () => {
     autosize()
     syncLayoutSoon()
@@ -524,7 +527,6 @@ defineExpose({ focusInput })
     :style="dockOuterStyle"
     :data-focused="focused ? 'true' : 'false'"
     :data-keyboard-open="keyboardIsOpen ? 'true' : 'false'"
-    data-tour="chat-dock"
   >
     <!-- soft fade above the dock so chat content doesn't bleed into the toolbar -->
     <div class="chat-dock__veil" aria-hidden="true"></div>
@@ -952,9 +954,9 @@ defineExpose({ focusInput })
 /* ------------------------------------------------------------------
  * ChatDock — mobile composer
  *
- * Fixed at the bottom of the viewport. Vertical position is controlled
- * by translate3d(-keyboardInset) (GPU only, never `bottom`). Reference
- * images sit ABOVE the textarea so they never push the input off screen.
+ * Fixed at the bottom of the viewport. Browsers that do not resize layout for
+ * the software keyboard receive a manual transform; resized-layout Android
+ * browsers keep transform at zero to avoid double lifting.
  * ------------------------------------------------------------------ */
 
 .chat-dock {
@@ -962,10 +964,10 @@ defineExpose({ focusInput })
   left: 0;
   right: 0;
   bottom: 0;
-  max-height: var(--chat-dock-visible-height, 100dvh);
+  max-height: var(--chat-dock-visible-height, 100svh);
   z-index: 45; /* matches Tailwind z-dock */
   pointer-events: none;
-  /* GPU-only animation when the on-screen keyboard pushes the dock up */
+  /* GPU-only animation when the browser requires a manual keyboard lift */
   transition: transform 120ms cubic-bezier(0.2, 0.8, 0.2, 1);
   will-change: transform;
   contain: layout paint style;
@@ -989,7 +991,7 @@ defineExpose({ focusInput })
   position: relative;
   pointer-events: auto;
   padding: 8px max(10px, env(safe-area-inset-right, 0px)) max(env(safe-area-inset-bottom, 0px), 10px) max(10px, env(safe-area-inset-left, 0px));
-  max-height: var(--chat-dock-visible-height, 100dvh);
+  max-height: var(--chat-dock-visible-height, 100svh);
   display: flex;
   flex-direction: column;
   gap: 7px;

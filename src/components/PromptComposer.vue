@@ -344,7 +344,7 @@ watch(
       </div>
 
       <!-- Prompt textarea (no outer box) -->
-      <div class="prompt-field-area" data-tour="composer-prompt" @click="promptRef?.focus()">
+      <div class="prompt-field-area" @click="promptRef?.focus()">
         <textarea
           id="prompt-input"
           ref="promptRef"
@@ -549,7 +549,6 @@ watch(
     <div
       v-if="layout !== 'sheet'"
       class="composer-cta sticky bottom-0 z-[5]"
-      data-tour="composer-cta"
     >
       <button
         type="submit"

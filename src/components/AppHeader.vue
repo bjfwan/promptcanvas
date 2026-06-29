@@ -79,7 +79,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <header ref="headerRef" class="app-header sticky top-0 z-header pt-[env(safe-area-inset-top)]">
+  <header ref="headerRef" class="app-header sticky top-0 z-header">
     <div
       class="mx-auto flex w-full max-w-[1560px] items-center justify-between gap-2 py-2.5 pl-[max(env(safe-area-inset-left,0px),0.75rem)] pr-[max(env(safe-area-inset-right,0px),0.75rem)] sm:gap-4 sm:pl-[max(env(safe-area-inset-left,0px),1.5rem)] sm:pr-[max(env(safe-area-inset-right,0px),1.5rem)] lg:pl-[max(env(safe-area-inset-left,0px),2.5rem)] lg:pr-[max(env(safe-area-inset-right,0px),2.5rem)] lg:py-4"
     >
@@ -97,7 +97,7 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <div class="header-actions-wide flex shrink-0 items-center gap-1.5 sm:gap-2" data-tour="header-actions">
+      <div class="header-actions-wide flex shrink-0 items-center gap-1.5 sm:gap-2">
         <button
           type="button"
           class="header-action-btn"
@@ -159,7 +159,7 @@ onBeforeUnmount(() => {
         </button>
       </div>
 
-      <div class="header-actions-compact relative hidden shrink-0" data-tour="header-menu">
+      <div class="header-actions-compact relative hidden shrink-0">
         <button
           type="button"
           class="icon-btn"
@@ -401,6 +401,12 @@ onBeforeUnmount(() => {
 
   .header-actions-compact {
     display: block;
+  }
+}
+
+@media (display-mode: standalone), (display-mode: fullscreen) {
+  .app-header {
+    padding-top: env(safe-area-inset-top, 0px);
   }
 }
 

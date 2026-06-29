@@ -23,7 +23,6 @@ const emit = defineEmits<{
   (e: 'open-history'): void
   (e: 'open-settings'): void
   (e: 'open-shortcuts'): void
-  (e: 'open-onboarding'): void
   (e: 'install-app'): void
   (e: 'toggle-theme'): void
   (e: 'reset'): void
@@ -97,14 +96,6 @@ const commands = computed<CommandItem[]>(() => {
       shortcut: '?',
       keywords: 'keyboard shortcut hotkey help cheatsheet 快捷键 键盘 帮助',
       run: () => emit('open-shortcuts'),
-    },
-    {
-      id: 'open-onboarding',
-      group: t('cmd.group.nav'),
-      label: t('cmd.openOnboarding'),
-      icon: 'sparkle',
-      keywords: 'onboarding tour walkthrough intro guide 引导 教程 入门',
-      run: () => emit('open-onboarding'),
     },
     {
       id: 'toggle-theme',
