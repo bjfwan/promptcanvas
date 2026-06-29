@@ -1,6 +1,6 @@
 import type { ProviderPreset } from '../storage'
 import type { ImageGenerationConfig, ProviderConfig } from '../types'
-import { defaultImageGenerationConfig, normalizeImageGenerationConfig } from './imageGenerationDetection'
+import { defaultImageGenerationConfig, normalizeImageGenerationConfig } from './imageGenerationDetection.js'
 
 export const PAIR_TRANSFER_KIND = 'promptcanvas.pair-transfer'
 export const PAIR_TRANSFER_VERSION = 2
