@@ -63,6 +63,24 @@ function addPreset(preset: Omit<ProviderPreset, 'id'> & { id?: string }): Provid
   return item
 }
 
+function replacePresets(next: ProviderPreset[]) {
+  const normalized = next
+    .map((preset) => ({
+      id: preset.id || createId(),
+      label: preset.label?.trim() || undefined,
+      baseUrl: normalizeBaseUrl(preset.baseUrl ?? ''),
+      apiKey: (preset.apiKey ?? '').trim(),
+      proxyUrl: normalizeBaseUrl(preset.proxyUrl ?? '') || DEFAULT_PROXY_URL,
+    }))
+    .filter((preset) => preset.baseUrl && preset.apiKey)
+
+  presets.value = normalized
+  if (activePresetId.value && !normalized.some((preset) => preset.id === activePresetId.value)) {
+    activePresetId.value = null
+  }
+  void persist()
+}
+
 function removePreset(id: string) {
   presets.value = presets.value.filter((p) => p.id !== id)
   if (activePresetId.value === id) activePresetId.value = null
@@ -124,6 +142,7 @@ export function useProviderPresets() {
     addPreset,
     removePreset,
     updatePreset,
+    replacePresets,
     switchToPreset,
     importCurrentAsPreset,
   }

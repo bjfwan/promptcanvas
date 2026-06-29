@@ -13,6 +13,15 @@ import { useFocusTrap } from '../composables/useFocusTrap'
 import { useBodyLock } from '../composables/useBodyLock'
 import { ApiRequestError, testProvider } from '../api'
 import { useI18n, type LocalePreference } from '../lib/i18n'
+import {
+  analyzePairTransferPayload,
+  applyPairTransferSelection,
+  buildPairTransferBundle,
+  defaultPairTransferSelection,
+  type PairTransferCandidate,
+  type PairTransferPlan,
+} from '../lib/pairTransferBundle'
+import { createId } from '../lib/id'
 import type { IconName } from '../icons'
 import type { GenerateImageRequest, ImageQuality, ImageSize } from '../types'
 
@@ -68,6 +77,7 @@ const {
   switchToPreset,
   removePreset,
   importCurrentAsPreset,
+  replacePresets,
 } = useProviderPresets()
 const {
   results: speedTestResults,
@@ -86,6 +96,9 @@ const pairSendPassphrase = ref('')
 const pairReceiveCode = ref('')
 const pairReceivePassphrase = ref('')
 const pairCodeCopied = ref(false)
+const pairImportPlan = shallowRef<PairTransferPlan | null>(null)
+const pairSelectedImportKeys = ref<string[]>([])
+const pairImportApplied = ref(false)
 
 const pairBusy = computed(() =>
   ['initiating', 'waiting', 'sending'].includes(pair.phase.value),
@@ -122,20 +135,122 @@ const pairErrorLabel = computed(() => {
   }
 })
 
-// 接收方解密成功后，把 bundle 落地为当前 provider 配置（会触发 watch 自动加密入库）
+const pairImportSelectedCount = computed(() => pairSelectedImportKeys.value.length)
+const pairImportSummary = computed(() => {
+  const plan = pairImportPlan.value
+  if (!plan) return ''
+  return i18n.t('settings.pair.importSummary', {
+    total: plan.summary.totalCount,
+    fresh: plan.summary.newCount,
+    exact: plan.summary.exactDuplicateCount,
+    endpoint: plan.summary.endpointDuplicateCount,
+  })
+})
+const pairCanApplyImport = computed(() =>
+  Boolean(pairImportPlan.value && pairSelectedImportKeys.value.length > 0),
+)
+
+function isPairCandidateSelected(candidate: PairTransferCandidate): boolean {
+  return pairSelectedImportKeys.value.includes(candidate.importKey)
+}
+
+function duplicateLabel(candidate: PairTransferCandidate): string {
+  if (candidate.duplicateKind === 'exact') return i18n.t('settings.pair.duplicateExact')
+  if (candidate.duplicateKind === 'endpoint') return i18n.t('settings.pair.duplicateEndpoint')
+  return i18n.t('settings.pair.duplicateNone')
+}
+
+function candidateSourceLabel(candidate: PairTransferCandidate): string {
+  return candidate.source === 'current'
+    ? i18n.t('settings.pair.sourceCurrent')
+    : i18n.t('settings.pair.sourcePreset')
+}
+
+function togglePairImportCandidate(candidate: PairTransferCandidate) {
+  if (!candidate.canImport) return
+  const selected = new Set(pairSelectedImportKeys.value)
+  if (selected.has(candidate.importKey)) {
+    selected.delete(candidate.importKey)
+  } else {
+    selected.add(candidate.importKey)
+  }
+  pairSelectedImportKeys.value = [...selected]
+  pairImportApplied.value = false
+}
+
+function selectDefaultPairImports() {
+  const plan = pairImportPlan.value
+  if (!plan) return
+  pairSelectedImportKeys.value = defaultPairTransferSelection(plan)
+  pairImportApplied.value = false
+}
+
+function selectAllPairImports() {
+  const plan = pairImportPlan.value
+  if (!plan) return
+  pairSelectedImportKeys.value = plan.candidates
+    .filter((candidate) => candidate.canImport)
+    .map((candidate) => candidate.importKey)
+  pairImportApplied.value = false
+}
+
+function clearPairImportSelection() {
+  pairSelectedImportKeys.value = []
+  pairImportApplied.value = false
+}
+
+// 接收方解密成功后先生成导入清单，让用户选择要导入哪些中转站。
 watch(
   () => pair.result.value,
   (bundle) => {
-    if (bundle) provider.update(bundle)
+    if (!bundle) {
+      pairImportPlan.value = null
+      pairSelectedImportKeys.value = []
+      pairImportApplied.value = false
+      return
+    }
+
+    const plan = analyzePairTransferPayload(bundle, {
+      currentProvider: provider.snapshot(),
+      existingPresets: providerPresets.value,
+    })
+    pairImportPlan.value = plan
+    pairSelectedImportKeys.value = defaultPairTransferSelection(plan)
+    pairImportApplied.value = false
   },
 )
 
 function handleStartSend() {
-  void pair.startSend(pairSendPassphrase.value, provider.snapshot())
+  const bundle = buildPairTransferBundle({
+    currentProvider: provider.snapshot(),
+    providerPresets: providerPresets.value,
+  })
+  void pair.startSend(pairSendPassphrase.value, bundle)
 }
 
 function handleStartReceive() {
+  pairImportPlan.value = null
+  pairSelectedImportKeys.value = []
+  pairImportApplied.value = false
   void pair.startReceive(pairReceiveCode.value, pairReceivePassphrase.value)
+}
+
+function handleApplyPairImport() {
+  const plan = pairImportPlan.value
+  if (!plan || !pairSelectedImportKeys.value.length) return
+
+  const result = applyPairTransferSelection({
+    plan,
+    existingPresets: providerPresets.value,
+    selectedKeys: pairSelectedImportKeys.value,
+    createId,
+  })
+
+  replacePresets(result.presets)
+  if (result.appliedProvider) {
+    provider.update(result.appliedProvider)
+  }
+  pairImportApplied.value = true
 }
 
 function handleCopyPairCode() {
@@ -1461,6 +1576,82 @@ onBeforeUnmount(() => {
                       >
                         {{ pairPhaseLabel }}
                       </p>
+
+                      <div v-if="pairImportPlan" class="settings-import-review">
+                        <div class="settings-import-review__head">
+                          <div class="min-w-0">
+                            <h5 class="settings-import-review__title">{{ i18n.t('settings.pair.importReviewTitle') }}</h5>
+                            <p class="settings-import-review__summary">{{ pairImportSummary }}</p>
+                          </div>
+                          <span class="settings-import-review__count">
+                            {{ i18n.t('settings.pair.selectedCount', { count: pairImportSelectedCount }) }}
+                          </span>
+                        </div>
+
+                        <div class="settings-import-review__actions">
+                          <button type="button" class="btn-secondary settings-mini-button" @click="selectDefaultPairImports">
+                            {{ i18n.t('settings.pair.selectRecommended') }}
+                          </button>
+                          <button type="button" class="btn-secondary settings-mini-button" @click="selectAllPairImports">
+                            {{ i18n.t('settings.pair.selectAll') }}
+                          </button>
+                          <button type="button" class="btn-secondary settings-mini-button" @click="clearPairImportSelection">
+                            {{ i18n.t('settings.pair.selectNone') }}
+                          </button>
+                        </div>
+
+                        <ul class="settings-import-list">
+                          <li
+                            v-for="candidate in pairImportPlan.candidates"
+                            :key="candidate.importKey"
+                            class="settings-import-item"
+                            :class="{
+                              'is-selected': isPairCandidateSelected(candidate),
+                              'is-disabled': !candidate.canImport,
+                            }"
+                            :data-duplicate="candidate.duplicateKind"
+                          >
+                            <label class="settings-import-item__label">
+                              <input
+                                type="checkbox"
+                                :checked="isPairCandidateSelected(candidate)"
+                                :disabled="!candidate.canImport"
+                                @change="togglePairImportCandidate(candidate)"
+                              />
+                              <span class="settings-import-item__copy">
+                                <span class="settings-import-item__top">
+                                  <strong>{{ candidate.label }}</strong>
+                                  <span class="settings-import-item__source">{{ candidateSourceLabel(candidate) }}</span>
+                                </span>
+                                <span class="settings-import-item__url">{{ shortBaseUrl(candidate.baseUrl) || candidate.baseUrl }}</span>
+                                <span v-if="candidate.duplicateKind !== 'none'" class="settings-import-item__duplicate">
+                                  {{ duplicateLabel(candidate) }}
+                                  <template v-if="candidate.duplicateLabel"> · {{ candidate.duplicateLabel }}</template>
+                                </span>
+                              </span>
+                            </label>
+                          </li>
+                        </ul>
+
+                        <div class="settings-action-row">
+                          <button
+                            type="button"
+                            class="btn-secondary settings-action-button"
+                            :disabled="!pairCanApplyImport"
+                            @click="handleApplyPairImport"
+                          >
+                            <Icon name="download" :size="12" />
+                            {{ i18n.t('settings.pair.applyImport') }}
+                          </button>
+                          <span
+                            v-if="pairImportApplied"
+                            class="inline-flex items-center gap-1.5 text-[11px] font-medium text-forest"
+                          >
+                            <Icon name="check" :size="12" />
+                            {{ i18n.t('settings.pair.importApplied') }}
+                          </span>
+                        </div>
+                      </div>
                     </section>
 
                     <section class="settings-block">

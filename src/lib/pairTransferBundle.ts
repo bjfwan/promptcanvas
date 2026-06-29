@@ -196,7 +196,7 @@ function normalizeExisting(input: AnalyzePayloadInput): ExistingRelay[] {
       label: preset.label,
       baseUrl: preset.baseUrl,
       apiKey: preset.apiKey,
-      proxyUrl: preset.proxyUrl || DEFAULT_PROXY_URL,
+      proxyUrl: preset.proxyUrl || PAIR_TRANSFER_DEFAULT_PROXY_URL,
     }))
 
   const currentProvider = normalizeProviderConfig(input.currentProvider)
@@ -211,6 +211,16 @@ function normalizeExisting(input: AnalyzePayloadInput): ExistingRelay[] {
   }
 
   return relays
+}
+
+function existingFromCandidate(candidate: PairTransferCandidate, id: string): ExistingRelay {
+  return {
+    id,
+    label: candidate.label,
+    baseUrl: candidate.baseUrl,
+    apiKey: candidate.apiKey,
+    proxyUrl: candidate.proxyUrl || PAIR_TRANSFER_DEFAULT_PROXY_URL,
+  }
 }
 
 function createCandidate(relay: RelayRecord, index: number, existing: ExistingRelay[]): PairTransferCandidate {
@@ -267,8 +277,12 @@ export function analyzePairTransferPayload(
     ...(normalized.provider ? [relayFromProvider(normalized.provider)] : []),
     ...normalized.presets.map(relayFromPreset),
   ]
-  const existing = normalizeExisting(input)
-  const candidates = relays.map((relay, index) => createCandidate(relay, index, existing))
+  const comparisonPool = normalizeExisting(input)
+  const candidates = relays.map((relay, index) => {
+    const candidate = createCandidate(relay, index, comparisonPool)
+    comparisonPool.push(existingFromCandidate(candidate, candidate.importKey))
+    return candidate
+  })
 
   return {
     provider: normalized.provider,

@@ -2,10 +2,10 @@
 // 方案：ECDH P-256 协商共享密钥 + 口令作 HKDF salt 派生 AES-GCM-256 密钥
 // 独立于 crypto.ts（后者用固定 passphrase 做 PBKDF2，本模块不复用其派生逻辑）
 
-import type { ProviderConfig } from '../types'
+import type { PairTransferPayload } from './pairTransferBundle'
 
-/** PairCode 载荷：复用 ProviderConfig 字段，发送方把当前服务商配置加密后送给接收方 */
-export type PairPayload = ProviderConfig
+/** PairCode 载荷：新版传全部中转站预设；旧版单 ProviderConfig 仍可解密导入。 */
+export type PairPayload = PairTransferPayload
 
 const SUBTLE: SubtleCrypto | undefined =
   typeof globalThis !== 'undefined' && globalThis.crypto && 'subtle' in globalThis.crypto

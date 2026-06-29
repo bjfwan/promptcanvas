@@ -127,6 +127,46 @@ test('analyzes incoming relays, marks duplicates, and defaults to new relays onl
   )
 })
 
+test('marks duplicates that are repeated inside the incoming bundle', () => {
+  const payload = buildPairTransferBundle({
+    currentProvider: {
+      baseUrl: 'https://relay-current.example/v1/',
+      apiKey: 'key-current',
+      proxyUrl: 'https://proxy.example',
+      imageGeneration,
+    },
+    providerPresets: [
+      {
+        id: 'same-as-current',
+        label: 'Same as current',
+        baseUrl: 'https://relay-current.example/v1',
+        apiKey: 'key-current',
+        proxyUrl: 'https://proxy.example/',
+      },
+      {
+        id: 'same-endpoint',
+        label: 'Same endpoint',
+        baseUrl: 'https://relay-current.example/v1',
+        apiKey: 'key-other',
+        proxyUrl: 'https://proxy.example',
+      },
+    ],
+    now: () => '2026-06-29T00:00:00.000Z',
+  })
+
+  const plan = analyzePairTransferPayload(payload, { existingPresets: [] })
+
+  assert.deepEqual(
+    plan.candidates.map((candidate) => [candidate.label, candidate.duplicateKind, candidate.selectedByDefault]),
+    [
+      ['Current config', 'none', true],
+      ['Same as current', 'exact', false],
+      ['Same endpoint', 'endpoint', false],
+    ],
+  )
+  assert.deepEqual(defaultPairTransferSelection(plan), [plan.candidates[0].importKey])
+})
+
 test('applies selected relays without adding exact duplicates and can apply sender current config', () => {
   const payload = buildPairTransferBundle({
     currentProvider: {

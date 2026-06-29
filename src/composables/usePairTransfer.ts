@@ -4,7 +4,7 @@
 // 接收方：生成 keypair → join → 轮询等密文 → 解密 → 暴露 result 给调用方落地
 
 import { onScopeDispose, ref, type Ref } from 'vue'
-import type { ProviderConfig } from '../types'
+import type { PairTransferPayload } from '../lib/pairTransferBundle'
 import {
   PairError,
   pairCancel,
@@ -39,10 +39,10 @@ export interface UsePairTransferReturn {
   /** 错误码：NETWORK / PASSPHRASE_MISMATCH / EXPIRED / CANCELLED / FAILED */
   errorCode: Ref<string>
   errorMessage: Ref<string>
-  /** 接收方解密成功后的 bundle，由调用方落地为 provider 配置 */
-  result: Ref<ProviderConfig | null>
-  /** 发起发送：bundle 为当前 provider 配置快照 */
-  startSend: (passphrase: string, bundle: ProviderConfig) => Promise<void>
+  /** 接收方解密成功后的 bundle，由调用方决定导入哪些中转站。 */
+  result: Ref<PairTransferPayload | null>
+  /** 发起发送：bundle 为当前 provider + 全部中转站预设快照。 */
+  startSend: (passphrase: string, bundle: PairTransferPayload) => Promise<void>
   /** 发起接收：输入发送方给的配对码 + 同一口令 */
   startReceive: (shortCode: string, passphrase: string) => Promise<void>
   /** 取消进行中的传输（关闭弹窗时调用） */
@@ -55,7 +55,7 @@ export function usePairTransfer(): UsePairTransferReturn {
   const sessionId = ref('')
   const errorCode = ref('')
   const errorMessage = ref('')
-  const result = ref<ProviderConfig | null>(null)
+  const result = ref<PairTransferPayload | null>(null)
 
   let cancelled = false
   let pollTimer: ReturnType<typeof setTimeout> | null = null
@@ -105,7 +105,7 @@ export function usePairTransfer(): UsePairTransferReturn {
   }
 
   /** 发送方流程：生成 keypair → init → 轮询等 joiner → 加密 bundle → exchange */
-  async function startSend(passphrase: string, bundle: ProviderConfig): Promise<void> {
+  async function startSend(passphrase: string, bundle: PairTransferPayload): Promise<void> {
     cancel()
     cancelled = false
     consecutiveFailures = 0
