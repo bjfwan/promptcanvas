@@ -1773,7 +1773,7 @@ onBeforeUnmount(() => {
 
                           <div
                             v-if="speedTestResults[preset.id] && speedTestResults[preset.id].status !== 'testing'"
-                            class="mt-1.5 flex flex-wrap items-center gap-2 font-mono text-[10px]"
+                            class="settings-preset__status"
                           >
                             <span
                               v-if="speedTestResults[preset.id].status === 'success'"
@@ -1807,7 +1807,7 @@ onBeforeUnmount(() => {
                           </div>
                           <div
                             v-else-if="speedTestResults[preset.id]?.status === 'testing'"
-                            class="mt-1.5 inline-flex items-center gap-1.5 font-mono text-[10px] text-muted"
+                            class="settings-preset__status text-muted"
                           >
                             <Icon name="refresh" :size="10" class="animate-spin" />
                             {{ i18n.t('settings.presets.testing') }}
@@ -2460,6 +2460,7 @@ onBeforeUnmount(() => {
   background: rgb(var(--color-ivory) / 0.42);
   padding: 0.65rem 0.7rem;
   color: rgb(var(--color-ink));
+  overflow: hidden;
 }
 
 .settings-preset.is-active {
@@ -2480,6 +2481,18 @@ onBeforeUnmount(() => {
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 0.35rem;
+}
+
+.settings-preset__status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  margin-top: 0.4rem;
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+  font-size: 10px;
+  line-height: 1.45;
 }
 
 .settings-chip {
@@ -3034,15 +3047,49 @@ onBeforeUnmount(() => {
     min-height: 44px;
   }
 
+  .settings-preset {
+    padding: 0.7rem;
+  }
+
   .settings-preset__main {
     display: grid;
-    gap: 0.65rem;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.55rem;
   }
 
   .settings-preset__actions {
     display: grid;
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     width: 100%;
+    gap: 0.4rem;
+  }
+
+  .settings-preset__actions .settings-mini-button {
+    width: auto;
+    min-width: 0;
+    min-height: 40px;
+    padding: 0.45rem 0.35rem;
+    gap: 0.35rem;
+    font-size: 11px;
+    line-height: 1;
+    white-space: nowrap;
+  }
+
+  .settings-preset__status {
+    gap: 0.4rem 0.55rem;
+    margin-top: 0.45rem;
+    overflow-x: auto;
+    padding-bottom: 0.05rem;
+    white-space: nowrap;
+    scrollbar-width: none;
+  }
+
+  .settings-preset__status::-webkit-scrollbar {
+    display: none;
+  }
+
+  .settings-preset__status > span {
+    flex: 0 0 auto;
   }
 
   .settings-footer-actions {
