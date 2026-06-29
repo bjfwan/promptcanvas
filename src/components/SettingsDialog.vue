@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
 import Icon from './Icon.vue'
 import Select, { type SelectOption } from './Select.vue'
 import { qualityOptions, sizeOptions } from '../presets'
@@ -17,6 +17,7 @@ import type { IconName } from '../icons'
 import type { GenerateImageRequest, ImageQuality, ImageSize } from '../types'
 
 type OutputFormat = NonNullable<GenerateImageRequest['outputFormat']>
+type SettingsPanelId = 'provider' | 'generation' | 'prompt' | 'workflow' | 'display'
 
 interface Props {
   open: boolean
@@ -215,6 +216,14 @@ interface CapabilityTile {
   stateLabel: string
 }
 
+interface SettingsNavItem {
+  id: SettingsPanelId
+  icon: IconName
+  label: string
+  detail: string
+  tone?: 'ok' | 'warn'
+}
+
 function tierLabel(tier: '2k' | '4k'): string {
   const s = resolutionSupport.state
   if (tier === '2k') {
@@ -411,6 +420,8 @@ const providerCapabilityTiles = computed<CapabilityTile[]>(() => {
 
 const showApiKey = ref(false)
 const dialogRef = ref<HTMLElement | null>(null)
+const settingsWorkspaceRef = ref<HTMLElement | null>(null)
+const activeSettingsPanel = shallowRef<SettingsPanelId>('provider')
 
 type TestStatus = 'idle' | 'testing' | 'success' | 'partial' | 'error'
 const testStatus = ref<TestStatus>('idle')
@@ -617,6 +628,53 @@ const partialPreviewHint = computed(() =>
     : props.partialPreviewDisabledReason || i18n.t('capability.previewUnsupported'),
 )
 
+const settingsNavItems = computed<SettingsNavItem[]>(() => [
+  {
+    id: 'provider',
+    icon: 'link',
+    label: i18n.t('settings.provider.label'),
+    detail: provider.isConfigured.value
+      ? i18n.t('settings.provider.configured')
+      : i18n.t('settings.provider.unconfigured'),
+    tone: provider.isConfigured.value ? 'ok' : 'warn',
+  },
+  {
+    id: 'generation',
+    icon: 'sliders',
+    label: i18n.t('settings.image.title'),
+    detail: `${size.value} · ${count.value}x`,
+  },
+  {
+    id: 'prompt',
+    icon: 'textCursor',
+    label: i18n.t('settings.advanced.title'),
+    detail: resolutionSummary.value,
+  },
+  {
+    id: 'workflow',
+    icon: 'bookmark',
+    label: i18n.t('settings.presets.title'),
+    detail: `${providerPresets.value.length} · ${i18n.t('settings.pair.title')}`,
+  },
+  {
+    id: 'display',
+    icon: 'palette',
+    label: i18n.t('settings.display.title'),
+    detail: i18n.t('settings.locale.label'),
+  },
+])
+
+function selectSettingsPanel(panel: SettingsPanelId) {
+  activeSettingsPanel.value = panel
+  nextTick(() => {
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    settingsWorkspaceRef.value?.scrollTo({
+      top: 0,
+      behavior: reduceMotion ? 'auto' : 'smooth',
+    })
+  })
+}
+
 function close() {
   emit('update:open', false)
 }
@@ -646,6 +704,7 @@ watch(
   () => props.open,
   (open) => {
     if (open) {
+      activeSettingsPanel.value = 'provider'
       window.addEventListener('keydown', handleKey, { capture: true })
     } else {
       window.removeEventListener('keydown', handleKey, { capture: true })
@@ -679,27 +738,89 @@ onBeforeUnmount(() => {
           <div
             ref="dialogRef"
             v-if="open"
-            class="dialog-shell relative flex w-full max-w-xl flex-col overflow-hidden text-ink"
+            class="dialog-shell relative flex w-full max-w-5xl flex-col overflow-hidden text-ink"
           >
             <header class="dialog-shell__header flex items-start justify-between gap-3 border-b border-line/40 px-5 py-4 sm:px-6 sm:py-5">
-              <div>
+              <div class="min-w-0">
                 <p class="display-eyebrow">{{ i18n.t('settings.eyebrow') }}</p>
-                <h2 class="mt-1.5 font-display text-2xl tracking-tightish gradient-text">{{ i18n.t('settings.title') }}</h2>
+                <h2 class="mt-1.5 text-[22px] font-semibold leading-tight text-ink">{{ i18n.t('settings.title') }}</h2>
               </div>
-              <button type="button" class="icon-btn-sm" :aria-label="i18n.t('settings.close')" @click="close">
-                <Icon name="close" :size="14" />
-              </button>
+              <div class="flex items-center gap-2">
+                <span
+                  class="settings-header-status"
+                  :data-tone="provider.isConfigured.value ? 'ok' : 'warn'"
+                >
+                  <Icon :name="provider.isConfigured.value ? 'check' : 'warning'" :size="11" />
+                  <span>{{ provider.isConfigured.value ? i18n.t('settings.provider.configured') : i18n.t('settings.provider.unconfigured') }}</span>
+                </span>
+                <button type="button" class="icon-btn-sm" :aria-label="i18n.t('settings.close')" @click="close">
+                  <Icon name="close" :size="14" />
+                </button>
+              </div>
             </header>
 
-            <div class="dialog-shell__body touch-scroll-y space-y-5 overflow-y-auto px-5 py-5 sm:px-6">
+            <div class="dialog-shell__body touch-scroll-y overflow-hidden">
+              <nav class="settings-nav" role="tablist" :aria-label="i18n.t('settings.title')">
+                <button
+                  v-for="item in settingsNavItems"
+                  :id="`settings-tab-${item.id}`"
+                  :key="item.id"
+                  type="button"
+                  role="tab"
+                  class="settings-nav__item"
+                  :class="{ 'is-active': activeSettingsPanel === item.id }"
+                  :data-tone="item.tone"
+                  :aria-selected="activeSettingsPanel === item.id"
+                  :aria-controls="`settings-panel-${item.id}`"
+                  @click="selectSettingsPanel(item.id)"
+                >
+                  <span class="settings-nav__icon" aria-hidden="true">
+                    <Icon :name="item.icon" :size="14" />
+                  </span>
+                  <span class="settings-nav__copy">
+                    <span class="settings-nav__label">{{ item.label }}</span>
+                    <span class="settings-nav__detail">{{ item.detail }}</span>
+                  </span>
+                  <Icon
+                    name="chevronRight"
+                    :size="13"
+                    class="settings-nav__chevron"
+                    aria-hidden="true"
+                  />
+                </button>
+              </nav>
+
+              <main ref="settingsWorkspaceRef" class="settings-workspace touch-scroll-y" tabindex="-1">
+                <section
+                  v-show="activeSettingsPanel === 'provider'"
+                  id="settings-panel-provider"
+                  class="settings-panel"
+                  role="tabpanel"
+                  aria-labelledby="settings-tab-provider"
+                >
+                  <div class="settings-panel__header">
+                    <span class="settings-panel__icon" aria-hidden="true">
+                      <Icon name="link" :size="15" />
+                    </span>
+                    <div class="min-w-0">
+                      <h3 class="settings-panel__title">{{ i18n.t('settings.provider.label') }}</h3>
+                      <p class="settings-panel__desc">
+                        {{ provider.isConfigured.value ? i18n.t('settings.provider.configured') : i18n.t('settings.provider.unconfigured') }}
+                      </p>
+                    </div>
+                  </div>
+
               <section
-                class="surface-1 p-4"
+                    class="settings-block"
                 :class="!provider.isConfigured.value && 'ring-1 ring-ochre/30'"
               >
-                <div class="mb-3 flex items-center justify-between gap-2">
-                  <span class="text-[13px] font-medium text-ink">{{ i18n.t('settings.provider.label') }}</span>
+                    <div class="settings-block__head">
+                      <div class="min-w-0">
+                        <h4 class="settings-block__title">{{ i18n.t('settings.provider.baseUrl') }}</h4>
+                        <p class="settings-block__desc">{{ shortBaseUrl(provider.state.baseUrl) || 'https://api.openai.com/v1' }}</p>
+                      </div>
                   <span
-                    class="inline-flex items-center gap-1 rounded-full px-2 py-1 font-mono text-[10px] uppercase tracking-[0.16em]"
+                        class="settings-status-pill"
                     :class="provider.isConfigured.value
                       ? 'bg-forest/12 text-forest'
                       : 'bg-ochre/12 text-ochre'"
@@ -762,10 +883,10 @@ onBeforeUnmount(() => {
                   </div>
                 </div>
 
-                <div class="mt-3 flex flex-wrap items-center gap-2">
+                    <div class="settings-action-row">
                   <button
                     type="button"
-                    class="btn-quiet text-[11px]"
+                        class="btn-secondary settings-action-button"
                     :disabled="!provider.state.baseUrl || !provider.state.apiKey || testStatus === 'testing'"
                     @click="handleTestProvider"
                   >
@@ -778,7 +899,7 @@ onBeforeUnmount(() => {
                   </button>
                   <button
                     type="button"
-                    class="btn-quiet text-[11px]"
+                        class="btn-danger settings-action-button"
                     :disabled="!provider.state.apiKey && !provider.state.baseUrl"
                     @click="handleResetProvider"
                   >
@@ -817,13 +938,16 @@ onBeforeUnmount(() => {
                     {{ testHint }}
                   </p>
                 </div>
+                  </section>
 
-                <details class="settings-collapsible">
-                <summary class="settings-collapsible__summary">
-                  <span class="display-eyebrow text-[10px]">{{ i18n.t('settings.capability.eyebrow') }}</span>
-                  <Icon name="chevronDown" :size="14" class="settings-collapsible__chevron" />
-                </summary>
-                <div class="settings-capability-grid" role="list">
+                  <section class="settings-block">
+                    <div class="settings-block__head">
+                      <div class="min-w-0">
+                        <h4 class="settings-block__title">{{ i18n.t('settings.capability.eyebrow') }}</h4>
+                        <p class="settings-block__desc">{{ providerGenerationModeLabel }}</p>
+                      </div>
+                    </div>
+                    <div class="settings-capability-grid" role="list">
                     <div
                       v-for="tile in providerCapabilityTiles"
                       :key="tile.key"
@@ -841,524 +965,211 @@ onBeforeUnmount(() => {
                       <strong class="settings-capability-tile__state">{{ tile.stateLabel }}</strong>
                     </div>
                   </div>
-                </details>
-              </section>
+                  </section>
+                </section>
 
-              <details class="settings-advanced surface-1 p-4">
-                <summary class="settings-advanced__summary">
-                  <span class="settings-advanced__summary-copy">
-                    <span class="text-[13px] font-medium text-ink">{{ i18n.t('settings.pair.title') }}</span>
-                  </span>
-                  <Icon name="chevronDown" :size="14" class="settings-advanced__chevron" />
-                </summary>
-
-                <div class="settings-advanced__body">
-                  <p class="text-[11px] leading-[1.6] text-muted">{{ i18n.t('settings.pair.body') }}</p>
-
-                  <div class="mt-3 inline-flex rounded-lg border border-line/40 p-0.5 text-[11px]" role="tablist">
-                    <button
-                      type="button"
-                      role="tab"
-                      class="rounded-md px-3 py-1 transition"
-                      :class="pairTab === 'send' ? 'bg-forest/12 text-forest' : 'text-muted hover:text-ink'"
-                      :aria-selected="pairTab === 'send'"
-                      @click="pairTab = 'send'"
-                    >
-                      {{ i18n.t('settings.pair.tabSend') }}
-                    </button>
-                    <button
-                      type="button"
-                      role="tab"
-                      class="rounded-md px-3 py-1 transition"
-                      :class="pairTab === 'receive' ? 'bg-forest/12 text-forest' : 'text-muted hover:text-ink'"
-                      :aria-selected="pairTab === 'receive'"
-                      @click="pairTab = 'receive'"
-                    >
-                      {{ i18n.t('settings.pair.tabReceive') }}
-                    </button>
+                <section
+                  v-show="activeSettingsPanel === 'generation'"
+                  id="settings-panel-generation"
+                  class="settings-panel"
+                  role="tabpanel"
+                  aria-labelledby="settings-tab-generation"
+                >
+                  <div class="settings-panel__header">
+                    <span class="settings-panel__icon" aria-hidden="true">
+                      <Icon name="sliders" :size="15" />
+                    </span>
+                    <div class="min-w-0">
+                      <h3 class="settings-panel__title">{{ i18n.t('settings.image.title') }}</h3>
+                      <p class="settings-panel__desc">{{ size }} · {{ count }}x · {{ outputFormat.toUpperCase() }}</p>
+                    </div>
                   </div>
 
-                  <!-- 发送方 -->
-                  <div v-if="pairTab === 'send'" class="mt-3 space-y-3">
-                    <div v-if="!pairBusy">
-                      <p class="text-[11px] leading-[1.6] text-muted">{{ i18n.t('settings.pair.hintSend') }}</p>
-                      <label class="label mb-1.5 mt-2 inline-flex items-center gap-1.5" for="pair-send-pass">
-                        <Icon name="lightning" :size="12" />
-                        <span>{{ i18n.t('settings.pair.sendPassphrase') }}</span>
-                      </label>
-                      <input
-                        id="pair-send-pass"
-                        v-model="pairSendPassphrase"
-                        type="text"
-                        class="field-input font-mono text-[12px]"
-                        :placeholder="i18n.t('settings.pair.sendPassphraseHint')"
-                        autocomplete="off"
-                        spellcheck="false"
-                        maxlength="200"
-                      />
-                      <div class="mt-2">
-                        <button
-                          type="button"
-                          class="btn-quiet text-[11px]"
-                          :disabled="!pairSendPassphrase || pairPhase === 'initiating'"
-                          @click="handleStartSend"
-                        >
-                          <Icon name="share" :size="12" />
-                          {{ i18n.t('settings.pair.sendBtn') }}
-                        </button>
+                  <section class="settings-block">
+                    <div class="settings-grid">
+                      <div class="settings-field settings-field--wide">
+                        <label class="label mb-2 inline-flex items-center gap-1.5" for="set-size">
+                          <Icon name="ratio" :size="12" />
+                          <span>{{ i18n.t('desktop.render.size') }}</span>
+                        </label>
+                        <Select
+                          id="set-size"
+                          v-model="size"
+                          :options="sizeSelectOptions"
+                          :aria-label="i18n.t('desktop.render.size')"
+                        />
+                        <p class="settings-field__hint">{{ i18n.t('settings.image.sizeHint') }}</p>
                       </div>
-                    </div>
 
-                    <div v-else class="space-y-2">
-                      <div v-if="pairShortCode" class="rounded-xl border border-line/40 bg-ivory/40 px-3 py-2">
-                        <div class="text-[10px] uppercase tracking-[0.16em] text-muted">{{ i18n.t('settings.pair.sendCodeLabel') }}</div>
-                        <div class="mt-1 flex items-center gap-2">
-                          <span class="font-mono text-lg tracking-[0.3em] text-ink">{{ pairShortCode }}</span>
-                          <button type="button" class="btn-quiet text-[10px]" @click="handleCopyPairCode">
-                            <Icon name="copy" :size="11" />
-                            {{ pairCodeCopied ? i18n.t('toast.copied') : i18n.t('settings.pair.sendCodeCopy') }}
+                      <div class="settings-field">
+                        <span class="label mb-2 inline-flex items-center gap-1.5">
+                          <Icon name="layers" :size="12" />
+                          <span>{{ i18n.t('desktop.render.count') }}</span>
+                        </span>
+                        <div class="settings-stepper" role="group" :aria-label="i18n.t('desktop.render.count')">
+                          <button
+                            type="button"
+                            class="settings-stepper__button"
+                            :disabled="count <= minCount"
+                            @click="adjustCount(-1)"
+                          >
+                            <Icon name="minus" :size="12" />
+                          </button>
+                          <span class="settings-stepper__value" aria-live="polite">{{ count }}</span>
+                          <button
+                            type="button"
+                            class="settings-stepper__button"
+                            :disabled="count >= maxCount"
+                            @click="adjustCount(1)"
+                          >
+                            <Icon name="plus" :size="12" />
                           </button>
                         </div>
+                        <p class="settings-field__hint">{{ i18n.t('settings.image.countHint') }}</p>
                       </div>
-                      <p class="inline-flex items-center gap-1.5 text-[11px] leading-[1.6] text-muted">
-                        <Icon name="refresh" :size="11" class="animate-spin" />
-                        {{ pairPhaseLabel }}
-                      </p>
-                      <button type="button" class="btn-quiet text-[11px]" @click="handlePairCancel">
-                        <Icon name="close" :size="12" />
-                        {{ i18n.t('settings.pair.cancel') }}
-                      </button>
-                    </div>
-                  </div>
 
-                  <!-- 接收方 -->
-                  <div v-else class="mt-3 space-y-3">
-                    <div v-if="!pairBusy">
-                      <p class="text-[11px] leading-[1.6] text-muted">{{ i18n.t('settings.pair.hintReceive') }}</p>
-                      <label class="label mb-1.5 mt-2 inline-flex items-center gap-1.5" for="pair-recv-code">
-                        <Icon name="link" :size="12" />
-                        <span>{{ i18n.t('settings.pair.receiveCode') }}</span>
-                      </label>
-                      <input
-                        id="pair-recv-code"
-                        v-model="pairReceiveCode"
-                        type="text"
-                        class="field-input font-mono text-[12px]"
-                        :placeholder="i18n.t('settings.pair.receiveCodePlaceholder')"
-                        autocomplete="off"
-                        spellcheck="false"
-                        maxlength="20"
-                      />
-                      <label class="label mb-1.5 mt-2 inline-flex items-center gap-1.5" for="pair-recv-pass">
-                        <Icon name="lightning" :size="12" />
-                        <span>{{ i18n.t('settings.pair.receivePassphrase') }}</span>
-                      </label>
-                      <input
-                        id="pair-recv-pass"
-                        v-model="pairReceivePassphrase"
-                        type="text"
-                        class="field-input font-mono text-[12px]"
-                        :placeholder="i18n.t('settings.pair.sendPassphraseHint')"
-                        autocomplete="off"
-                        spellcheck="false"
-                        maxlength="200"
-                      />
-                      <div class="mt-2">
-                        <button
-                          type="button"
-                          class="btn-quiet text-[11px]"
-                          :disabled="!pairReceiveCode || !pairReceivePassphrase || pairPhase === 'initiating'"
-                          @click="handleStartReceive"
-                        >
-                          <Icon name="download" :size="12" />
-                          {{ i18n.t('settings.pair.receiveBtn') }}
-                        </button>
-                      </div>
-                    </div>
-
-                    <div v-else class="space-y-2">
-                      <p class="inline-flex items-center gap-1.5 text-[11px] leading-[1.6] text-muted">
-                        <Icon name="refresh" :size="11" class="animate-spin" />
-                        {{ pairPhaseLabel }}
-                      </p>
-                      <button type="button" class="btn-quiet text-[11px]" @click="handlePairCancel">
-                        <Icon name="close" :size="12" />
-                        {{ i18n.t('settings.pair.cancel') }}
-                      </button>
-                    </div>
-                  </div>
-
-                  <!-- 错误提示 -->
-                  <p
-                    v-if="pairPhase === 'error' && pairErrorLabel"
-                    class="mt-3 rounded-xl border border-ochre/30 bg-ochre/8 px-3 py-2 text-[11px] leading-[1.6] text-ochre"
-                  >
-                    {{ pairErrorLabel }}
-                  </p>
-
-                  <!-- 成功提示 -->
-                  <p
-                    v-if="pairPhase === 'done' && pairPhaseLabel"
-                    class="mt-3 rounded-xl border border-forest/30 bg-forest/8 px-3 py-2 text-[11px] leading-[1.6] text-forest"
-                  >
-                    {{ pairPhaseLabel }}
-                  </p>
-                </div>
-              </details>
-
-              <details class="settings-advanced surface-1 p-4">
-                <summary class="settings-advanced__summary">
-                  <span class="settings-advanced__summary-copy">
-                    <span class="text-[13px] font-medium text-ink">{{ i18n.t('settings.presets.title') }}</span>
-                  </span>
-                  <Icon name="chevronDown" :size="14" class="settings-advanced__chevron" />
-                </summary>
-
-                <div class="settings-advanced__body">
-                  <section class="flex flex-col gap-2">
-                    <input
-                      v-model="newPresetLabel"
-                      class="field-input w-full font-mono text-[12px]"
-                      :placeholder="i18n.t('settings.presets.savePlaceholder')"
-                      maxlength="60"
-                      autocomplete="off"
-                      spellcheck="false"
-                    />
-                    <div class="flex items-center gap-2">
-                      <button
-                        type="button"
-                        class="btn-quiet text-[11px]"
-                        :disabled="!provider.state.baseUrl || !provider.state.apiKey"
-                        @click="handleSaveCurrentPreset"
-                      >
-                        <Icon name="bookmark" :size="12" />
-                        {{ i18n.t('settings.presets.save') }}
-                      </button>
-                      <button
-                        type="button"
-                        class="btn-quiet text-[11px]"
-                        :disabled="!providerPresets.length || speedTestRunning"
-                        @click="handleTestAllPresets"
-                      >
-                        <Icon
-                          :name="speedTestRunning ? 'refresh' : 'pulse'"
-                          :size="12"
-                          :class="speedTestRunning ? 'animate-spin' : ''"
+                      <div class="settings-field">
+                        <label class="label mb-2 inline-flex items-center gap-1.5" for="set-quality">
+                          <Icon name="star" :size="12" />
+                          <span>{{ i18n.t('settings.quality') }}</span>
+                        </label>
+                        <Select
+                          id="set-quality"
+                          v-model="quality"
+                          :options="qualitySelectOptions"
+                          :aria-label="i18n.t('settings.quality.label')"
                         />
-                        {{ speedTestRunning ? i18n.t('settings.speedTest.running') : i18n.t('settings.presets.testAll') }}
-                      </button>
+                      </div>
+
+                      <div class="settings-field">
+                        <label class="label mb-2 inline-flex items-center gap-1.5" for="set-format">
+                          <Icon name="image" :size="12" />
+                          <span>{{ i18n.t('settings.format') }}</span>
+                        </label>
+                        <Select
+                          id="set-format"
+                          v-model="outputFormat"
+                          :options="formatOptions"
+                          :aria-label="i18n.t('settings.format.label')"
+                        />
+                      </div>
                     </div>
                   </section>
 
-                  <p
-                    v-if="rankedSpeedResults.length"
-                    class="mt-3 text-[10px] uppercase tracking-[0.16em] text-muted"
-                  >
-                    {{ i18n.t('settings.speedTest.summary') }}
-                  </p>
-
-                  <p v-if="!providerPresets.length" class="mt-3 text-[11px] leading-[1.6] text-muted">
-                    {{ i18n.t('settings.presets.empty') }}
-                  </p>
-
-                  <ul v-else class="mt-3 space-y-2">
-                    <li
-                      v-for="preset in providerPresets"
-                      :key="preset.id"
-                      class="rounded-xl border px-3 py-2 text-[11px] leading-[1.6]"
-                      :class="activePresetId === preset.id
-                        ? 'border-forest/40 bg-forest/[0.08]'
-                        : 'border-line/40 bg-ivory/40'"
-                    >
-                      <div class="flex flex-wrap items-center justify-between gap-2">
-                        <div class="min-w-0 flex-1">
-                          <div class="flex items-center gap-1.5">
-                            <Icon
-                              v-if="activePresetId === preset.id"
-                              name="check"
-                              :size="12"
-                              class="text-forest"
-                            />
-                            <span class="truncate font-medium text-ink">{{ presetDisplayLabel(preset) }}</span>
-                            <span
-                              v-if="activePresetId === preset.id"
-                              class="rounded-full bg-forest/12 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-[0.16em] text-forest"
-                            >
-                              {{ i18n.t('settings.presets.active') }}
-                            </span>
-                          </div>
-                          <div class="mt-0.5 truncate font-mono text-[10px] text-muted">
-                            {{ shortBaseUrl(preset.baseUrl) || preset.baseUrl }}
-                          </div>
-                        </div>
-
-                        <div class="flex flex-shrink-0 items-center gap-1.5">
-                          <button
-                            type="button"
-                            class="btn-quiet text-[10px]"
-                            :disabled="activePresetId === preset.id"
-                            @click="handleSwitchPreset(preset.id)"
-                          >
-                            <Icon name="refresh" :size="11" />
-                            {{ i18n.t('settings.presets.switch') }}
-                          </button>
-                          <button
-                            type="button"
-                            class="btn-quiet text-[10px]"
-                            :disabled="speedTestRunning"
-                            @click="handleTestPreset(preset.id)"
-                          >
-                            <Icon
-                              :name="speedTestResults[preset.id]?.status === 'testing' ? 'refresh' : 'pulse'"
-                              :size="11"
-                              :class="speedTestResults[preset.id]?.status === 'testing' ? 'animate-spin' : ''"
-                            />
-                            {{ i18n.t('settings.presets.test') }}
-                          </button>
-                          <button
-                            type="button"
-                            class="btn-quiet text-[10px]"
-                            @click="handleDeletePreset(preset.id)"
-                          >
-                            <Icon name="trash" :size="11" />
-                            {{ i18n.t('settings.presets.delete') }}
-                          </button>
-                        </div>
+                  <section class="settings-block">
+                    <div class="settings-block__head">
+                      <div class="min-w-0">
+                        <h4 class="settings-block__title">{{ i18n.t('desktop.capabilities.preview') }}</h4>
+                        <p class="settings-block__desc">{{ i18n.t('desktop.capabilities.streamingDetail') }}</p>
                       </div>
-
-                      <div
-                        v-if="speedTestResults[preset.id] && speedTestResults[preset.id].status !== 'testing'"
-                        class="mt-1.5 flex flex-wrap items-center gap-2 font-mono text-[10px]"
-                      >
-                        <span
-                          v-if="speedTestResults[preset.id].status === 'success'"
-                          class="inline-flex items-center gap-1.5 rounded-full bg-forest/12 px-2 py-0.5 text-forest"
-                        >
-                          <Icon name="check" :size="10" />
-                          <span v-if="speedRankFor(preset.id)">
-                            {{ i18n.t('settings.speedTest.rank', { rank: speedRankFor(preset.id) ?? 0 }) }}
-                          </span>
-                          <span>{{ i18n.t('settings.speedTest.duration', { ms: speedTestResults[preset.id].durationMs ?? 0 }) }}</span>
-                        </span>
-                        <span
-                          v-if="speedTestResults[preset.id].status === 'success' && typeof speedTestResults[preset.id].modelCount === 'number'"
-                          class="text-muted"
-                        >
-                          {{ i18n.t('settings.speedTest.models', { count: speedTestResults[preset.id].modelCount ?? 0 }) }}
-                        </span>
-                        <span
-                          v-if="speedTestResults[preset.id].status === 'error'"
-                          class="inline-flex items-center gap-1.5 rounded-full bg-accent/12 px-2 py-0.5 text-accent"
-                        >
-                          <Icon name="warning" :size="10" />
-                          {{ i18n.t('settings.speedTest.failed') }}
-                          <span
-                            v-if="speedTestResults[preset.id].error"
-                            class="max-w-[200px] truncate opacity-80"
-                          >
-                            {{ speedTestResults[preset.id].error }}
-                          </span>
-                        </span>
-                      </div>
-                      <div
-                        v-else-if="speedTestResults[preset.id]?.status === 'testing'"
-                        class="mt-1.5 inline-flex items-center gap-1.5 font-mono text-[10px] text-muted"
-                      >
-                        <Icon name="refresh" :size="10" class="animate-spin" />
-                        {{ i18n.t('settings.presets.testing') }}
-                      </div>
-                    </li>
-                  </ul>
-                </div>
-              </details>
-
-              <details class="settings-advanced surface-1 p-4">
-                <summary class="settings-advanced__summary">
-                  <span class="settings-advanced__summary-copy">
-                    <span class="text-[13px] font-medium text-ink">{{ i18n.t('settings.image.title') }}</span>
-                  </span>
-                  <Icon name="chevronDown" :size="14" class="settings-advanced__chevron" />
-                </summary>
-
-                <div class="settings-advanced__body">
-                <div class="settings-grid">
-                  <div class="settings-field settings-field--wide">
-                    <label class="label mb-2 inline-flex items-center gap-1.5" for="set-size">
-                      <Icon name="ratio" :size="12" />
-                      <span>{{ i18n.t('desktop.render.size') }}</span>
-                    </label>
-                    <Select
-                      id="set-size"
-                      v-model="size"
-                      :options="sizeSelectOptions"
-                      :aria-label="i18n.t('desktop.render.size')"
-                    />
-                    <p class="settings-field__hint">{{ i18n.t('settings.image.sizeHint') }}</p>
-                  </div>
-
-                  <div class="settings-field">
-                    <span class="label mb-2 inline-flex items-center gap-1.5">
-                      <Icon name="layers" :size="12" />
-                      <span>{{ i18n.t('desktop.render.count') }}</span>
-                    </span>
-                    <div class="settings-stepper" role="group" :aria-label="i18n.t('desktop.render.count')">
-                      <button
-                        type="button"
-                        class="settings-stepper__button"
-                        :disabled="count <= minCount"
-                        @click="adjustCount(-1)"
-                      >
-                        <Icon name="minus" :size="12" />
-                      </button>
-                      <span class="settings-stepper__value" aria-live="polite">{{ count }}</span>
-                      <button
-                        type="button"
-                        class="settings-stepper__button"
-                        :disabled="count >= maxCount"
-                        @click="adjustCount(1)"
-                      >
-                        <Icon name="plus" :size="12" />
-                      </button>
                     </div>
-                    <p class="settings-field__hint">{{ i18n.t('settings.image.countHint') }}</p>
+
+                    <div class="settings-switch-list">
+                      <label
+                        class="settings-switch-row"
+                        :class="{ 'is-disabled': !canTransparentBackground }"
+                        :data-state="toggleState(transparentBackground, canTransparentBackground)"
+                      >
+                        <input
+                          v-model="transparentBackground"
+                          type="checkbox"
+                          :disabled="!canTransparentBackground"
+                          aria-describedby="settings-transparent-hint"
+                        />
+                        <span class="settings-switch-row__icon" aria-hidden="true">
+                          <Icon name="image" :size="13" />
+                        </span>
+                        <span class="settings-switch-row__body">
+                          <span class="settings-switch-row__top">
+                            <span class="settings-switch-row__label">{{ i18n.t('settings.transparentBackground') }}</span>
+                            <span
+                              class="settings-switch-row__state"
+                              :data-state="toggleState(transparentBackground, canTransparentBackground)"
+                            >
+                              {{ toggleStateLabel(transparentBackground, canTransparentBackground) }}
+                            </span>
+                          </span>
+                          <span id="settings-transparent-hint" class="settings-switch-row__hint">{{ transparentBackgroundHint }}</span>
+                        </span>
+                      </label>
+
+                      <label
+                        class="settings-switch-row"
+                        :class="{ 'is-disabled': !canStreamingWait }"
+                        :data-state="toggleState(streamingWait, canStreamingWait)"
+                      >
+                        <input
+                          v-model="streamingWait"
+                          type="checkbox"
+                          :disabled="!canStreamingWait"
+                          aria-describedby="settings-streaming-hint"
+                        />
+                        <span class="settings-switch-row__icon" aria-hidden="true">
+                          <Icon name="clock" :size="13" />
+                        </span>
+                        <span class="settings-switch-row__body">
+                          <span class="settings-switch-row__top">
+                            <span class="settings-switch-row__label">{{ i18n.t('settings.streamingWait') }}</span>
+                            <span
+                              class="settings-switch-row__state"
+                              :data-state="toggleState(streamingWait, canStreamingWait)"
+                            >
+                              {{ toggleStateLabel(streamingWait, canStreamingWait) }}
+                            </span>
+                          </span>
+                          <span id="settings-streaming-hint" class="settings-switch-row__hint">{{ streamingWaitHint }}</span>
+                        </span>
+                      </label>
+
+                      <label
+                        class="settings-switch-row"
+                        :class="{ 'is-disabled': !canPartialPreview }"
+                        :data-state="toggleState(partialPreview, canPartialPreview)"
+                      >
+                        <input
+                          v-model="partialPreview"
+                          type="checkbox"
+                          :disabled="!canPartialPreview"
+                          aria-describedby="settings-preview-hint"
+                        />
+                        <span class="settings-switch-row__icon" aria-hidden="true">
+                          <Icon name="pulse" :size="13" />
+                        </span>
+                        <span class="settings-switch-row__body">
+                          <span class="settings-switch-row__top">
+                            <span class="settings-switch-row__label">{{ i18n.t('settings.stagePreview') }}</span>
+                            <span
+                              class="settings-switch-row__state"
+                              :data-state="toggleState(partialPreview, canPartialPreview)"
+                            >
+                              {{ toggleStateLabel(partialPreview, canPartialPreview) }}
+                            </span>
+                          </span>
+                          <span id="settings-preview-hint" class="settings-switch-row__hint">{{ partialPreviewHint }}</span>
+                        </span>
+                      </label>
+                    </div>
+                  </section>
+                </section>
+
+                <section
+                  v-show="activeSettingsPanel === 'prompt'"
+                  id="settings-panel-prompt"
+                  class="settings-panel"
+                  role="tabpanel"
+                  aria-labelledby="settings-tab-prompt"
+                >
+                  <div class="settings-panel__header">
+                    <span class="settings-panel__icon" aria-hidden="true">
+                      <Icon name="textCursor" :size="15" />
+                    </span>
+                    <div class="min-w-0">
+                      <h3 class="settings-panel__title">{{ i18n.t('settings.advanced.title') }}</h3>
+                      <p class="settings-panel__desc">{{ resolutionSummary }}</p>
+                    </div>
                   </div>
 
-                  <div class="settings-field">
-                    <label class="label mb-2 inline-flex items-center gap-1.5" for="set-quality">
-                      <Icon name="star" :size="12" />
-                      <span>{{ i18n.t('settings.quality') }}</span>
-                    </label>
-                    <Select
-                      id="set-quality"
-                      v-model="quality"
-                      :options="qualitySelectOptions"
-                      :aria-label="i18n.t('settings.quality.label')"
-                    />
-                  </div>
-
-                  <div class="settings-field">
-                    <label class="label mb-2 inline-flex items-center gap-1.5" for="set-format">
-                      <Icon name="image" :size="12" />
-                      <span>{{ i18n.t('settings.format') }}</span>
-                    </label>
-                    <Select
-                      id="set-format"
-                      v-model="outputFormat"
-                      :options="formatOptions"
-                      :aria-label="i18n.t('settings.format.label')"
-                    />
-                  </div>
-                </div>
-
-                <div class="settings-switch-list">
-                  <label
-                    class="settings-switch-row"
-                    :class="{ 'is-disabled': !canTransparentBackground }"
-                    :data-state="toggleState(transparentBackground, canTransparentBackground)"
-                  >
-                    <input
-                      v-model="transparentBackground"
-                      type="checkbox"
-                      :disabled="!canTransparentBackground"
-                      aria-describedby="settings-transparent-hint"
-                    />
-                    <span class="settings-switch-row__icon" aria-hidden="true">
-                      <Icon name="image" :size="13" />
-                    </span>
-                    <span class="settings-switch-row__body">
-                      <span class="settings-switch-row__top">
-                        <span class="settings-switch-row__label">{{ i18n.t('settings.transparentBackground') }}</span>
-                        <span
-                          class="settings-switch-row__state"
-                          :data-state="toggleState(transparentBackground, canTransparentBackground)"
-                        >
-                          {{ toggleStateLabel(transparentBackground, canTransparentBackground) }}
-                        </span>
-                      </span>
-                      <span id="settings-transparent-hint" class="settings-switch-row__hint">{{ transparentBackgroundHint }}</span>
-                    </span>
-                  </label>
-
-                  <label
-                    class="settings-switch-row"
-                    :class="{ 'is-disabled': !canStreamingWait }"
-                    :data-state="toggleState(streamingWait, canStreamingWait)"
-                  >
-                    <input
-                      v-model="streamingWait"
-                      type="checkbox"
-                      :disabled="!canStreamingWait"
-                      aria-describedby="settings-streaming-hint"
-                    />
-                    <span class="settings-switch-row__icon" aria-hidden="true">
-                      <Icon name="clock" :size="13" />
-                    </span>
-                    <span class="settings-switch-row__body">
-                      <span class="settings-switch-row__top">
-                        <span class="settings-switch-row__label">{{ i18n.t('settings.streamingWait') }}</span>
-                        <span
-                          class="settings-switch-row__state"
-                          :data-state="toggleState(streamingWait, canStreamingWait)"
-                        >
-                          {{ toggleStateLabel(streamingWait, canStreamingWait) }}
-                        </span>
-                      </span>
-                      <span id="settings-streaming-hint" class="settings-switch-row__hint">{{ streamingWaitHint }}</span>
-                    </span>
-                  </label>
-
-                  <label
-                    class="settings-switch-row"
-                    :class="{ 'is-disabled': !canPartialPreview }"
-                    :data-state="toggleState(partialPreview, canPartialPreview)"
-                  >
-                    <input
-                      v-model="partialPreview"
-                      type="checkbox"
-                      :disabled="!canPartialPreview"
-                      aria-describedby="settings-preview-hint"
-                    />
-                    <span class="settings-switch-row__icon" aria-hidden="true">
-                      <Icon name="pulse" :size="13" />
-                    </span>
-                    <span class="settings-switch-row__body">
-                      <span class="settings-switch-row__top">
-                        <span class="settings-switch-row__label">{{ i18n.t('settings.stagePreview') }}</span>
-                        <span
-                          class="settings-switch-row__state"
-                          :data-state="toggleState(partialPreview, canPartialPreview)"
-                        >
-                          {{ toggleStateLabel(partialPreview, canPartialPreview) }}
-                        </span>
-                      </span>
-                      <span id="settings-preview-hint" class="settings-switch-row__hint">{{ partialPreviewHint }}</span>
-                    </span>
-                  </label>
-                </div>
-                </div>
-              </details>
-
-              <section class="surface-1 p-4">
-                <span class="mb-2 block text-[13px] font-medium text-ink">{{ i18n.t('settings.display.title') }}</span>
-                <Select
-                  id="set-locale"
-                  :model-value="i18n.preference.value"
-                  :options="localeSelectOptions"
-                  :aria-label="i18n.t('settings.locale.label')"
-                  @update:model-value="(value) => i18n.setLocale(value)"
-                />
-              </section>
-
-              <details class="settings-advanced surface-1 p-4">
-                <summary class="settings-advanced__summary">
-                  <span class="settings-advanced__summary-copy">
-                    <span class="text-[13px] font-medium text-ink">{{ i18n.t('settings.advanced.title') }}</span>
-                  </span>
-                  <Icon name="chevronDown" :size="14" class="settings-advanced__chevron" />
-                </summary>
-
-                <div class="settings-advanced__body">
-                  <section>
+                  <section class="settings-block">
                     <label class="label mb-2 inline-flex items-center gap-1.5" for="set-neg">
                       <Icon name="eyeOff" :size="12" />
                       <span>{{ i18n.t('settings.negative') }}</span>
@@ -1366,64 +1177,71 @@ onBeforeUnmount(() => {
                     <textarea
                       id="set-neg"
                       v-model="negativePrompt"
-                      rows="2"
+                      rows="3"
                       maxlength="400"
                       class="field-textarea"
                       :placeholder="i18n.t('settings.negative.placeholder')"
                     ></textarea>
                   </section>
 
-                  <section>
-                    <label class="label mb-2 inline-flex items-center gap-1.5" for="set-seed">
-                      <Icon name="dice" :size="12" />
-                      <span>{{ i18n.t('settings.seed') }}</span>
-                    </label>
-                    <div class="relative flex items-center gap-2">
+                  <section class="settings-two-column">
+                    <div class="settings-block">
+                      <label class="label mb-2 inline-flex items-center gap-1.5" for="set-seed">
+                        <Icon name="dice" :size="12" />
+                        <span>{{ i18n.t('settings.seed') }}</span>
+                      </label>
+                      <div class="relative flex items-center gap-2">
+                        <input
+                          id="set-seed"
+                          v-model="seed"
+                          class="field-input pr-12"
+                          :placeholder="i18n.t('settings.seed.placeholder')"
+                          autocomplete="off"
+                          spellcheck="false"
+                          inputmode="numeric"
+                        />
+                        <button
+                          type="button"
+                          class="settings-icon-button settings-seed-roll absolute right-1.5 top-1/2 -translate-y-1/2"
+                          :aria-label="i18n.t('settings.seed.roll')"
+                          @click="rollSeed"
+                        >
+                          <Icon name="dice" :size="14" />
+                        </button>
+                      </div>
+                    </div>
+
+                    <div class="settings-block">
+                      <div class="mb-2 flex items-center justify-between gap-3">
+                        <span class="label inline-flex items-center gap-1.5">
+                          <Icon name="lightning" :size="12" />
+                          <span>{{ i18n.t('settings.creativity') }}</span>
+                        </span>
+                        <span class="font-mono text-[11px] tabular-nums text-ink">{{ creativity }} / 10</span>
+                      </div>
                       <input
-                        id="set-seed"
-                        v-model="seed"
-                        class="field-input pr-12"
-                        :placeholder="i18n.t('settings.seed.placeholder')"
-                        autocomplete="off"
-                        spellcheck="false"
-                        inputmode="numeric"
+                        v-model.number="creativity"
+                        type="range"
+                        min="1"
+                        max="10"
+                        step="1"
+                        class="settings-range w-full"
+                        :aria-label="i18n.t('settings.creativity')"
                       />
-                      <button
-                        type="button"
-                        class="settings-seed-roll absolute right-1.5 top-1/2 inline-grid h-8 w-8 -translate-y-1/2 place-items-center rounded-lg text-muted transition hover:bg-paper-soft hover:text-ink"
-                        :aria-label="i18n.t('settings.seed.roll')"
-                        @click="rollSeed"
-                      >
-                        <Icon name="dice" :size="14" />
-                      </button>
+                      <div class="mt-1 flex justify-between font-mono text-[10px] uppercase tracking-[0.16em] text-muted">
+                        <span>{{ i18n.t('settings.creativity.low') }}</span>
+                        <span>{{ i18n.t('settings.creativity.high') }}</span>
+                      </div>
                     </div>
                   </section>
 
-                  <section>
-                    <div class="mb-2 flex items-center justify-between gap-3">
-                      <span class="label inline-flex items-center gap-1.5">
-                        <Icon name="lightning" :size="12" />
-                        <span>{{ i18n.t('settings.creativity') }}</span>
-                      </span>
-                      <span class="font-mono text-[11px] tabular-nums text-ink">{{ creativity }} / 10</span>
+                  <section class="settings-block">
+                    <div class="settings-block__head">
+                      <div class="min-w-0">
+                        <h4 class="settings-block__title">{{ resolutionSummary }}</h4>
+                        <p class="settings-block__desc">{{ capabilityBadges.join(' / ') }}</p>
+                      </div>
                     </div>
-                    <input
-                      v-model.number="creativity"
-                      type="range"
-                      min="1"
-                      max="10"
-                      step="1"
-                      class="settings-range w-full"
-                      :aria-label="i18n.t('settings.creativity')"
-                    />
-                    <div class="mt-1 flex justify-between font-mono text-[10px] uppercase tracking-[0.16em] text-muted">
-                      <span>{{ i18n.t('settings.creativity.low') }}</span>
-                      <span>{{ i18n.t('settings.creativity.high') }}</span>
-                    </div>
-                  </section>
-
-                  <section>
-                    <span class="mb-2 block text-[13px] font-medium text-ink">{{ resolutionSummary }}</span>
 
                     <div class="settings-resolution-grid">
                       <div class="settings-resolution-row">
@@ -1465,14 +1283,382 @@ onBeforeUnmount(() => {
                       <span
                         v-for="badge in capabilityBadges"
                         :key="badge"
-                        class="rounded-full border border-line/50 bg-ivory/60 px-2 py-0.5 font-mono text-[10px] tracking-[0.08em] text-muted"
+                        class="settings-chip"
                       >
                         {{ badge }}
                       </span>
                     </div>
                   </section>
-                </div>
-              </details>
+                </section>
+
+                <section
+                  v-show="activeSettingsPanel === 'workflow'"
+                  id="settings-panel-workflow"
+                  class="settings-panel"
+                  role="tabpanel"
+                  aria-labelledby="settings-tab-workflow"
+                >
+                  <div class="settings-panel__header">
+                    <span class="settings-panel__icon" aria-hidden="true">
+                      <Icon name="bookmark" :size="15" />
+                    </span>
+                    <div class="min-w-0">
+                      <h3 class="settings-panel__title">{{ i18n.t('settings.presets.title') }}</h3>
+                      <p class="settings-panel__desc">{{ i18n.t('settings.pair.title') }}</p>
+                    </div>
+                  </div>
+
+                  <div class="settings-workflow-grid">
+                    <section class="settings-block">
+                      <div class="settings-block__head">
+                        <div class="min-w-0">
+                          <h4 class="settings-block__title">{{ i18n.t('settings.pair.title') }}</h4>
+                          <p class="settings-block__desc">{{ i18n.t('settings.pair.body') }}</p>
+                        </div>
+                      </div>
+
+                      <div class="settings-segmented" role="tablist">
+                        <button
+                          type="button"
+                          role="tab"
+                          class="settings-segmented__button"
+                          :class="{ 'is-active': pairTab === 'send' }"
+                          :aria-selected="pairTab === 'send'"
+                          @click="pairTab = 'send'"
+                        >
+                          {{ i18n.t('settings.pair.tabSend') }}
+                        </button>
+                        <button
+                          type="button"
+                          role="tab"
+                          class="settings-segmented__button"
+                          :class="{ 'is-active': pairTab === 'receive' }"
+                          :aria-selected="pairTab === 'receive'"
+                          @click="pairTab = 'receive'"
+                        >
+                          {{ i18n.t('settings.pair.tabReceive') }}
+                        </button>
+                      </div>
+
+                      <div v-if="pairTab === 'send'" class="mt-3 space-y-3">
+                        <div v-if="!pairBusy">
+                          <p class="text-[11px] leading-[1.6] text-muted">{{ i18n.t('settings.pair.hintSend') }}</p>
+                          <label class="label mb-1.5 mt-2 inline-flex items-center gap-1.5" for="pair-send-pass">
+                            <Icon name="lightning" :size="12" />
+                            <span>{{ i18n.t('settings.pair.sendPassphrase') }}</span>
+                          </label>
+                          <input
+                            id="pair-send-pass"
+                            v-model="pairSendPassphrase"
+                            type="text"
+                            class="field-input font-mono text-[12px]"
+                            :placeholder="i18n.t('settings.pair.sendPassphraseHint')"
+                            autocomplete="off"
+                            spellcheck="false"
+                            maxlength="200"
+                          />
+                          <div class="settings-action-row mt-2">
+                            <button
+                              type="button"
+                              class="btn-secondary settings-action-button"
+                              :disabled="!pairSendPassphrase || pairPhase === 'initiating'"
+                              @click="handleStartSend"
+                            >
+                              <Icon name="share" :size="12" />
+                              {{ i18n.t('settings.pair.sendBtn') }}
+                            </button>
+                          </div>
+                        </div>
+
+                        <div v-else class="space-y-2">
+                          <div v-if="pairShortCode" class="settings-code-box">
+                            <div class="text-[10px] uppercase tracking-[0.16em] text-muted">{{ i18n.t('settings.pair.sendCodeLabel') }}</div>
+                            <div class="mt-1 flex flex-wrap items-center gap-2">
+                              <span class="font-mono text-lg tracking-[0.3em] text-ink">{{ pairShortCode }}</span>
+                              <button type="button" class="btn-secondary settings-mini-button" @click="handleCopyPairCode">
+                                <Icon name="copy" :size="11" />
+                                {{ pairCodeCopied ? i18n.t('toast.copied') : i18n.t('settings.pair.sendCodeCopy') }}
+                              </button>
+                            </div>
+                          </div>
+                          <p class="inline-flex items-center gap-1.5 text-[11px] leading-[1.6] text-muted">
+                            <Icon name="refresh" :size="11" class="animate-spin" />
+                            {{ pairPhaseLabel }}
+                          </p>
+                          <button type="button" class="btn-danger settings-action-button" @click="handlePairCancel">
+                            <Icon name="close" :size="12" />
+                            {{ i18n.t('settings.pair.cancel') }}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div v-else class="mt-3 space-y-3">
+                        <div v-if="!pairBusy">
+                          <p class="text-[11px] leading-[1.6] text-muted">{{ i18n.t('settings.pair.hintReceive') }}</p>
+                          <label class="label mb-1.5 mt-2 inline-flex items-center gap-1.5" for="pair-recv-code">
+                            <Icon name="link" :size="12" />
+                            <span>{{ i18n.t('settings.pair.receiveCode') }}</span>
+                          </label>
+                          <input
+                            id="pair-recv-code"
+                            v-model="pairReceiveCode"
+                            type="text"
+                            class="field-input font-mono text-[12px]"
+                            :placeholder="i18n.t('settings.pair.receiveCodePlaceholder')"
+                            autocomplete="off"
+                            spellcheck="false"
+                            maxlength="20"
+                          />
+                          <label class="label mb-1.5 mt-2 inline-flex items-center gap-1.5" for="pair-recv-pass">
+                            <Icon name="lightning" :size="12" />
+                            <span>{{ i18n.t('settings.pair.receivePassphrase') }}</span>
+                          </label>
+                          <input
+                            id="pair-recv-pass"
+                            v-model="pairReceivePassphrase"
+                            type="text"
+                            class="field-input font-mono text-[12px]"
+                            :placeholder="i18n.t('settings.pair.sendPassphraseHint')"
+                            autocomplete="off"
+                            spellcheck="false"
+                            maxlength="200"
+                          />
+                          <div class="settings-action-row mt-2">
+                            <button
+                              type="button"
+                              class="btn-secondary settings-action-button"
+                              :disabled="!pairReceiveCode || !pairReceivePassphrase || pairPhase === 'initiating'"
+                              @click="handleStartReceive"
+                            >
+                              <Icon name="download" :size="12" />
+                              {{ i18n.t('settings.pair.receiveBtn') }}
+                            </button>
+                          </div>
+                        </div>
+
+                        <div v-else class="space-y-2">
+                          <p class="inline-flex items-center gap-1.5 text-[11px] leading-[1.6] text-muted">
+                            <Icon name="refresh" :size="11" class="animate-spin" />
+                            {{ pairPhaseLabel }}
+                          </p>
+                          <button type="button" class="btn-danger settings-action-button" @click="handlePairCancel">
+                            <Icon name="close" :size="12" />
+                            {{ i18n.t('settings.pair.cancel') }}
+                          </button>
+                        </div>
+                      </div>
+
+                      <p
+                        v-if="pairPhase === 'error' && pairErrorLabel"
+                        class="mt-3 rounded-xl border border-ochre/30 bg-ochre/8 px-3 py-2 text-[11px] leading-[1.6] text-ochre"
+                      >
+                        {{ pairErrorLabel }}
+                      </p>
+
+                      <p
+                        v-if="pairPhase === 'done' && pairPhaseLabel"
+                        class="mt-3 rounded-xl border border-forest/30 bg-forest/8 px-3 py-2 text-[11px] leading-[1.6] text-forest"
+                      >
+                        {{ pairPhaseLabel }}
+                      </p>
+                    </section>
+
+                    <section class="settings-block">
+                      <div class="settings-block__head">
+                        <div class="min-w-0">
+                          <h4 class="settings-block__title">{{ i18n.t('settings.presets.title') }}</h4>
+                          <p class="settings-block__desc">{{ providerPresets.length }} · {{ i18n.t('settings.speedTest.summary') }}</p>
+                        </div>
+                      </div>
+
+                      <section class="flex flex-col gap-2">
+                        <input
+                          v-model="newPresetLabel"
+                          class="field-input w-full font-mono text-[12px]"
+                          :placeholder="i18n.t('settings.presets.savePlaceholder')"
+                          maxlength="60"
+                          autocomplete="off"
+                          spellcheck="false"
+                        />
+                        <div class="settings-action-row">
+                          <button
+                            type="button"
+                            class="btn-secondary settings-action-button"
+                            :disabled="!provider.state.baseUrl || !provider.state.apiKey"
+                            @click="handleSaveCurrentPreset"
+                          >
+                            <Icon name="bookmark" :size="12" />
+                            {{ i18n.t('settings.presets.save') }}
+                          </button>
+                          <button
+                            type="button"
+                            class="btn-secondary settings-action-button"
+                            :disabled="!providerPresets.length || speedTestRunning"
+                            @click="handleTestAllPresets"
+                          >
+                            <Icon
+                              :name="speedTestRunning ? 'refresh' : 'pulse'"
+                              :size="12"
+                              :class="speedTestRunning ? 'animate-spin' : ''"
+                            />
+                            {{ speedTestRunning ? i18n.t('settings.speedTest.running') : i18n.t('settings.presets.testAll') }}
+                          </button>
+                        </div>
+                      </section>
+
+                      <p
+                        v-if="rankedSpeedResults.length"
+                        class="mt-3 text-[10px] uppercase tracking-[0.16em] text-muted"
+                      >
+                        {{ i18n.t('settings.speedTest.summary') }}
+                      </p>
+
+                      <p v-if="!providerPresets.length" class="settings-empty-state">
+                        {{ i18n.t('settings.presets.empty') }}
+                      </p>
+
+                      <ul v-else class="settings-preset-list">
+                        <li
+                          v-for="preset in providerPresets"
+                          :key="preset.id"
+                          class="settings-preset"
+                          :class="{ 'is-active': activePresetId === preset.id }"
+                        >
+                          <div class="settings-preset__main">
+                            <div class="min-w-0 flex-1">
+                              <div class="flex min-w-0 items-center gap-1.5">
+                                <Icon
+                                  v-if="activePresetId === preset.id"
+                                  name="check"
+                                  :size="12"
+                                  class="text-forest"
+                                />
+                                <span class="truncate font-medium text-ink">{{ presetDisplayLabel(preset) }}</span>
+                                <span
+                                  v-if="activePresetId === preset.id"
+                                  class="rounded-full bg-forest/12 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-[0.16em] text-forest"
+                                >
+                                  {{ i18n.t('settings.presets.active') }}
+                                </span>
+                              </div>
+                              <div class="mt-0.5 truncate font-mono text-[10px] text-muted">
+                                {{ shortBaseUrl(preset.baseUrl) || preset.baseUrl }}
+                              </div>
+                            </div>
+
+                            <div class="settings-preset__actions">
+                              <button
+                                type="button"
+                                class="btn-secondary settings-mini-button"
+                                :disabled="activePresetId === preset.id"
+                                @click="handleSwitchPreset(preset.id)"
+                              >
+                                <Icon name="refresh" :size="11" />
+                                {{ i18n.t('settings.presets.switch') }}
+                              </button>
+                              <button
+                                type="button"
+                                class="btn-secondary settings-mini-button"
+                                :disabled="speedTestRunning"
+                                @click="handleTestPreset(preset.id)"
+                              >
+                                <Icon
+                                  :name="speedTestResults[preset.id]?.status === 'testing' ? 'refresh' : 'pulse'"
+                                  :size="11"
+                                  :class="speedTestResults[preset.id]?.status === 'testing' ? 'animate-spin' : ''"
+                                />
+                                {{ i18n.t('settings.presets.test') }}
+                              </button>
+                              <button
+                                type="button"
+                                class="btn-danger settings-mini-button"
+                                @click="handleDeletePreset(preset.id)"
+                              >
+                                <Icon name="trash" :size="11" />
+                                {{ i18n.t('settings.presets.delete') }}
+                              </button>
+                            </div>
+                          </div>
+
+                          <div
+                            v-if="speedTestResults[preset.id] && speedTestResults[preset.id].status !== 'testing'"
+                            class="mt-1.5 flex flex-wrap items-center gap-2 font-mono text-[10px]"
+                          >
+                            <span
+                              v-if="speedTestResults[preset.id].status === 'success'"
+                              class="inline-flex items-center gap-1.5 rounded-full bg-forest/12 px-2 py-0.5 text-forest"
+                            >
+                              <Icon name="check" :size="10" />
+                              <span v-if="speedRankFor(preset.id)">
+                                {{ i18n.t('settings.speedTest.rank', { rank: speedRankFor(preset.id) ?? 0 }) }}
+                              </span>
+                              <span>{{ i18n.t('settings.speedTest.duration', { ms: speedTestResults[preset.id].durationMs ?? 0 }) }}</span>
+                            </span>
+                            <span
+                              v-if="speedTestResults[preset.id].status === 'success' && typeof speedTestResults[preset.id].modelCount === 'number'"
+                              class="text-muted"
+                            >
+                              {{ i18n.t('settings.speedTest.models', { count: speedTestResults[preset.id].modelCount ?? 0 }) }}
+                            </span>
+                            <span
+                              v-if="speedTestResults[preset.id].status === 'error'"
+                              class="inline-flex items-center gap-1.5 rounded-full bg-accent/12 px-2 py-0.5 text-accent"
+                            >
+                              <Icon name="warning" :size="10" />
+                              {{ i18n.t('settings.speedTest.failed') }}
+                              <span
+                                v-if="speedTestResults[preset.id].error"
+                                class="max-w-[200px] truncate opacity-80"
+                              >
+                                {{ speedTestResults[preset.id].error }}
+                              </span>
+                            </span>
+                          </div>
+                          <div
+                            v-else-if="speedTestResults[preset.id]?.status === 'testing'"
+                            class="mt-1.5 inline-flex items-center gap-1.5 font-mono text-[10px] text-muted"
+                          >
+                            <Icon name="refresh" :size="10" class="animate-spin" />
+                            {{ i18n.t('settings.presets.testing') }}
+                          </div>
+                        </li>
+                      </ul>
+                    </section>
+                  </div>
+                </section>
+
+                <section
+                  v-show="activeSettingsPanel === 'display'"
+                  id="settings-panel-display"
+                  class="settings-panel"
+                  role="tabpanel"
+                  aria-labelledby="settings-tab-display"
+                >
+                  <div class="settings-panel__header">
+                    <span class="settings-panel__icon" aria-hidden="true">
+                      <Icon name="palette" :size="15" />
+                    </span>
+                    <div class="min-w-0">
+                      <h3 class="settings-panel__title">{{ i18n.t('settings.display.title') }}</h3>
+                      <p class="settings-panel__desc">{{ i18n.t('settings.locale.label') }}</p>
+                    </div>
+                  </div>
+
+                  <section class="settings-block">
+                    <label class="label mb-2 inline-flex items-center gap-1.5" for="set-locale">
+                      <Icon name="palette" :size="12" />
+                      <span>{{ i18n.t('settings.locale.label') }}</span>
+                    </label>
+                    <Select
+                      id="set-locale"
+                      :model-value="i18n.preference.value"
+                      :options="localeSelectOptions"
+                      :aria-label="i18n.t('settings.locale.label')"
+                      @update:model-value="(value) => i18n.setLocale(value)"
+                    />
+                  </section>
+                </section>
+              </main>
             </div>
 
             <footer
@@ -1480,7 +1666,7 @@ onBeforeUnmount(() => {
             >
               <button
                 type="button"
-                class="btn-quiet justify-start gap-2 text-[12px]"
+                class="btn-danger settings-action-button justify-start"
                 @click="emit('reset')"
               >
                 <Icon name="reset" :size="13" />
@@ -1489,7 +1675,7 @@ onBeforeUnmount(() => {
               <div class="settings-footer-actions">
                 <button
                   type="button"
-                  class="btn-secondary text-[12px]"
+                  class="btn-secondary settings-action-button"
                   @click="emit('export')"
                 >
                   <Icon name="download" :size="13" />
@@ -1497,7 +1683,7 @@ onBeforeUnmount(() => {
                 </button>
                 <button
                   type="button"
-                  class="btn-primary px-4 py-2.5 text-[12px] font-semibold"
+                  class="btn-primary settings-action-button px-4 py-2.5 font-semibold"
                   @click="close"
                 >
                   <Icon name="check" :size="13" />
@@ -1511,7 +1697,6 @@ onBeforeUnmount(() => {
     </Transition>
   </Teleport>
 </template>
-
 <style scoped>
 .dialog-shell {
   max-height: min(92dvh, calc(100svh - env(safe-area-inset-top, 0px) - 0.75rem));
@@ -1529,10 +1714,433 @@ onBeforeUnmount(() => {
 }
 
 .dialog-shell__body {
+  display: grid;
+  grid-template-columns: 238px minmax(0, 1fr);
+  min-height: min(620px, calc(92dvh - 8.75rem));
   max-height: calc(min(92dvh, 100svh) - 9rem);
+  background: rgb(var(--color-surface-muted) / 0.36);
   overscroll-behavior: contain;
   scrollbar-width: thin;
   scrollbar-gutter: stable;
+}
+
+.settings-header-status,
+.settings-status-pill,
+.settings-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  padding: 0.3rem 0.5rem;
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+  font-size: 10px;
+  font-weight: 720;
+  line-height: 1.1;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.settings-header-status {
+  border: 1px solid rgb(var(--color-line) / 0.58);
+  background: rgb(var(--color-surface-muted) / 0.84);
+  color: rgb(var(--color-muted));
+}
+
+.settings-header-status[data-tone='ok'] {
+  border-color: rgb(var(--color-forest) / 0.3);
+  background: rgb(var(--color-forest) / 0.1);
+  color: rgb(var(--color-forest));
+}
+
+.settings-header-status[data-tone='warn'] {
+  border-color: rgb(var(--color-ochre) / 0.34);
+  background: rgb(var(--color-ochre) / 0.1);
+  color: rgb(var(--color-ochre));
+}
+
+.settings-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  min-width: 0;
+  overflow-y: auto;
+  border-right: 1px solid rgb(var(--color-line) / 0.58);
+  background: rgb(var(--color-surface) / 0.72);
+  padding: 0.75rem;
+}
+
+.settings-nav__item {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) 14px;
+  align-items: center;
+  gap: 0.65rem;
+  min-height: 58px;
+  width: 100%;
+  border: 1px solid transparent;
+  border-radius: var(--radius-field);
+  background: transparent;
+  color: rgb(var(--color-muted));
+  padding: 0.55rem 0.6rem;
+  text-align: left;
+  transition:
+    transform 140ms var(--motion-press),
+    border-color 160ms var(--motion-soft),
+    background-color 160ms var(--motion-soft),
+    color 160ms var(--motion-soft);
+}
+
+.settings-nav__item:hover {
+  border-color: rgb(var(--color-line) / 0.72);
+  background: rgb(var(--color-surface-raised) / 0.8);
+  color: rgb(var(--color-ink));
+}
+
+.settings-nav__item:active {
+  transform: translateY(1px);
+}
+
+.settings-nav__item:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.settings-nav__item.is-active {
+  border-color: rgb(var(--color-accent) / 0.38);
+  background: rgb(var(--color-accent) / 0.08);
+  color: rgb(var(--color-ink));
+}
+
+.settings-nav__icon {
+  display: inline-grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border-radius: 8px;
+  background: rgb(var(--color-line) / 0.18);
+  color: rgb(var(--color-muted));
+}
+
+.settings-nav__item.is-active .settings-nav__icon,
+.settings-nav__item[data-tone='ok'] .settings-nav__icon {
+  color: rgb(var(--color-forest));
+}
+
+.settings-nav__item[data-tone='warn'] .settings-nav__icon {
+  color: rgb(var(--color-ochre));
+}
+
+.settings-nav__copy {
+  display: grid;
+  min-width: 0;
+  gap: 0.16rem;
+}
+
+.settings-nav__label,
+.settings-nav__detail {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-nav__label {
+  color: rgb(var(--color-ink));
+  font-size: 12px;
+  font-weight: 720;
+  line-height: 1.2;
+}
+
+.settings-nav__detail {
+  color: rgb(var(--color-muted));
+  font-size: 10.5px;
+  line-height: 1.25;
+}
+
+.settings-nav__chevron {
+  color: rgb(var(--color-muted));
+  opacity: 0.62;
+}
+
+.settings-workspace {
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 1rem;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+}
+
+.settings-workspace:focus {
+  outline: none;
+}
+
+.settings-panel {
+  display: grid;
+  gap: 0.85rem;
+  max-width: 760px;
+}
+
+.settings-panel__header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.25rem 0.125rem 0.1rem;
+}
+
+.settings-panel__icon {
+  display: inline-grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 9px;
+  background: rgb(var(--color-accent) / 0.09);
+  color: rgb(var(--color-accent));
+}
+
+.settings-panel__title {
+  margin: 0;
+  color: rgb(var(--color-ink));
+  font-size: 17px;
+  font-weight: 760;
+  line-height: 1.2;
+}
+
+.settings-panel__desc {
+  margin: 0.2rem 0 0;
+  color: rgb(var(--color-muted));
+  font-size: 11.5px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.settings-block {
+  min-width: 0;
+  border: 1px solid rgb(var(--color-line) / 0.68);
+  border-radius: var(--radius-panel);
+  background: rgb(var(--color-surface) / 0.96);
+  padding: 0.95rem;
+  box-shadow: var(--shadow-inner-glass);
+}
+
+.settings-block__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.85rem;
+}
+
+.settings-block__title {
+  margin: 0;
+  color: rgb(var(--color-ink));
+  font-size: 13px;
+  font-weight: 720;
+  line-height: 1.25;
+}
+
+.settings-block__desc {
+  margin: 0.25rem 0 0;
+  color: rgb(var(--color-muted));
+  font-size: 11px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.settings-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.85rem;
+}
+
+.settings-action-button {
+  min-height: 38px;
+  padding-inline: 0.85rem;
+  font-size: 12px;
+}
+
+.settings-mini-button {
+  min-height: 32px;
+  padding: 0.38rem 0.55rem;
+  font-size: 10.5px;
+}
+
+.btn-danger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  border: 1px solid rgb(var(--color-clay) / 0.3);
+  border-radius: 8px;
+  background: rgb(var(--color-clay) / 0.07);
+  color: rgb(var(--color-clay));
+  font-weight: 650;
+  transition:
+    transform 140ms var(--motion-press),
+    border-color 160ms var(--motion-soft),
+    background-color 160ms var(--motion-soft),
+    box-shadow 180ms var(--motion-soft),
+    opacity 160ms var(--motion-soft);
+}
+
+.btn-danger:hover:not(:disabled) {
+  border-color: rgb(var(--color-clay) / 0.44);
+  background: rgb(var(--color-clay) / 0.11);
+  transform: translateY(-1px);
+}
+
+.btn-danger:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.btn-danger:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.btn-danger:disabled {
+  cursor: not-allowed;
+  opacity: 0.46;
+  transform: none;
+}
+
+.settings-icon-button {
+  display: inline-grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: rgb(var(--color-muted));
+  transition:
+    transform 140ms var(--motion-press),
+    background-color 140ms var(--motion-soft),
+    color 140ms var(--motion-soft),
+    box-shadow 180ms var(--motion-soft);
+}
+
+.settings-icon-button:hover {
+  background: rgb(var(--color-paper-soft));
+  color: rgb(var(--color-ink));
+}
+
+.settings-icon-button:active {
+  transform: translateY(1px);
+}
+
+.settings-icon-button:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.settings-two-column,
+.settings-workflow-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.settings-workflow-grid {
+  align-items: start;
+}
+
+.settings-segmented {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  border: 1px solid rgb(var(--color-line) / 0.68);
+  border-radius: var(--radius-field);
+  background: rgb(var(--color-surface-muted) / 0.78);
+  padding: 0.25rem;
+}
+
+.settings-segmented__button {
+  min-height: 32px;
+  border-radius: 6px;
+  padding: 0.35rem 0.75rem;
+  color: rgb(var(--color-muted));
+  font-size: 11px;
+  font-weight: 650;
+  transition:
+    transform 140ms var(--motion-press),
+    background-color 160ms var(--motion-soft),
+    color 160ms var(--motion-soft);
+}
+
+.settings-segmented__button:hover {
+  color: rgb(var(--color-ink));
+}
+
+.settings-segmented__button.is-active {
+  background: rgb(var(--color-forest) / 0.12);
+  color: rgb(var(--color-forest));
+}
+
+.settings-segmented__button:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.settings-code-box {
+  border: 1px solid rgb(var(--color-line) / 0.48);
+  border-radius: var(--radius-panel);
+  background: rgb(var(--color-ivory) / 0.48);
+  padding: 0.65rem 0.75rem;
+}
+
+.settings-empty-state {
+  margin: 0.85rem 0 0;
+  border: 1px dashed rgb(var(--color-line) / 0.72);
+  border-radius: var(--radius-panel);
+  background: rgb(var(--color-surface-muted) / 0.48);
+  padding: 0.85rem;
+  color: rgb(var(--color-muted));
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.settings-preset-list {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0.85rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.settings-preset {
+  border: 1px solid rgb(var(--color-line) / 0.54);
+  border-radius: var(--radius-panel);
+  background: rgb(var(--color-ivory) / 0.42);
+  padding: 0.65rem 0.7rem;
+  color: rgb(var(--color-ink));
+}
+
+.settings-preset.is-active {
+  border-color: rgb(var(--color-forest) / 0.38);
+  background: rgb(var(--color-forest) / 0.08);
+}
+
+.settings-preset__main {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.settings-preset__actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.35rem;
+}
+
+.settings-chip {
+  border: 1px solid rgb(var(--color-line) / 0.54);
+  background: rgb(var(--color-ivory) / 0.6);
+  color: rgb(var(--color-muted));
+  letter-spacing: 0.08em;
 }
 
 .settings-collapsible {
@@ -1741,7 +2349,7 @@ onBeforeUnmount(() => {
 
 .settings-switch-row {
   display: grid;
-  grid-template-columns: auto 28px minmax(0, 1fr);
+  grid-template-columns: 28px minmax(0, 1fr) auto;
   align-items: center;
   gap: 0.65rem;
   min-height: 58px;
@@ -1777,6 +2385,8 @@ onBeforeUnmount(() => {
 .settings-switch-row input[type='checkbox'] {
   appearance: none;
   position: relative;
+  grid-column: 3;
+  grid-row: 1;
   flex: 0 0 auto;
   width: 38px;
   height: 22px;
@@ -1819,6 +2429,8 @@ onBeforeUnmount(() => {
 
 .settings-switch-row__icon {
   display: inline-grid;
+  grid-column: 1;
+  grid-row: 1;
   width: 28px;
   height: 28px;
   place-items: center;
@@ -1839,6 +2451,8 @@ onBeforeUnmount(() => {
 
 .settings-switch-row__body {
   display: flex;
+  grid-column: 2;
+  grid-row: 1;
   min-width: 0;
   flex: 1;
   flex-direction: column;
@@ -1951,6 +2565,24 @@ onBeforeUnmount(() => {
   box-shadow: var(--focus-ring);
 }
 
+@media (max-width: 899px) and (min-width: 640px) {
+  .dialog-shell__body {
+    grid-template-columns: 190px minmax(0, 1fr);
+  }
+
+  .settings-nav__item {
+    grid-template-columns: 28px minmax(0, 1fr);
+  }
+
+  .settings-nav__chevron {
+    display: none;
+  }
+
+  .settings-workflow-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 639px) {
   .mobile-sheet {
     align-items: stretch;
@@ -1974,9 +2606,13 @@ onBeforeUnmount(() => {
   }
 
   .dialog-shell__body {
+    display: grid;
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
     max-height: none;
     flex: 1 1 auto;
-    padding: 1rem;
+    min-height: 0;
+    padding: 0;
   }
 
   .dialog-shell__footer {
@@ -1987,6 +2623,80 @@ onBeforeUnmount(() => {
   .dialog-shell__footer .btn-secondary {
     min-height: 44px;
     justify-content: center;
+  }
+
+  .settings-header-status {
+    display: none;
+  }
+
+  .settings-nav {
+    display: grid;
+    grid-auto-columns: minmax(138px, 46vw);
+    grid-auto-flow: column;
+    gap: 0.5rem;
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-right: 0;
+    border-bottom: 1px solid rgb(var(--color-line) / 0.5);
+    padding: 0.75rem 1rem;
+    scrollbar-width: none;
+  }
+
+  .settings-nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .settings-nav__item {
+    min-height: 56px;
+    grid-template-columns: 30px minmax(0, 1fr);
+  }
+
+  .settings-nav__chevron {
+    display: none;
+  }
+
+  .settings-workspace {
+    padding: 1rem;
+  }
+
+  .settings-panel {
+    gap: 0.75rem;
+  }
+
+  .settings-panel__header {
+    padding-top: 0;
+  }
+
+  .settings-block {
+    padding: 0.85rem;
+  }
+
+  .settings-two-column,
+  .settings-workflow-grid {
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+
+  .settings-action-row {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .settings-action-button,
+  .settings-mini-button {
+    width: 100%;
+    min-height: 44px;
+  }
+
+  .settings-preset__main {
+    display: grid;
+    gap: 0.65rem;
+  }
+
+  .settings-preset__actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    width: 100%;
   }
 
   .settings-footer-actions {
@@ -2014,7 +2724,7 @@ onBeforeUnmount(() => {
   }
 
   .settings-switch-row {
-    grid-template-columns: auto 30px minmax(0, 1fr);
+    grid-template-columns: 30px minmax(0, 1fr) auto;
     align-items: center;
     min-height: 56px;
   }

@@ -11,6 +11,7 @@
     "src/lib/imageGenerationDetection.ts",
     "src/lib/modelCapabilities.ts",
     "src/lib/mobileViewport.ts",
+    "src/lib/pairTransferBundle.ts",
     "src/lib/chatMessage.ts",
     "src/composables/useMaskCanvas.ts"
   ]
